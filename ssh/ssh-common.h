@@ -423,6 +423,8 @@ struct ssh_receive_s {
     unsigned char			*buffer;
 };
 
+/* TODO use */
+
 struct ssh_senddata_s {
     unsigned int			(* get_payload_len)(struct ssh_session_s *s, void *ptr);
     unsigned int			(* fill_payload)(struct ssh_session_s *s, void *ptr);
@@ -455,12 +457,21 @@ struct ssh_identity_s {
 };
 
 /*
-    data used per session:
+    data per session:
     - greeter send by server
     - sessionid calculated during kexinit
+*/
+
+struct session_data_s {
+    struct ssh_string_s			sessionid;
+    struct ssh_string_s			greeter_server;
+};
+
+/*
+    data per crypto session:
     - kexinit message send by server
     - kexinit message send by client
-    - common keys
+    - initialization vectors
 */
 
 #define		SESSION_KEYDATA_STATUS_INIT			1
@@ -476,11 +487,6 @@ struct session_keydata_s {
     struct ssh_string_s			kexinit_client;
     struct ssh_string_s			iv_c2s;
     struct ssh_string_s			iv_s2c;
-};
-
-struct session_data_s {
-    struct ssh_string_s			sessionid;
-    struct ssh_string_s			greeter_server;
 };
 
 struct session_crypto_s {
