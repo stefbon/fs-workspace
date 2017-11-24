@@ -397,6 +397,10 @@ static void get_remote_supported_services(struct service_context_s *context)
 
 	}
 
+    } else {
+
+	add_shared_map_sftp(context, _SFTP_HOME_MAP);
+
     }
 
 }
@@ -508,7 +512,6 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
     }
 
     calculate_nameindex(&xname);
-
     entry=find_entry_batch(directory, &xname, error);
 
     if (! entry) {
