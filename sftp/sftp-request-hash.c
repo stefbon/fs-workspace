@@ -141,7 +141,7 @@ static struct hash_request_s *lookup_request(struct sftp_send_hash_s *send_hash,
 
 	}
 
-	list=list->next; /* next in hash */
+	list=list->next; /* next in linked list for same hashvalue */
 	request=NULL;
 
     }
