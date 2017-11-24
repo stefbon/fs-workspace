@@ -115,6 +115,15 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     unsigned char buffer[sizeof(struct ssh_payload_s) + payload_len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
     unsigned int error=0;
+    unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
+    unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
+    unsigned int len=5 + payload->len;
+    unsigned char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
+    unsigned char n2=0, len_mod=0;
+    int result=0;
+    unsigned char *pos=NULL;
+    struct ssh_packet_s packet;
+    struct ssh_send_s *send=&session->send;
 
     /* construct the payload */
 
@@ -122,88 +131,68 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     payload->len=payload_len;
     payload->len=fill_raw_message(session, payload, ptr);
 
-    if (deflate_payload(session, payload)==0) {
-	unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
-	unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
-	unsigned int len=5 + payload->len;
-	unsigned char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
-	unsigned char n2=0, len_mod=0;
-	int result=0;
-	unsigned char *pos=NULL;
-	struct ssh_packet_s packet;
-	struct ssh_send_s *send=&session->send;
+    memset(raw_message, '\0', sizeof(struct ssh_packet_s) + len + 2 * message_blocksize);
+    n2=get_message_padding(session, len, message_blocksize);
 
-	memset(raw_message, '\0', sizeof(struct ssh_packet_s) + len + 2 * message_blocksize);
+    packet.buffer=raw_message;
+    packet.len = len + n2; /* packet len plus the padding size */
+    packet.padding=n2;
+    packet.error=0;
 
-	n2=get_message_padding(session, len, message_blocksize);
+    /* store the packet len (minus the first field) */
 
-	packet.buffer=raw_message;
-	packet.len = len + n2; /* packet len plus the padding size */
-	packet.padding=n2;
-	packet.error=0;
+    pos=packet.buffer;
+    store_uint32(pos, packet.len - 4);
+    pos+=4;
 
-	/* store the packet len (minus the first field) */
+    /* store the number of padding */
 
-	pos=packet.buffer;
-	store_uint32(pos, packet.len - 4);
-	pos+=4;
+    *(pos) = n2;
+    pos++;
 
-	/* store the number of padding */
+    /* the ssh payload */
 
-	*(pos) = n2;
-	pos++;
+    memcpy(pos, payload->buffer, payload->len);
+    pos+=payload->len;
 
-	/* the ssh payload */
+    /* fill the padding bytes */
 
-	memcpy(pos, payload->buffer, payload->len);
-	pos+=payload->len;
+    pos += fill_random(pos, n2);
 
-	/* fill the padding bytes */
+    /* write the mac of the unencrypted message (when mac before encryption is used) */
 
-	pos += fill_random(pos, n2);
+    packet.sequence=send->sequence_number;
+    write_mac_pre_encrypt(session, &packet);
 
-	/* write the mac of the unencrypted message */
+    /* encrypt */
 
-	packet.sequence=send->sequence_number;
-	write_mac_pre_encrypt(session, &packet);
+    if (ssh_encrypt(session, &packet)==0) {
 
-	/* encrypt */
+	/* write the mac of the encrypted message (when mac after encryption is used) */
 
-	if (ssh_encrypt(session, &packet)==0) {
+	write_mac_post_encrypt(session, &packet); 
+	result=send_c2s(session, &packet);
 
-	    write_mac_post_encrypt(session, &packet);
-	    result=send_c2s(session, &packet);
+	if (result==-1) {
 
-	    if (result==-1) {
-
-		session->status.error=packet.error;
-
-	    } else {
-
-		*seq=send->sequence_number;
-		send->sequence_number++;
-
-	    }
+	    session->status.error=packet.error;
 
 	} else {
 
-	    result=-1;
-	    session->status.error=EIO;
+	    *seq=send->sequence_number;
+	    send->sequence_number++;
 
 	}
 
-	reset_c2s_mac(session);
-	return result;
-
     } else {
 
-	if (error==0) error=EIO;
-	session->status.error=error;
-	return -1;
+	result=-1;
+	session->status.error=EIO;
 
     }
 
-    return 0;
+    reset_c2s_mac(session);
+    return result;
 
 }
 
