@@ -193,7 +193,6 @@ static void process_rawdata_session(struct rawdata_s *data)
 
 	data->len=packet.len + 4 + maclen;
 	data->maclen=maclen;
-	logoutput("process_rawdata_session: packet length %i", packet.len);
 
 	if (data->len > 35000) {
 
