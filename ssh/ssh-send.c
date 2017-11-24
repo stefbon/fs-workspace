@@ -344,7 +344,7 @@ void switch_send_process(struct ssh_session_s *session, const char *phase)
 
     } else if (strcmp(phase, "init")==0) {
 
-	send->send_message=_send_init_message;
+	send->send_message=_send_complete_message;
 
     } else if (strcmp(phase, "session")==0) {
 
