@@ -151,7 +151,6 @@ unsigned int ssh_get_compression_list(struct commalist_s *clist)
     unsigned int error=0;
 
     len+=add_name_to_commalist("none", clist, &error);
-    // len+=check_add_compressionname("zlib", clist);
 
     return len;
 
