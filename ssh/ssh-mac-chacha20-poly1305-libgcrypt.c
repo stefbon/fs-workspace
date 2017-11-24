@@ -37,6 +37,7 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <gcrypt.h>
 
 #include "logging.h"
