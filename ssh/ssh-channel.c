@@ -201,8 +201,6 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
     struct ssh_payload_s *payload=NULL;
     unsigned int len=0;
 
-    logoutput("get_ssh_payload_channel: (%i)", (int) gettid());
-
     pthread_mutex_lock(signal->mutex);
 
     while (! channel->first) {
@@ -252,8 +250,6 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
 void queue_ssh_payload_channel(struct ssh_channel_s *channel, struct ssh_payload_s *payload)
 {
     struct ssh_signal_s *signal=channel->signal;
-
-    logoutput("queue_ssh_payload_channel: (%i) channel %i:%i type %i", gettid(), channel->local_channel, channel->remote_channel, payload->type);
 
     payload->next=NULL;
 
