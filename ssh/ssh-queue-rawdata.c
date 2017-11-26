@@ -190,7 +190,6 @@ static void process_rawdata_session(struct rawdata_s *data)
 	unsigned int maclen=get_maclen_s2c(session);
 
 	packet.len=get_uint32(firstbytes);
-
 	data->len=packet.len + 4 + maclen;
 	data->maclen=maclen;
 
@@ -646,7 +645,8 @@ void switch_process_rawdata_queue(struct ssh_session_s *session, const char *pha
 
     } else if (strcmp(phase, "init")==0) {
 
-	queue->process_rawdata=process_rawdata_init;
+	// queue->process_rawdata=process_rawdata_init;
+	queue->process_rawdata=process_rawdata_session;
 
     } else if (strcmp(phase, "session")==0) {
 
