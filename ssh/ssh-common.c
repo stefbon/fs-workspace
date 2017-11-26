@@ -58,6 +58,7 @@
 #include "ssh-send.h"
 #include "ssh-data.h"
 #include "ssh-channel-table.h"
+#include "ssh-channel.h"
 
 #include "ssh-utils.h"
 
@@ -805,7 +806,6 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
     }
 
     if (! session) {
-
 	unsigned int error=0;
 	pthread_mutex_t *mutex=NULL;
 	pthread_cond_t *cond=NULL;
