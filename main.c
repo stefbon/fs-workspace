@@ -758,7 +758,7 @@ int main(int argc, char *argv[])
 
     if (init_discover_group(&error)==-1) {
 
-	logoutput("MAIN: error, cannot initialize discover group, error: %i (%s).", error, strerror(error));
+	logoutput_error("MAIN: error, cannot initialize discover group, error: %i (%s).", error, strerror(error));
 	goto post;
 
     } else {
@@ -771,14 +771,14 @@ int main(int argc, char *argv[])
 
     if (init_inode_hashtable(&error)==-1) {
 
-	logoutput("MAIN: error, cannot initialize inode hash table, error: %i (%s).", error, strerror(error));
+	logoutput_error("MAIN: error, cannot initialize inode hash table, error: %i (%s).", error, strerror(error));
 	goto post;
 
     }
 
     if (initialize_fuse_users(&error)==-1) {
 
-	logoutput("MAIN: error, cannot initialize fuse users hash table, error: %i (%s).", error, strerror(error));
+	logoutput_error("MAIN: error, cannot initialize fuse users hash table, error: %i (%s).", error, strerror(error));
 	goto post;
 
     }
@@ -790,7 +790,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput_error("MAIN: creating eventloop");
+	logoutput("MAIN: creating eventloop");
 
     }
 
@@ -801,7 +801,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput_error("MAIN: adding signal handler");
+	logoutput("MAIN: adding signal handler");
 
     }
 
@@ -812,7 +812,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput_error("MAIN: open mountmonitor");
+	logoutput("MAIN: open mountmonitor");
 
     }
 
@@ -837,10 +837,8 @@ int main(int argc, char *argv[])
 
 	    snprintf(procpath, 64, "/proc/%i/cmdline", alreadyrunning);
 
-	    /*
-		check here for existence of cmdline
-		a better check will be to test also the cmdline contains this programname if it exists
-	    */
+	    /* check here for existence of cmdline
+		a better check will be to test also the cmdline contains this programname if it exists */
 
 	    if (stat(procpath, &st)==-1) {
 
