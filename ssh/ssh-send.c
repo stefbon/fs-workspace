@@ -101,23 +101,16 @@ void log_message(unsigned char *buff, unsigned int len, const char *name, unsign
 	so adjust n2 (=padding_length) to follow this rule
 	and n2>=4
 */
-/*
-    construct the raw ssh packet
-    it does that by creating an array of char
-    to determine the length of this array use the fill_package callback
-    when calling it with a second parameter NULL, it returns the len
-    when calling it with a second parameter pointer (not NULL) it fills the array to create a valid packet
-*/
 
 static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr), void *ptr, unsigned int *seq)
 {
     unsigned int payload_len=fill_raw_message(session, NULL, ptr);
-    unsigned char buffer[sizeof(struct ssh_payload_s) + payload_len];
+    char buffer[sizeof(struct ssh_payload_s) + payload_len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
     unsigned int error=0;
     unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
     unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
-    unsigned int len=5 + payload->len;
+    unsigned int len=5 + payload_len;
     unsigned char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
     unsigned char n2=0, len_mod=0;
     int result=0;
@@ -125,14 +118,21 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     struct ssh_packet_s packet;
     struct ssh_send_s *send=&session->send;
 
-    /* construct the payload */
+    /* get the payload */
 
-    memset(buffer, '\0', sizeof(struct ssh_payload_s) + payload_len);
+    payload->type=0;
     payload->len=payload_len;
+    payload->sequence=0;
+    payload->next=NULL;
+    payload->prev=NULL;
+    memset(payload->buffer, 0, payload_len);
     payload->len=fill_raw_message(session, payload, ptr);
 
-    memset(raw_message, '\0', sizeof(struct ssh_packet_s) + len + 2 * message_blocksize);
-    n2=get_message_padding(session, len, message_blocksize);
+    /* fill the ssh message  */
+
+    memset(raw_message, '\0', sizeof(struct ssh_packet_s) + len + 2 * message_blocksize); /* a buffer large enough */
+    len=payload->len + 5; /* payload length plus 4 for the length and the byte for the padding length */
+    n2=get_message_padding(session, len, message_blocksize); /* the padding depends on the cipher used */
 
     packet.buffer=raw_message;
     packet.len = len + n2; /* packet len plus the padding size */
@@ -191,7 +191,8 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
 
     }
 
-    reset_c2s_mac(session);
+    /* ????? reset here ???? */
+    // reset_c2s_mac(session);
     return result;
 
 }
