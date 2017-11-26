@@ -282,35 +282,45 @@ struct ssh_compression_s {
     void				(*close_inflate)(struct ssh_compression_s *compression);
 };
 
-struct ssh_encryption_s {
-    struct library_s			library_c2s;
-    struct library_s			library_s2c;
+struct ssh_encryption_s;
+
+struct ssh_encrypt_s {
+    struct library_s			library;
     int					(*set_encrypt)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    int 				(*encrypt)(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet);
+    void				(*reset_encrypt)(struct ssh_encryption_s *encryption);
+    void				(*close_encrypt)(struct ssh_encryption_s *encryption);
+    void				(*free_encrypt)(struct ssh_encryption_s *encryption);
+    unsigned int			blocksize;
+    int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
+    int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
+    struct ssh_string_s 		key;
+    struct ssh_string_s 		*iv;
+    unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
+};
+
+struct ssh_decrypt_s {
+    struct library_s			library;
     int					(*set_decrypt)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
     int 				(*decrypt_length)(struct rawdata_s *data, unsigned char *buffer, unsigned int len);
     int 				(*decrypt_packet)(struct rawdata_s *data);
-    int 				(*encrypt)(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet);
     void				(*reset_decrypt)(struct ssh_encryption_s *encryption);
-    void				(*reset_encrypt)(struct ssh_encryption_s *encryption);
     void				(*close_decrypt)(struct ssh_encryption_s *encryption);
-    void				(*close_encrypt)(struct ssh_encryption_s *encryption);
     void				(*free_decrypt)(struct ssh_encryption_s *encryption);
-    void				(*free_encrypt)(struct ssh_encryption_s *encryption);
+    unsigned int			blocksize;
+    int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
+    int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
+    struct ssh_string_s 		key;
+    struct ssh_string_s 		*iv;
+    unsigned int			size_firstbytes;
+};
+
+struct ssh_encryption_s {
+    struct ssh_decrypt_s		decrypt;
+    struct ssh_encrypt_s		encrypt;
     unsigned int 			(*get_cipher_keysize)(const char *name);
     unsigned int 			(*get_cipher_blocksize)(const char *name);
     unsigned int 			(*get_cipher_ivsize)(const char *name);
-    unsigned int			blocksize_c2s;
-    unsigned int			blocksize_s2c;
-    int					(*setkey_c2s)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    int					(*setkey_s2c)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    int					(*setiv_c2s)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    int					(*setiv_s2c)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    struct ssh_string_s 		key_s2c;
-    struct ssh_string_s 		key_c2s;
-    struct ssh_string_s 		*iv_s2c;
-    struct ssh_string_s 		*iv_c2s;
-    unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
-    unsigned int			size_firstbytes;
 };
 
 struct ssh_hmac_s {
