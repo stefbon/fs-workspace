@@ -261,8 +261,6 @@ void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet
 
     */
 
-    logoutput("queue_ssh_packet: len %i", len);
-
     payload=malloc(sizeof(struct ssh_payload_s) + len);
 
     if (payload) {
