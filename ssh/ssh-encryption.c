@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2103, 2014, 2015, 2016 Stef Bon <stefbon@gmail.com>
+  2010, 2011, 2012, 2103, 2014, 2015, 2016, 2017 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -51,7 +51,7 @@
 
 static int decrypt_length_none(struct rawdata_s *data, unsigned char *buffer, unsigned int len)
 {
-    memcpy(buffer, data, len);
+    memcpy(buffer, data->buffer, len);
     data->decrypted=len;
     return 0;
 }
@@ -100,27 +100,31 @@ static unsigned char get_padding_default(unsigned int len, unsigned int blocksiz
 
 static void set_decrypt_none(struct ssh_encryption_s *encryption)
 {
-    encryption->library_s2c.type=_LIBRARY_NONE;
-    encryption->library_s2c.ptr=NULL;
-    encryption->decrypt_length=decrypt_length_none;
-    encryption->decrypt_packet=decrypt_packet_none;
-    encryption->reset_decrypt=reset_none;
-    encryption->close_encrypt=close_none;
-    encryption->free_decrypt=free_none;
-    encryption->blocksize_s2c=8; /* just take a convenient value */
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+
+    decrypt->library.type=_LIBRARY_NONE;
+    decrypt->library.ptr=NULL;
+    decrypt->decrypt_length=decrypt_length_none;
+    decrypt->decrypt_packet=decrypt_packet_none;
+    decrypt->reset_decrypt=reset_none;
+    decrypt->close_decrypt=close_none;
+    decrypt->free_decrypt=free_none;
+    decrypt->blocksize=8; /* just take a convenient value */
+    decrypt->size_firstbytes=8;
 }
 
 static void set_encrypt_none(struct ssh_encryption_s *encryption)
 {
-    encryption->library_c2s.type=_LIBRARY_NONE;
-    encryption->library_c2s.ptr=NULL;
-    encryption->encrypt=encrypt_none;
-    encryption->reset_encrypt=reset_none;
-    encryption->close_encrypt=close_none;
-    encryption->free_encrypt=free_none;
-    encryption->blocksize_c2s=8; /* just take a convenient value */
-    encryption->get_message_padding=get_padding_default;
-    encryption->size_firstbytes=8;
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+
+    encrypt->library.type=_LIBRARY_NONE;
+    encrypt->library.ptr=NULL;
+    encrypt->encrypt=encrypt_none;
+    encrypt->reset_encrypt=reset_none;
+    encrypt->close_encrypt=close_none;
+    encrypt->free_encrypt=free_none;
+    encrypt->blocksize=8; /* just take a convenient value */
+    encrypt->get_message_padding=get_padding_default;
 }
 
 void init_encryption(struct ssh_session_s *session)
@@ -130,10 +134,10 @@ void init_encryption(struct ssh_session_s *session)
     set_decrypt_none(encryption);
     set_encrypt_none(encryption);
 
-    /* initialization vectors are stored in a central location */
+    /* initialization vectors are stored on a central location */
 
-    encryption->iv_s2c=&session->crypto.keydata.iv_s2c;
-    encryption->iv_c2s=&session->crypto.keydata.iv_c2s;
+    encryption->decrypt.iv=&session->crypto.keydata.iv_s2c;
+    encryption->encrypt.iv=&session->crypto.keydata.iv_c2s;
 
     init_encryption_libgcrypt(encryption);
 
@@ -150,8 +154,9 @@ int set_encryption(struct ssh_session_s *session, const char *name, unsigned int
 
     } else {
 	struct ssh_encryption_s *encryption=&session->crypto.encryption;
+	struct ssh_encrypt_s *encrypt=&encryption->encrypt;
 
-	return (* encryption->set_encrypt)(encryption, name, error);
+	return (* encrypt->set_encrypt)(encryption, name, error);
 
     }
 
@@ -170,7 +175,9 @@ int set_decryption(struct ssh_session_s *session, const char *name, unsigned int
 
     } else {
 	struct ssh_encryption_s *encryption=&session->crypto.encryption;
-	return (* encryption->set_decrypt)(encryption, name, error);
+	struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+
+	return (* decrypt->set_decrypt)(encryption, name, error);
 
     }
 
@@ -178,71 +185,130 @@ int set_decryption(struct ssh_session_s *session, const char *name, unsigned int
 
 }
 
+/* encryption/c2s functions */
+
 int ssh_encrypt(struct ssh_session_s *session, struct ssh_packet_s *packet)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return  (* encryption->encrypt)(encryption, packet);
-}
-
-int ssh_decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned int len)
-{
-    struct ssh_encryption_s *encryption=&data->session->crypto.encryption;
-    return  (* encryption->decrypt_length)(data, buffer, len);
-}
-
-int ssh_decrypt_packet(struct rawdata_s *data)
-{
-    struct ssh_encryption_s *encryption=&data->session->crypto.encryption;
-    return  (* encryption->decrypt_packet)(data);
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    return  (* encrypt->encrypt)(encryption, packet);
 }
 
 void reset_encrypt(struct ssh_session_s *session)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->reset_encrypt)(encryption);
-}
-
-void reset_decrypt(struct ssh_session_s *session)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->reset_decrypt)(encryption);
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    (* encrypt->reset_encrypt)(encryption);
 }
 
 void close_encrypt(struct ssh_session_s *session)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->close_encrypt)(encryption);
-}
-
-void close_decrypt(struct ssh_session_s *session)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->close_decrypt)(encryption);
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    (* encrypt->close_encrypt)(encryption);
 }
 
 void free_encrypt(struct ssh_session_s *session)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->free_encrypt)(encryption);
-}
-
-void free_decrypt(struct ssh_session_s *session)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    (* encryption->free_decrypt)(encryption);
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    (* encrypt->free_encrypt)(encryption);
 }
 
 unsigned int get_cipher_blocksize_c2s(struct ssh_session_s *session)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return encryption->blocksize_c2s;
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    return encrypt->blocksize;
+}
+
+int set_cipher_key_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    return (* encrypt->setkey)(&encrypt->key, name, key);
+}
+
+int set_cipher_iv_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    return (* encrypt->setiv)(encrypt->iv, name, iv);
+}
+
+unsigned char get_message_padding(struct ssh_session_s *session, unsigned int len, unsigned int blocksize)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+    return (* encrypt->get_message_padding)(len, blocksize);
+}
+
+/* decryption/s2c functions */
+
+int ssh_decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned int len)
+{
+    struct ssh_encryption_s *encryption=&data->session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return  (* decrypt->decrypt_length)(data, buffer, len);
+}
+
+int ssh_decrypt_packet(struct rawdata_s *data)
+{
+    struct ssh_encryption_s *encryption=&data->session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return  (* decrypt->decrypt_packet)(data);
+}
+
+void reset_decrypt(struct ssh_session_s *session)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    (* decrypt->reset_decrypt)(encryption);
+}
+
+void close_decrypt(struct ssh_session_s *session)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    (* decrypt->close_decrypt)(encryption);
+}
+
+void free_decrypt(struct ssh_session_s *session)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    (* decrypt->free_decrypt)(encryption);
 }
 
 unsigned int get_cipher_blocksize_s2c(struct ssh_session_s *session)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return encryption->blocksize_s2c;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return decrypt->blocksize;
 }
+
+int set_cipher_key_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return (* decrypt->setkey)(&decrypt->key, name, key);
+}
+
+int set_cipher_iv_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return (* decrypt->setiv)(decrypt->iv, name, iv);
+}
+
+unsigned int get_size_firstbytes(struct ssh_session_s *session)
+{
+    struct ssh_encryption_s *encryption=&session->crypto.encryption;
+    struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+    return decrypt->size_firstbytes;
+}
+
+/* common functions */
 
 unsigned int get_cipher_keysize(struct ssh_session_s *session, const char *name)
 {
@@ -262,42 +328,6 @@ unsigned int get_cipher_ivsize(struct ssh_session_s *session, const char *name)
     return (*encryption->get_cipher_ivsize)(name);
 }
 
-int set_cipher_key_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return (* encryption->setkey_c2s)(&encryption->key_c2s, name, key);
-}
-
-int set_cipher_key_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return (* encryption->setkey_s2c)(&encryption->key_s2c, name, key);
-}
-
-int set_cipher_iv_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return (* encryption->setiv_c2s)(encryption->iv_c2s, name, key);
-}
-
-int set_cipher_iv_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return (* encryption->setiv_s2c)(encryption->iv_s2c, name, key);
-}
-
-unsigned char get_message_padding(struct ssh_session_s *session, unsigned int len, unsigned int blocksize)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return (* encryption->get_message_padding)(len, blocksize);
-}
-
-unsigned int get_size_firstbytes(struct ssh_session_s *session)
-{
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    return encryption->size_firstbytes;
-}
-
 unsigned int check_add_ciphername(const char *name, struct commalist_s *clist)
 {
     return check_add_generic(get_ssh_options("ciphers"), name, clist);
@@ -310,7 +340,6 @@ unsigned int ssh_get_cipher_list(struct commalist_s *clist)
 
     len+=add_name_to_commalist("none", clist, &error);
     len+=ssh_get_cipher_list_libgcrypt(clist);
-
     return len;
 
 }
