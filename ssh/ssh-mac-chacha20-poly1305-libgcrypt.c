@@ -51,9 +51,6 @@
 
 #define POLY1305_TAGLEN				16
 
-extern gcry_mac_hd_t get_mac_handle_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption);
-extern gcry_mac_hd_t get_mac_handle_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption);
-
 static void _reset_dummy(struct ssh_hmac_s *hmac)
 {
 }
@@ -174,4 +171,3 @@ unsigned int _get_mac_keylen_chacha20_poly1305()
     /* no key for mac used */
     return 0;
 }
-
