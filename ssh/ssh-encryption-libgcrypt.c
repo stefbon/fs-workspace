@@ -44,6 +44,7 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
+#include "ssh-data.h"
 #include "gcrypt.h"
 
 #include "ssh-encryption-chacha20-poly1305-libgcrypt.h"
@@ -64,7 +65,6 @@ static void _close_cipher(struct libgcrypt_cipher_s *cipher)
 	cipher->handle=NULL;
 
     }
-
 }
 
 static void _free_cipher(struct libgcrypt_cipher_s *cipher)
@@ -73,15 +73,12 @@ static void _free_cipher(struct libgcrypt_cipher_s *cipher)
     free(cipher);
 }
 
-/*
-    generic decrypt of the first block to get the length
-*/
+/* generic decrypt of the first block to get the length */
 
 static int _decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned int len)
 {
-    struct ssh_session_s *session=data->session;
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct ssh_decrypt_s *decrypt=&data->session->crypto.encryption.decrypt;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) decrypt->library.ptr;
     gcry_error_t result=0;
 
     result=gcry_cipher_decrypt(cipher->handle, buffer, len, data->buffer, len);
@@ -103,9 +100,8 @@ static int _decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsign
 
 static int _decrypt_packet(struct rawdata_s *data)
 {
-    struct ssh_session_s *session=data->session;
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct ssh_decrypt_s *decrypt=&data->session->crypto.encryption.decrypt;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) decrypt->library.ptr;
     gcry_error_t result=0;
 
     result=gcry_cipher_decrypt(cipher->handle, data->buffer + data->decrypted, data->len - data->decrypted - data->maclen, NULL, 0);
@@ -127,36 +123,37 @@ static int _decrypt_packet(struct rawdata_s *data)
 
 static void _reset_decrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 
     gcry_cipher_reset(cipher->handle);
-    gcry_cipher_setiv(cipher->handle, encryption->iv_s2c->ptr, encryption->iv_s2c->len);
+    gcry_cipher_setiv(cipher->handle, encryption->decrypt.iv->ptr, encryption->decrypt.iv->len);
 
 }
 
 static void _close_decrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
-
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
     if (cipher) _close_cipher(cipher);
 }
 
 static void _free_decrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 
     if (cipher) {
 
 	_free_cipher(cipher);
-	encryption->library_s2c.ptr=NULL;
+	encryption->decrypt.library.ptr=NULL;
 
     }
-    free_ssh_string(&encryption->key_s2c);
+
+    free_ssh_string(&encryption->decrypt.key);
+
 }
 
 static int _encrypt_packet(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     gcry_error_t result=0;
 
     result=gcry_cipher_encrypt(cipher->handle, packet->buffer, packet->len, NULL, 0);
@@ -177,31 +174,31 @@ static int _encrypt_packet(struct ssh_encryption_s *encryption, struct ssh_packe
 
 static void _reset_encrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 
     gcry_cipher_reset(cipher->handle);
-    gcry_cipher_setiv(cipher->handle, encryption->iv_c2s->ptr, encryption->iv_c2s->len);
+    gcry_cipher_setiv(cipher->handle, encryption->encrypt.iv->ptr, encryption->encrypt.iv->len);
 
 }
 
 static void _close_encrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     if (cipher) _close_cipher(cipher);
 }
 
 static void _free_encrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 
     if (cipher) {
 
 	_free_cipher(cipher);
-	encryption->library_c2s.ptr=NULL;
+	encryption->encrypt.library.ptr=NULL;
 
     }
 
-    free_ssh_string(&encryption->key_c2s);
+    free_ssh_string(&encryption->encrypt.key);
 }
 
 /*
@@ -498,17 +495,17 @@ static int _set_encryption_c2s(struct ssh_encryption_s *encryption, const char *
 
     }
 
-    if (_init_encryption_generic(&encryption->library_c2s, name, error)==0) {
-	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    if (_init_encryption_generic(&encryption->encrypt.library, name, error)==0) {
+	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 
-	encryption->encrypt=_encrypt_packet;
-	encryption->reset_encrypt=_reset_encrypt;
-	encryption->close_encrypt=_close_encrypt;
-	encryption->free_encrypt=_free_encrypt;
+	encryption->encrypt.encrypt=_encrypt_packet;
+	encryption->encrypt.reset_encrypt=_reset_encrypt;
+	encryption->encrypt.close_encrypt=_close_encrypt;
+	encryption->encrypt.free_encrypt=_free_encrypt;
 
-	gcry_cipher_setkey(cipher->handle, encryption->key_c2s.ptr, encryption->key_c2s.len);
+	gcry_cipher_setkey(cipher->handle, encryption->encrypt.key.ptr, encryption->encrypt.key.len);
 
-	encryption->blocksize_c2s=(unsigned int) gcry_cipher_get_algo_blklen(cipher->algo);
+	encryption->encrypt.blocksize=(unsigned int) gcry_cipher_get_algo_blklen(cipher->algo);
 
 	_reset_encrypt(encryption);
 
@@ -534,19 +531,19 @@ static int _set_encryption_s2c(struct ssh_encryption_s *encryption, const char *
 
     }
 
-    if (_init_encryption_generic(&encryption->library_s2c, name, error)==0) {
-	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    if (_init_encryption_generic(&encryption->decrypt.library, name, error)==0) {
+	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 
-	encryption->decrypt_length=_decrypt_length;
-	encryption->decrypt_packet=_decrypt_packet;
-	encryption->reset_decrypt=_reset_decrypt;
-	encryption->close_decrypt=_close_decrypt;
-	encryption->free_decrypt=_free_decrypt;
+	encryption->decrypt.decrypt_length=_decrypt_length;
+	encryption->decrypt.decrypt_packet=_decrypt_packet;
+	encryption->decrypt.reset_decrypt=_reset_decrypt;
+	encryption->decrypt.close_decrypt=_close_decrypt;
+	encryption->decrypt.free_decrypt=_free_decrypt;
 
-	gcry_cipher_setkey(cipher->handle, encryption->key_s2c.ptr, encryption->key_s2c.len);
+	gcry_cipher_setkey(cipher->handle, encryption->decrypt.key.ptr, encryption->decrypt.key.len);
 
-	encryption->blocksize_s2c=(unsigned int) gcry_cipher_get_algo_blklen(cipher->algo);
-	encryption->size_firstbytes=8;
+	encryption->decrypt.blocksize=(unsigned int) gcry_cipher_get_algo_blklen(cipher->algo);
+	encryption->decrypt.size_firstbytes=8;
 
 	_reset_decrypt(encryption);
 
@@ -563,15 +560,17 @@ static int _set_encryption_s2c(struct ssh_encryption_s *encryption, const char *
 
 void init_encryption_libgcrypt(struct ssh_encryption_s *encryption)
 {
-    encryption->set_encrypt=_set_encryption_c2s;
-    encryption->set_decrypt=_set_encryption_s2c;
+    encryption->encrypt.set_encrypt=_set_encryption_c2s;
+    encryption->decrypt.set_decrypt=_set_encryption_s2c;
+
     encryption->get_cipher_blocksize=_get_cipher_blocksize;
     encryption->get_cipher_keysize=_get_cipher_keysize;
     encryption->get_cipher_ivsize=_get_cipher_ivsize;
-    encryption->setkey_c2s=_setkey_c2s;
-    encryption->setkey_s2c=_setkey_s2c;
-    encryption->setiv_c2s=_setiv_c2s;
-    encryption->setiv_s2c=_setiv_s2c;
+
+    encryption->encrypt.setkey=_setdata_key;
+    encryption->decrypt.setkey=_setdata_key;
+    encryption->encrypt.setiv=_setdata_iv;
+    encryption->decrypt.setiv=_setdata_iv;
 }
 
 static signed char test_algo_libgcrypt(const char *name)
