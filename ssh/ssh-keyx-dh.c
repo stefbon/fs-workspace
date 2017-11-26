@@ -1063,8 +1063,6 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_init_a
     get_session_expire_init(session, &expire);
     payload=get_ssh_payload(session, &expire, &sequence, &error);
 
-    logoutput("start_keyx_dh_static: A");
-
     if (! payload) {
 
 	if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
@@ -1075,8 +1073,6 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_init_a
     } else {
 
 	if (payload->type == SSH_MSG_KEXDH_REPLY) {
-
-	    logoutput("start_keyx_dh_static: B");
 
 	    if (read_keyx_dh_reply(session, payload, algos)==-1) {
 
