@@ -44,6 +44,7 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
+#include "ssh-data.h"
 #include "gcrypt.h"
 
 #define CHACHA20_BLOCKSIZE			64
@@ -114,9 +115,8 @@ static unsigned char get_padding_custom(unsigned int len, unsigned int blocksize
 
 static int _decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned int len)
 {
-    struct ssh_session_s *session=data->session;
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct ssh_decrypt_s *decrypt=&data->session->crypto.encryption.decrypt;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) decrypt->library.ptr;
     gcry_error_t result=0;
     unsigned char seqbuff[8];
 
@@ -151,9 +151,8 @@ static int _decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsign
 
 static int _decrypt_packet(struct rawdata_s *data)
 {
-    struct ssh_session_s *session=data->session;
-    struct ssh_encryption_s *encryption=&session->crypto.encryption;
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct ssh_decrypt_s *decrypt=&data->session->crypto.encryption.decrypt;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) decrypt->library.ptr;
     gcry_error_t result=0;
 
     result=gcry_cipher_decrypt(cipher->main_handle, data->buffer + data->decrypted, data->len - data->decrypted - data->maclen, NULL, 0);
@@ -180,21 +179,20 @@ static void _reset_decrypt(struct ssh_encryption_s *encryption)
 
 static void _close_decrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
-
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
     if (cipher) _close_cipher(cipher);
 }
 
 static void _free_decrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
     if (cipher) _free_cipher(cipher);
-    free_ssh_string(&encryption->key_s2c);
+    free_ssh_string(&encryption->decrypt.key);
 }
 
 static int _encrypt_packet(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     gcry_error_t result=0;
     unsigned char seqbuff[8];
     unsigned char poly1305_key[CHACHA20_BLOCKSIZE];
@@ -236,15 +234,15 @@ static void _reset_encrypt(struct ssh_encryption_s *encryption)
 
 static void _close_encrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     if (cipher) _close_cipher(cipher);
 }
 
 static void _free_encrypt(struct ssh_encryption_s *encryption)
 {
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     if (cipher) _free_cipher(cipher);
-    free_ssh_string(&encryption->key_c2s);
+    free_ssh_string(&encryption->encrypt.key);
 }
 
 /*
@@ -322,23 +320,23 @@ static int _init_encryption_chacha20_poly1305(struct library_s *library, unsigne
 int _set_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
 {
 
-    if (_init_encryption_chacha20_poly1305(&encryption->library_c2s, error)==0) {
+    if (_init_encryption_chacha20_poly1305(&encryption->encrypt.library, error)==0) {
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
-	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
+	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
 
-	encryption->encrypt=_encrypt_packet;
-	encryption->reset_encrypt=_reset_encrypt;
-	encryption->close_encrypt=_close_encrypt;
-	encryption->free_encrypt=_free_encrypt;
+	encryption->encrypt.encrypt=_encrypt_packet;
+	encryption->encrypt.reset_encrypt=_reset_encrypt;
+	encryption->encrypt.close_encrypt=_close_encrypt;
+	encryption->encrypt.free_encrypt=_free_encrypt;
 
 	/* divide the 64 bytes key into two 32 bytes */
 
-	gcry_cipher_setkey(cipher->main_handle, encryption->key_c2s.ptr, 32);
-	gcry_cipher_setkey(cipher->header_handle, encryption->key_c2s.ptr+32, 32);
+	gcry_cipher_setkey(cipher->main_handle, encryption->encrypt.key.ptr, 32);
+	gcry_cipher_setkey(cipher->header_handle, encryption->encrypt.key.ptr+32, 32);
 
-	encryption->blocksize_c2s=CHACHA20_BLOCKSIZE;
-	encryption->get_message_padding=get_padding_custom;
+	encryption->encrypt.blocksize=CHACHA20_BLOCKSIZE;
+	encryption->encrypt.get_message_padding=get_padding_custom; /* padding is different */
 
 	_reset_encrypt(encryption);
 
@@ -360,22 +358,22 @@ int _set_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 int _set_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
 {
 
-    if (_init_encryption_chacha20_poly1305(&encryption->library_s2c, error)==0) {
+    if (_init_encryption_chacha20_poly1305(&encryption->decrypt.library, error)==0) {
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
-	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
+	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
 
-	encryption->decrypt_length=_decrypt_length;
-	encryption->decrypt_packet=_decrypt_packet;
-	encryption->reset_decrypt=_reset_decrypt;
-	encryption->close_decrypt=_close_decrypt;
-	encryption->free_decrypt=_free_decrypt;
-	encryption->size_firstbytes=4;
+	encryption->decrypt.decrypt_length=_decrypt_length;
+	encryption->decrypt.decrypt_packet=_decrypt_packet;
+	encryption->decrypt.reset_decrypt=_reset_decrypt;
+	encryption->decrypt.close_decrypt=_close_decrypt;
+	encryption->decrypt.free_decrypt=_free_decrypt;
+	encryption->decrypt.size_firstbytes=4;
 
-	gcry_cipher_setkey(cipher->main_handle, encryption->key_s2c.ptr, 32);
-	gcry_cipher_setkey(cipher->header_handle, encryption->key_s2c.ptr+32, 32);
+	gcry_cipher_setkey(cipher->main_handle, encryption->decrypt.key.ptr, 32);
+	gcry_cipher_setkey(cipher->header_handle, encryption->decrypt.key.ptr+32, 32);
 
-	encryption->blocksize_s2c=CHACHA20_BLOCKSIZE;
+	encryption->decrypt.blocksize=CHACHA20_BLOCKSIZE;
 
 	_reset_decrypt(encryption);
 
@@ -410,16 +408,4 @@ signed char test_algo_chacha20_poly1305()
     }
 
     return result;
-}
-
-gcry_mac_hd_t get_mac_handle_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption)
-{
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_s2c.ptr;
-    return cipher->mac_handle;
-}
-
-gcry_mac_hd_t get_mac_handle_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption)
-{
-    struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->library_c2s.ptr;
-    return cipher->mac_handle;
 }
