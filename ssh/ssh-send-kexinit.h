@@ -23,6 +23,4 @@
 int send_kexinit(struct ssh_session_s *ssh_session, struct ssh_payload_s *payload, void *ptr);
 int send_newkeys(struct ssh_session_s *ssh_session, struct ssh_payload_s *payload, void *ptr);
 
-int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struct ssh_init_algo *algos);
-
 #endif
