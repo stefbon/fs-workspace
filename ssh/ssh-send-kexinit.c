@@ -581,7 +581,10 @@ int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struc
     pos_client+=17;
     pos_server+=17;
 
-    /* kex algorithms like dh */
+    /* kex algorithms like dh
+	20171126:
+	work on the possibility to accept ext-info-s
+	(see: https://tools.ietf.org/html/draft-ssh-ext-info-05)*/
 
     len_client=get_uint32(pos_client);
     pos_client+=4;
