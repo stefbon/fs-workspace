@@ -317,7 +317,7 @@ static int _init_encryption_chacha20_poly1305(struct library_s *library, unsigne
 
 }
 
-int _set_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
+int init_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
 {
 
     if (_init_encryption_chacha20_poly1305(&encryption->encrypt.library, error)==0) {
@@ -355,7 +355,7 @@ int _set_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 
 }
 
-int _set_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
+int init_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error)
 {
 
     if (_init_encryption_chacha20_poly1305(&encryption->decrypt.library, error)==0) {
