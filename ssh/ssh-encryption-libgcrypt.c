@@ -406,27 +406,6 @@ static int _setdata_iv(struct ssh_string_s *key, char *name, struct ssh_string_s
 
 }
 
-static int _setkey_c2s(struct ssh_string_s *key, char *name, struct ssh_string_s *new)
-{
-    return _setdata_key(key, name, new);
-}
-
-static int _setkey_s2c(struct ssh_string_s *key, char *name, struct ssh_string_s *new)
-{
-    return _setdata_key(key, name, new);
-}
-
-static int _setiv_c2s(struct ssh_string_s *key, char *name, struct ssh_string_s *new)
-{
-    return _setdata_iv(key, name, new);
-}
-
-static int _setiv_s2c(struct ssh_string_s *key, char *name, struct ssh_string_s *new)
-{
-    return _setdata_iv(key, name, new);
-}
-
-
 static int _init_encryption_generic(struct library_s *library, const char *name, unsigned int *error)
 {
     unsigned int algo=0;
@@ -484,14 +463,14 @@ static int _init_encryption_generic(struct library_s *library, const char *name,
 
 }
 
-static int _set_encryption_c2s(struct ssh_encryption_s *encryption, const char *name, unsigned int *error)
+static int init_encryption_c2s(struct ssh_encryption_s *encryption, const char *name, unsigned int *error)
 {
 
     /* handle specials first */
 
     if (strcmp(name, "chacha20-poly1305@openssh.com")==0) {
 
-	return _set_encryption_c2s_chacha20_poly1305(encryption, error);
+	return init_encryption_c2s_chacha20_poly1305(encryption, error);
 
     }
 
@@ -520,14 +499,14 @@ static int _set_encryption_c2s(struct ssh_encryption_s *encryption, const char *
 
 }
 
-static int _set_encryption_s2c(struct ssh_encryption_s *encryption, const char *name, unsigned int *error)
+static int init_encryption_s2c(struct ssh_encryption_s *encryption, const char *name, unsigned int *error)
 {
 
     /* handle specials first */
 
     if (strcmp(name, "chacha20-poly1305@openssh.com")==0) {
 
-	return _set_encryption_s2c_chacha20_poly1305(encryption, error);
+	return init_encryption_s2c_chacha20_poly1305(encryption, error);
 
     }
 
@@ -560,8 +539,8 @@ static int _set_encryption_s2c(struct ssh_encryption_s *encryption, const char *
 
 void init_encryption_libgcrypt(struct ssh_encryption_s *encryption)
 {
-    encryption->encrypt.set_encrypt=_set_encryption_c2s;
-    encryption->decrypt.set_decrypt=_set_encryption_s2c;
+    encryption->encrypt.init=init_encryption_c2s;
+    encryption->decrypt.init=init_encryption_s2c;
 
     encryption->get_cipher_blocksize=_get_cipher_blocksize;
     encryption->get_cipher_keysize=_get_cipher_keysize;
