@@ -286,7 +286,7 @@ struct ssh_encryption_s;
 
 struct ssh_encrypt_s {
     struct library_s			library;
-    int					(*set_encrypt)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
     int 				(*encrypt)(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet);
     void				(*reset_encrypt)(struct ssh_encryption_s *encryption);
     void				(*close_encrypt)(struct ssh_encryption_s *encryption);
@@ -301,7 +301,7 @@ struct ssh_encrypt_s {
 
 struct ssh_decrypt_s {
     struct library_s			library;
-    int					(*set_decrypt)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
     int 				(*decrypt_length)(struct rawdata_s *data, unsigned char *buffer, unsigned int len);
     int 				(*decrypt_packet)(struct rawdata_s *data);
     void				(*reset_decrypt)(struct ssh_encryption_s *encryption);
