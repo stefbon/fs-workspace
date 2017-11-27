@@ -24,8 +24,8 @@ unsigned int _get_cipher_blocksize_chacha20_poly1305();
 unsigned int _get_cipher_keysize_chacha20_poly1305();
 unsigned int _get_cipher_ivsize_chacha20_poly1305();
 
-int _set_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error);
-int _set_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error);
+int init_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error);
+int init_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, unsigned int *error);
 
 signed char test_algo_chacha20_poly1305();
 
