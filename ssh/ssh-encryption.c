@@ -156,7 +156,7 @@ int set_encryption(struct ssh_session_s *session, const char *name, unsigned int
 	struct ssh_encryption_s *encryption=&session->crypto.encryption;
 	struct ssh_encrypt_s *encrypt=&encryption->encrypt;
 
-	return (* encrypt->set_encrypt)(encryption, name, error);
+	return (* encrypt->init)(encryption, name, error);
 
     }
 
@@ -177,7 +177,7 @@ int set_decryption(struct ssh_session_s *session, const char *name, unsigned int
 	struct ssh_encryption_s *encryption=&session->crypto.encryption;
 	struct ssh_decrypt_s *decrypt=&encryption->decrypt;
 
-	return (* decrypt->set_decrypt)(encryption, name, error);
+	return (* decrypt->init)(encryption, name, error);
 
     }
 
