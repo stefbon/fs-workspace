@@ -27,7 +27,7 @@ int send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_strin
 
 int send_userauth_none_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, unsigned int *seq);
 
-unsigned int write_userauth_hostbased_request(unsigned char *buffer, unsigned int size, struct ssh_string_s *ruser, const char *service, struct ssh_key_s *key, struct ssh_string_s *hostname, struct ssh_string_s *luser);
+unsigned int write_userauth_hostbased_request(char *buffer, unsigned int size, struct ssh_string_s *ruser, const char *service, struct ssh_key_s *key, struct ssh_string_s *hostname, struct ssh_string_s *luser);
 int send_userauth_hostbased_message(struct ssh_session_s *session, struct ssh_string_s *ruser, const char *service, struct ssh_key_s *key, struct ssh_string_s *hostname, struct ssh_string_s *luser, struct ssh_string_s *signature, unsigned int *seq);
 
 #endif
