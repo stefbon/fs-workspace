@@ -163,7 +163,7 @@ static int wait_additional_data(struct rawdata_queue_s *r_queue, struct rawdata_
     return result;
 }
 
-/*	process incoming data after the newkeys
+/*	process incoming data on the receive queue
     after decryption and checking the mac queue the payload
     note this works also when mac and encryption are not used */
 
@@ -281,6 +281,11 @@ static void process_rawdata_session(struct rawdata_s *data)
 
 		    /* create packet and queue it */
 
+		    /* TODO: get the type of the packet: this is (unsigned char) packet.buffer[5]
+			if this is newkeys then switch the s2c keys/ciphers/mac/iv and set a condition var to block the incoming messages after this one
+			(crypto->state??? for example)
+		    */
+
 		    queue_ssh_packet(session, &packet);
 
 		} else {
@@ -291,7 +296,7 @@ static void process_rawdata_session(struct rawdata_s *data)
 
 		}
 
-		reset_s2c_mac(session);
+		// reset_s2c_mac(session);
 
 	    } else {
 
@@ -498,6 +503,11 @@ static void process_queued_rawdata(void *ptr)
     readqueue:
 
     pthread_mutex_lock(&queue->mutex);
+
+    /* here a wait loop with pthread_cond_wait for checking the condition the cryptoengine for
+	decrypting is ready (especially after kexinit/newkeys)
+	how does this condition look like? */
+
     process_rawdata=queue->process_rawdata;
 
     /* first process and leave it on the queue */
