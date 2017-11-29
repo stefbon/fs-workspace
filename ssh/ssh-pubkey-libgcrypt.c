@@ -278,7 +278,7 @@ static int create_signature_rsa_libgcrypt(struct ssh_key_s *key, struct common_b
 		    if (signature->ptr) {
 			size_t written=0;
 
-			result=gcry_mpi_print(GCRYMPI_FMT_STD, signature->ptr, size, &written, tmp);
+			result=gcry_mpi_print(GCRYMPI_FMT_STD, (unsigned char *)signature->ptr, size, &written, tmp);
 
 			if (result==GPG_ERR_NO_ERROR) {
 
@@ -428,9 +428,9 @@ static int create_signature_dss_libgcrypt(struct ssh_key_s *key, struct common_b
 
 		if (signature->ptr) {
 		    size_t written=0;
-		    unsigned char *pos=signature->ptr;
+		    char *pos=signature->ptr;
 
-		    result=gcry_mpi_print(GCRYMPI_FMT_STD, pos, size, &written, m_sig_r);
+		    result=gcry_mpi_print(GCRYMPI_FMT_STD, (unsigned char *)pos, size, &written, m_sig_r);
 
 		    if (result!=GPG_ERR_NO_ERROR) {
 
@@ -441,7 +441,7 @@ static int create_signature_dss_libgcrypt(struct ssh_key_s *key, struct common_b
 		    } else {
 
 			pos+=written;
-			result=gcry_mpi_print(GCRYMPI_FMT_STD, pos, size - written, &written, m_sig_s);
+			result=gcry_mpi_print(GCRYMPI_FMT_STD, (unsigned char *)pos, size - written, &written, m_sig_s);
 
 			if (result!=GPG_ERR_NO_ERROR) {
 
