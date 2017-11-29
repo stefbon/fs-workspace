@@ -85,14 +85,14 @@
 static signed char create_hb_signature(struct ssh_session_s *session, struct ssh_string_s *remote_user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *local_user, struct ssh_key_s *private_key, struct ssh_string_s *signature)
 {
     unsigned int len=write_userauth_hostbased_request(NULL, 0, remote_user, service, public_key, hostname, local_user) + 4 + session->data.sessionid.len;
-    unsigned char buffer[len];
+    char buffer[len];
     unsigned int pos=0;
     struct common_buffer_s data;
     unsigned int error=0;
 
     /* session id */
 
-    store_uint32(&buffer[pos], session->data.sessionid.len);
+    store_uint32((unsigned char *) &buffer[pos], session->data.sessionid.len);
     pos+=4;
     memcpy(&buffer[pos], (char *) session->data.sessionid.ptr, session->data.sessionid.len);
     pos+=session->data.sessionid.len;
