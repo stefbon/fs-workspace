@@ -167,8 +167,8 @@ int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struc
     struct session_data_s *data=&session->data;
     struct ssh_string_s *kexinit_client=&session->crypto.keydata.kexinit_client;
     struct ssh_string_s *kexinit_server=&session->crypto.keydata.kexinit_server;
-    unsigned char *pos_client=kexinit_client->ptr;
-    unsigned char *pos_server=kexinit_server->ptr;
+    char *pos_client=kexinit_client->ptr;
+    char *pos_server=kexinit_server->ptr;
     unsigned int len_client=0, total_len_client=0;
     unsigned int len_server=0, total_len_server=0;
 
