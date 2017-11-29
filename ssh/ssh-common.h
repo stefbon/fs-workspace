@@ -41,7 +41,7 @@
 
 struct ssh_string_s {
     unsigned int			len;
-    unsigned char			*ptr;
+    char				*ptr;
 };
 
 struct commalist_s {
@@ -485,14 +485,14 @@ struct session_data_s {
 */
 
 #define		SESSION_KEYDATA_STATUS_INIT			1
-#define		SESSION_KEYDATA_STATUS_KEYINITC			2
-#define		SESSION_KEYDATA_STATUS_KEYINITS			4
-#define		SESSION_KEYDATA_STATUS_KEYEXCHANGE		8
-#define		SESSION_KEYDATA_STATUS_NEWKEYSS			16
-#define		SESSION_KEYDATA_STATUS_NEWKEYSC			32
+#define		SESSION_KEYDATA_STATUS_KEYINIT			2
+#define		SESSION_KEYDATA_STATUS_KEYEXCHANGE		4
+#define		SESSION_KEYDATA_STATUS_NEWKEYS			8
+#define		SESSION_KEYDATA_STATUS_READY			16
 
 struct session_keydata_s {
-    unsigned int			status;
+    unsigned int			status_c2s;
+    unsigned int			status_s2c;
     struct ssh_string_s			kexinit_server;
     struct ssh_string_s			kexinit_client;
     struct ssh_string_s			iv_c2s;
