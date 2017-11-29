@@ -95,7 +95,7 @@ static signed char create_pk_signature(struct ssh_session_s *session, struct ssh
 
     /* session id */
 
-    store_uint32(&buffer[pos], session->data.sessionid.len);
+    store_uint32((unsigned char *) &buffer[pos], session->data.sessionid.len);
     pos+=4;
     memcpy(&buffer[pos], (char *) session->data.sessionid.ptr, session->data.sessionid.len);
     pos+=session->data.sessionid.len;
