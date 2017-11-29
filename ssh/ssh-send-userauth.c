@@ -371,7 +371,7 @@ struct userauth_hostbased_s {
     struct ssh_string_s 	*signature;
 };
 
-static int _write_userauth_hostbased_message(unsigned char *buffer, unsigned int size, void *ptr)
+static int _write_userauth_hostbased_message(char *buffer, unsigned int size, void *ptr)
 {
     struct userauth_hostbased_s *userauth=(struct userauth_hostbased_s *) ptr;
 
@@ -399,7 +399,7 @@ static int _write_userauth_hostbased_message(unsigned char *buffer, unsigned int
 	return len;
 
     } else {
-	unsigned char *pos=buffer;
+	char *pos=buffer;
 	const unsigned char *algo=get_pubkey_name(userauth->hostkey->type);
 	unsigned int lenservice=strlen(userauth->service);
 	unsigned int lenmethod=strlen("hostbased");
@@ -497,7 +497,7 @@ static int _send_userauth_hostbased_message(struct ssh_session_s *session, struc
     return _write_userauth_hostbased_message(payload->buffer, payload->len, ptr);
 }
 
-unsigned int write_userauth_hostbased_request(unsigned char *buffer, unsigned int size, struct ssh_string_s *remote_user, const char *service, struct ssh_key_s *hostkey, struct ssh_string_s *hostname, struct ssh_string_s *local_user)
+unsigned int write_userauth_hostbased_request(char *buffer, unsigned int size, struct ssh_string_s *remote_user, const char *service, struct ssh_key_s *hostkey, struct ssh_string_s *hostname, struct ssh_string_s *local_user)
 {
     struct userauth_hostbased_s userauth;
 

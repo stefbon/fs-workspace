@@ -61,7 +61,7 @@
 static int read_ssh_version(struct ssh_session_s *session)
 {
     struct ssh_string_s *greeter=&session->data.greeter_server;
-    unsigned char *sep=NULL;
+    char *sep=NULL;
     unsigned len_start=strlen(SSH_GREETER_START);
 
     sep=memchr((char *) (greeter->ptr+len_start), '-', greeter->len-len_start);
