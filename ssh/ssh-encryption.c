@@ -191,6 +191,7 @@ int ssh_encrypt(struct ssh_session_s *session, struct ssh_packet_s *packet)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_encrypt_s *encrypt=&encryption->encrypt;
+
     return  (* encrypt->encrypt)(encryption, packet);
 }
 
@@ -249,6 +250,11 @@ int ssh_decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned i
 {
     struct ssh_encryption_s *encryption=&data->session->crypto.encryption;
     struct ssh_decrypt_s *decrypt=&encryption->decrypt;
+
+    /* here a wait for the decryption to be complete
+	after the newkeys message from server the client (this application)
+	requires some time to initialize the decryption/mac/keys/iv's */
+
     return  (* decrypt->decrypt_length)(data, buffer, len);
 }
 
