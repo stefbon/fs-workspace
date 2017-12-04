@@ -275,6 +275,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 	}
 
 	if (context->parent) context->parent->refcount--;
+	remove_list_element(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
 	free_service_context(context);
 
     }
@@ -321,6 +322,7 @@ static struct service_context_s *connect_ssh_server(struct workspace_mount_s *wo
 	} else {
 
 	    logoutput("connect_ssh_server: failed to connect to %s:%i : error %i (%s)", address, port, *error, strerror(*error));
+	    remove_list_element(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
 	    free_service_context(context);
 	    context=NULL;
 
