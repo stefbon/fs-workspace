@@ -389,6 +389,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    logoutput("_setup_ssh_session: error finding common methods");
 	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    error=(session->status.error==0) ? EIO : session->status.error;
 	    goto outkexinit;
 
 	}
@@ -573,6 +574,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    }
 
+	    /* here a "replace" from the old decrypt/hmac to the new ones */
 	    switch_process_rawdata_queue(session, "session");
 	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_READY_S2C;
 
