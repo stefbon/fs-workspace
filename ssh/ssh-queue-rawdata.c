@@ -279,6 +279,29 @@ static void process_rawdata_session(struct rawdata_s *data)
 			(crypto->state??? for example)
 		    */
 
+		    if ((unsigned char) packet.buffer[5] == SSH_MSG_NEWKEYS) {
+			struct session_crypto_s *crypto=&session->crypto;
+
+			logoutput("process_rawdata_session: received newkeys");
+
+			/*
+			    check for errors: is this to be expected?
+			    the phases KEYINIT_S2C and KEYX_S2C must be completed
+			*/
+
+			if (crypto->keydata.status==(SESSION_CRYPTO_STATUS_KEYINIT_S2C | SESSION_CRYPTO_STATUS_KEYX_S2C)) {
+
+			    logoutput("process_rawdata_session: received newkeys, check ok");
+			    crypto->keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_S2C;
+
+			} else {
+
+			    logoutput("process_rawdata_session: received newkeys, check failed");
+
+			}
+
+		    }
+
 		    queue_ssh_packet(session, &packet);
 
 		} else {
