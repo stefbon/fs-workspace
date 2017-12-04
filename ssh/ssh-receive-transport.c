@@ -117,10 +117,7 @@ static void receive_msg_disconnect(struct ssh_session_s *session, struct ssh_pay
 
 static void receive_msg_ignore(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-
-    logoutput("receive_msg_ignore");
     free(payload);
-
 }
 
 /* debug */
@@ -285,13 +282,7 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
 
 static void receive_msg_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-
-    /*
-    */
-
-    logoutput("receive_msg_newkeys");
     free(payload);
-
 }
 
 void register_transport_cb()
