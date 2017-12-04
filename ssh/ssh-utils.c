@@ -246,13 +246,14 @@ void end_sshlibrary()
     free_group_ssh_sessions();
 }
 
-void store_uint32(unsigned char *buff, uint32_t value)
+void store_uint32(char *buff, uint32_t value)
 {
+    unsigned char *tmp=(unsigned char *) buff;
 
-    buff[0] = (value >> 24) & 0xFF;
-    buff[1] = (value >> 16) & 0xFF;
-    buff[2] = (value >> 8) & 0xFF;
-    buff[3] = value & 0xFF;
+    tmp[0] = (value >> 24) & 0xFF;
+    tmp[1] = (value >> 16) & 0xFF;
+    tmp[2] = (value >> 8) & 0xFF;
+    tmp[3] = value & 0xFF;
 
 }
 
@@ -269,16 +270,17 @@ void store_uint64(unsigned char *buff, uint64_t value)
 
 }
 
-unsigned int store_ssh_string(unsigned char *buff, struct ssh_string_s *string)
+unsigned int store_ssh_string(char *buff, struct ssh_string_s *string)
 {
     store_uint32(buff, string->len);
     memcpy(buff+4, string->ptr, string->len);
     return string->len + 4;
 }
 
-uint32_t get_uint32(unsigned char *buf)
+uint32_t get_uint32(char *buf)
 {
-    return (uint32_t) (((uint32_t) buf[0] << 24) | ((uint32_t) buf[1] << 16) | ((uint32_t) buf[2] << 8) | (uint32_t) buf[3]);
+    unsigned char *tmp=(unsigned char *) buf;
+    return (uint32_t) (((uint32_t) tmp[0] << 24) | ((uint32_t) tmp[1] << 16) | ((uint32_t) tmp[2] << 8) | (uint32_t) tmp[3]);
 }
 
 uint16_t get_uint16(unsigned char *buf)
@@ -335,7 +337,7 @@ uint64_t ntohll(uint64_t value)
     return (* utils.ntohll)(value);
 }
 
-unsigned int fill_random(unsigned char *pos, unsigned int len)
+unsigned int fill_random(char *pos, unsigned int len)
 {
     return (* utils.fill_random)(pos, len);
 }

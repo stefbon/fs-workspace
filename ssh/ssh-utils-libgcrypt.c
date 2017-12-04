@@ -171,10 +171,9 @@ void final_hash_libgcrypt(void *ptr, unsigned char *hash, size_t size)
 
 }
 
-static unsigned int fill_random_libgcrypt(unsigned char *pos, unsigned int len)
+static unsigned int fill_random_libgcrypt(char *pos, unsigned int len)
 {
-    gcry_create_nonce(pos, (size_t) len);
-
+    gcry_create_nonce((unsigned char *)pos, (size_t) len);
     return len;
 }
 

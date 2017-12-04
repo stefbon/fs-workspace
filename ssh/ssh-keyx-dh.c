@@ -117,9 +117,9 @@ static int create_H(struct ssh_session_s *session, struct common_buffer_s *out)
     struct ssh_key_s *hostkey=&session->crypto.pubkey.server_hostkey;
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
-    unsigned char buffer[4096]; /* buffer large enough to create H */
+    char buffer[4096]; /* buffer large enough to create H */
     unsigned int len=0;
-    unsigned char *pos=&buffer[0];
+    char *pos=&buffer[0];
     struct common_buffer_s input;
     unsigned int error=0;
 
@@ -254,7 +254,7 @@ static int create_H(struct ssh_session_s *session, struct common_buffer_s *out)
 
     pos+=len;
 
-    /* compute hash (name of the hashtype is in keyx->digestname) */
+    /* compute hash (name of the hashtype is in keyx->digestname, depends on keyexchange method) */
 
     init_common_buffer(&input);
     input.len=(unsigned int) (pos - &buffer[0]);
@@ -274,16 +274,16 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
     unsigned int hashlen=get_digest_len(keyx->digestname);
-    unsigned char out[hashlen];
-    unsigned char *buffer=NULL;
+    char out[hashlen];
+    char *buffer=NULL;
     size_t size=2048;
-    unsigned char *pos=NULL;
+    char *pos=NULL;
     struct common_buffer_s input;
     struct common_buffer_s output;
     unsigned int error=0;
     unsigned int len=0;
 
-    buffer=(unsigned char *) malloc(size);
+    buffer=malloc(size);
 
     if ( ! buffer) {
 
@@ -293,7 +293,7 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
     }
 
     init_common_buffer(&input);
-    input.ptr=(char *) buffer;
+    input.ptr=buffer;
     input.size=size;
     input.len=0;
 
@@ -334,7 +334,7 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
     /* create hash of K || H || "X" || session_id */
 
     output.len=hashlen;
-    output.ptr=(char *) &out[0];
+    output.ptr=&out[0];
 
     len=hash(keyx->digestname, &input, &output, &error);
     if (len==0) goto error;
@@ -434,7 +434,6 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
 
 	    memcpy(key->ptr+key->len, output.ptr, output.len);
 	    key->len+=output.len;
-
 	    goto append;
 
 	}
@@ -469,23 +468,22 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
     unsigned int error=0;
 
     /*
-	iv client to server
-	c2s
+	iv client to server: c2s
     */
 
     keylen=get_session_ivsize(session, algos->encryption_c2s, algos->hmac_c2s);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
-	logoutput("create_keyx_hashes: iv size %i for cipher %s", keylen, algos->encryption_c2s);
+	logoutput("create_keyx_hashes: iv size %i for cipher %s and mac %s", keylen, algos->encryption_c2s, algos->hmac_c2s);
 
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *) &buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -503,28 +501,27 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 
     } else {
 
-	logoutput("create_keyx_hashes: iv size zero for cipher %s", algos->encryption_c2s);
+	logoutput("create_keyx_hashes: iv size zero for cipher %s and mac %s", algos->encryption_c2s, algos->hmac_s2c);
 
     }
 
     /*
-	iv server to client
-	s2c
+	iv server to client: s2c
     */
 
     keylen=get_session_ivsize(session, algos->encryption_s2c, algos->hmac_s2c);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
-	logoutput("create_keyx_hashes: iv size %i for cipher %s", keylen, algos->encryption_s2c);
+	logoutput("create_keyx_hashes: iv size %i for cipher %s and mac %s", keylen, algos->encryption_s2c, algos->hmac_s2c);
 
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *)&buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -542,7 +539,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 
     } else {
 
-	logoutput("create_keyx_hashes: iv size zero for cipher %s", algos->encryption_s2c);
+	logoutput("create_keyx_hashes: iv size zero for cipher %s and mac %s", algos->encryption_s2c, algos->hmac_s2c);
 
     }
 
@@ -551,7 +548,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
     keylen=get_cipher_keysize(session, algos->encryption_c2s);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
@@ -560,7 +557,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *)&buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -587,7 +584,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
     keylen=get_cipher_keysize(session, algos->encryption_s2c);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
@@ -596,7 +593,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *)&buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -623,7 +620,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
     keylen=get_mac_keylen(session, algos->hmac_c2s);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
@@ -632,7 +629,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *)&buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -661,7 +658,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
     keylen=get_mac_keylen(session, algos->hmac_s2c);
 
     if (keylen>0) {
-	unsigned char buffer[keylen];
+	char buffer[keylen];
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
@@ -670,7 +667,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	memset(&buffer[0], '\0', keylen);
 
 	init_common_buffer(&buff);
-	buff.ptr=(char *)&buffer[0];
+	buff.ptr=&buffer[0];
 	buff.size=keylen;
 	buff.len=0;
 
@@ -721,7 +718,7 @@ static int _send_kexdh_init_message(struct ssh_session_s *session, struct ssh_pa
 	return 64 +  bits/8;
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 
 	*pos=(unsigned char) SSH_MSG_KEXDH_INIT;
 	pos++;
@@ -741,7 +738,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
     unsigned int hashlen=get_digest_len(keyx->digestname);
-    unsigned char hash[hashlen];
+    char hash[hashlen];
     struct common_buffer_s H;
     unsigned int len=0;
     unsigned int error=0;

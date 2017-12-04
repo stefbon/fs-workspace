@@ -83,8 +83,6 @@ static struct rawdata_s *copy_buffer_next_data(struct rawdata_queue_s *r_queue, 
 	memcpy(data->buffer + data->size, next->buffer, next->size);
 	data->size+=next->size;
 
-	logoutput("copy_buffer_next_data: 1 add %i bytes size %i", next->size, data->size);
-
 	data->next=next->next;
 
 	/* free next and repair queue */
@@ -99,8 +97,6 @@ static struct rawdata_s *copy_buffer_next_data(struct rawdata_queue_s *r_queue, 
 
 	memcpy(data->buffer + data->size, next->buffer, left);
 	data->size+=left;
-
-	logoutput("copy_buffer_next_data: 2 add %i bytes size %i", next->size, data->size);
 
 	memmove(next->buffer, next->buffer + left, next->size - left);
 	next->size-=left;
@@ -206,10 +202,7 @@ static void process_rawdata_session(struct rawdata_s *data)
 
 	    logoutput("process_rawdata_session: data length %i bigger than size %i", data->len, data->size);
 
-	    /*
-		length bigger than current buffersize:
-		wait for additional data
-	    */
+	    /* length bigger than current size: wait for additional data to recv */
 
 	    pthread_mutex_lock(&r_queue->mutex);
 

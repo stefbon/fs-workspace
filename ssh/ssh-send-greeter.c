@@ -47,7 +47,7 @@
 #include "ssh-common.h"
 #include "ssh-utils.h"
 
-unsigned int create_greeter(unsigned char *pos)
+unsigned int create_greeter(char *pos)
 {
     unsigned int len0=strlen("SSH-2.0-sftpfs_");
 #ifdef FS_WORKSPACE_VERSION
@@ -82,7 +82,7 @@ unsigned int create_greeter(unsigned char *pos)
 int send_greeter(struct ssh_session_s *session)
 {
     unsigned int len=create_greeter(NULL);
-    unsigned char line[len+2];
+    char line[len+2];
 
     len=create_greeter(&line[0]);
 
@@ -104,4 +104,3 @@ int send_greeter(struct ssh_session_s *session)
     return 0;
 
 }
-

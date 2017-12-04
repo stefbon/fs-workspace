@@ -87,9 +87,14 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 	    inet_aton(address, &sin->sin_addr);
 
 	    if (connect(fd, (struct sockaddr *) sin, sizeof(struct sockaddr_in))==0) {
+		int flags=0;
 
 		logoutput("connect_ssh_server: connected to %s:%i with fd %i", address, port, fd);
 		connection->fd=fd;
+
+		flags=fcntl(fd, F_GETFD);
+		flags|=O_NONBLOCK;
+		fcntl(fd, F_SETFD, flags);
 
 	    } else {
 

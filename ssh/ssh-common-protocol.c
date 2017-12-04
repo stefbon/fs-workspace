@@ -45,6 +45,8 @@
 
 #include "ssh-common-protocol.h"
 
+extern void store_uint32(char *buff, uint32_t value);
+
 struct disconnect_reasons_s {
     unsigned int 	reason;
     const char		*description;
@@ -68,7 +70,7 @@ static struct disconnect_reasons_s d_reasons[] = {
     {SSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE	, "No more authorization methods are available."},
     {SSH_DISCONNECT_ILLEGAL_USER_NAME			, "Illegal user name."}};
 
-unsigned int write_disconnect_reason(unsigned int reason, unsigned char *pos, unsigned int size, unsigned int *error)
+unsigned int write_disconnect_reason(unsigned int reason, char *pos, unsigned int size, unsigned int *error)
 {
     unsigned int len=0;
 

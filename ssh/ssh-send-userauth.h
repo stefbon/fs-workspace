@@ -22,7 +22,7 @@
 
 /* prototypes */
 
-unsigned int write_userauth_pubkey_request(unsigned char *buffer, unsigned int size, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key);
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key);
 int send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *sig, unsigned int *seq);
 
 int send_userauth_none_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, unsigned int *seq);

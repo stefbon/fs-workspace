@@ -56,7 +56,7 @@
 
 #include "ssh-utils.h"
 
-static unsigned int get_kex_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_kex_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -70,7 +70,7 @@ static unsigned int get_kex_algo(unsigned char *pos, unsigned int size)
 
 }
 
-static unsigned int get_server_hostkey_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_server_hostkey_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -84,7 +84,7 @@ static unsigned int get_server_hostkey_algo(unsigned char *pos, unsigned int siz
 
 }
 
-static unsigned int get_encryption_client_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_encryption_client_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -100,7 +100,7 @@ static unsigned int get_encryption_client_algo(unsigned char *pos, unsigned int 
 
 /* same as client */
 
-static unsigned int get_encryption_server_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_encryption_server_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -114,7 +114,7 @@ static unsigned int get_encryption_server_algo(unsigned char *pos, unsigned int 
 
 }
 
-static unsigned int get_mac_client_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_mac_client_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -130,7 +130,7 @@ static unsigned int get_mac_client_algo(unsigned char *pos, unsigned int size)
 
 /* same as client */
 
-static unsigned int get_mac_server_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_mac_server_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -144,7 +144,7 @@ static unsigned int get_mac_server_algo(unsigned char *pos, unsigned int size)
 
 }
 
-static unsigned int get_compression_client_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_compression_client_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -160,7 +160,7 @@ static unsigned int get_compression_client_algo(unsigned char *pos, unsigned int
 
 /* same as client */
 
-static unsigned int get_compression_server_algo(unsigned char *pos, unsigned int size)
+static unsigned int get_compression_server_algo(char *pos, unsigned int size)
 {
 
     if (pos) {
@@ -176,12 +176,12 @@ static unsigned int get_compression_server_algo(unsigned char *pos, unsigned int
 
 /* languages not supported yet */
 
-static unsigned int get_lang_client_names(unsigned char *pos, unsigned int size)
+static unsigned int get_lang_client_names(char *pos, unsigned int size)
 {
     return 0;
 }
 
-static unsigned int get_lang_server_names(unsigned char *pos, unsigned int size)
+static unsigned int get_lang_server_names(char *pos, unsigned int size)
 {
     return 0;
 }
@@ -193,7 +193,7 @@ int send_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, v
     unsigned char init=(keydata==&session->crypto.keydata) ? 1 : 0;
 
     if (payload) {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 	unsigned int len=0;
 
 	*pos=SSH_MSG_KEXINIT;
@@ -424,4 +424,3 @@ int send_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload, v
 
     return -1;
 }
-

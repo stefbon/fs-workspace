@@ -111,10 +111,10 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
     unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
     unsigned int len=5 + payload_len;
-    unsigned char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
+    char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
     unsigned char n2=0, len_mod=0;
     int result=0;
-    unsigned char *pos=NULL;
+    char *pos=NULL;
     struct ssh_packet_s packet;
     struct ssh_send_s *send=&session->send;
 
@@ -205,16 +205,16 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
 static int _send_init_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr), void *ptr, unsigned int *seq)
 {
     unsigned int payload_len=fill_raw_message(session, NULL, ptr); /* get the required size by calling the cb without parameters */
-    unsigned char buffer[sizeof(struct ssh_payload_s) + payload_len];
+    char buffer[sizeof(struct ssh_payload_s) + payload_len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
     unsigned int error=0;
     unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
     unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
     unsigned int len=5 + payload_len;
-    unsigned char raw_message[len + 2 * message_blocksize]; /* append enough bytes to do the padding */
+    char raw_message[len + 2 * message_blocksize]; /* append enough bytes to do the padding */
     unsigned char n2=0, len_mod=0;
     int result=0;
-    unsigned char *pos=NULL;
+    char *pos=NULL;
     struct ssh_packet_s packet;
     struct ssh_send_s *send=&session->send;
 

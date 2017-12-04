@@ -169,9 +169,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
     readbuffer:
 
-    /* test with MSG_WAITALL ?? */
-
-    lenread=recv(fd, receive->buffer, receive->size, 0);
+    lenread+=recv(fd, (char *) (receive->buffer + lenread), receive->size - lenread, 0);
     error=errno;
 
     if (lenread<=0) {
@@ -204,6 +202,10 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 	if (lenread==receive->size) {
 
 	    disconnect_ssh_session(session, 0, 0);
+
+	} else if (lenread<8) {
+
+	    goto readbuffer;
 
 	} else {
 	    struct rawdata_queue_s *queue=&receive->rawdata_queue;

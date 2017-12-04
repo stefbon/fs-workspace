@@ -137,7 +137,7 @@ static int _send_channel_open_message(struct ssh_session_s *session, struct ssh_
 	}
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 
 	*pos=(unsigned char) SSH_MSG_CHANNEL_OPEN;
 	pos++;
@@ -264,7 +264,7 @@ static int _send_channel_close_message(struct ssh_session_s *session, struct ssh
 	return 5;
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 	struct ssh_channel_s *channel=(struct ssh_channel_s *) ptr;
 
 	*pos=(unsigned char) SSH_MSG_CHANNEL_CLOSE;
@@ -327,14 +327,14 @@ static int _send_start_command_message(struct ssh_session_s *session, struct ssh
 
 	if (request->name) {
 
-	    len+=4 + strlen(request->name);
+	    len+=4+strlen(request->name);
 
 	}
 
 	return len;
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 	unsigned int len_command=strlen(request->command);
 
 	*pos=(unsigned char) SSH_MSG_CHANNEL_REQUEST;
@@ -418,7 +418,7 @@ static int _send_channel_data_message(struct ssh_session_s *session, struct ssh_
 	return 9 + channel_data->len;
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 
 	*pos=(unsigned char) SSH_MSG_CHANNEL_DATA;
 	pos++;

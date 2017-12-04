@@ -97,7 +97,7 @@ int ssh_authentication(struct ssh_session_s *session)
 
     if (remoteipv4==NULL) {
 
-	logoutput("ssh_authentication: failed to get remote hostname (error %i:%s)", error, strerror(error));
+	logoutput("ssh_authentication: failed to get remote ipv number (error %i:%s)", error, strerror(error));
 	goto finish;
 
     }
@@ -119,10 +119,7 @@ int ssh_authentication(struct ssh_session_s *session)
 
     /* get the list of authemtication 'method name' values
 	see https://tools.ietf.org/html/rfc4252#section-5.2: The "none" Authentication Request
-	note the remote user is set as the local user */
-
-    session->status.status=SESSION_STATUS_USERAUTH;
-    session->status.substatus=SUBSTATUS_USERAUTH_STARTED;
+	note the remote user is set as the local user since the remote user is not known here */
 
     logoutput("ssh_authentication: send none userauth request");
 
@@ -131,7 +128,6 @@ int ssh_authentication(struct ssh_session_s *session)
 	struct timespec expire;
 
 	get_session_expire_init(session, &expire);
-	session->status.substatus|=SUBSTATUS_USERAUTH_SEND;
 
 	getresponse:
 
@@ -139,46 +135,48 @@ int ssh_authentication(struct ssh_session_s *session)
 
 	if (! payload) {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-	    if (session->status.error==0) session->status.error=EIO;
-	    logoutput("ssh_authentication: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    if (error==0) error=EIO;
+	    logoutput("ssh_authentication: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 	    goto finish;
 
 	}
-
-	session->status.substatus|=SUBSTATUS_USERAUTH_RECEIVED;
 
 	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
 	    /* huhh?? which server allows this weak security? */
 
 	    logoutput("ssh_authentication: server accepted none.....");
-	    session->status.substatus|=SUBSTATUS_USERAUTH_OK;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
 	    required_methods=SSH_USERAUTH_NONE;
-	    free(payload);
-	    payload=NULL;
+	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
-	    int result=-1;
 	    unsigned int methods=0;
 
-	    logoutput("ssh_authentication: handle failure");
-	    result=handle_userauth_failure_message(session, payload, &methods);
+	    /* failure gives the required methods */
+
+	    logoutput("ssh_authentication: handle failure/get methods");
+
+	    result=handle_userauth_failure(session, payload, &methods);
 	    if (methods>0) required_methods=methods;
-	    free(payload);
-	    payload=NULL;
 
 	} else if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER) {
 
-	    if (payload->type==SSH_MSG_USERAUTH_BANNER) log_userauth_banner(payload);
-	    free(payload);
+	    process_ssh_message(session, payload);
 	    payload=NULL;
 	    goto getresponse;
 
 	} else {
 
 	    logoutput("ssh_authentication: got unexpected reply %i", payload->type);
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    error=EPROTO;
+
+	}
+
+	if (payload) {
+
 	    free(payload);
 	    payload=NULL;
 
@@ -186,56 +184,56 @@ int ssh_authentication(struct ssh_session_s *session)
 
     } else {
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-	if (session->status.error==0) session->status.error=EIO;
-	logoutput("ssh_authentication: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	error=(session->status.error==0) ? session->status.error : EIO;
+	logoutput("ssh_authentication: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 
     }
 
-    if ((session->status.substatus & SUBSTATUS_USERAUTH_ERROR) || required_methods==SSH_USERAUTH_NONE) goto finish;
+    if ((session->userauth.status&SESSION_USERAUTH_STATUS_ERROR) ||
+	required_methods==SSH_USERAUTH_NONE ||
+	(required_methods & SSH_USERAUTH_UNKNOWN)) goto finish;
 
-    /* try publickey first if required */
+    /* try publickey first if required
+	assume the order of methods does not matter to the server */
 
     if (required_methods & SSH_USERAUTH_PUBLICKEY) {
 	unsigned int methods=0;
 
-	session->status.status=SESSION_STATUS_USERAUTH;
-	session->status.substatus=SUBSTATUS_USERAUTH_STARTED;
+	identity=ssh_auth_pubkey(session, ptr, &methods);
 
-	identity=ssh_auth_pubkey_generic(session, ptr, &methods);
+	if (identity==NULL) {
 
-	if (identity) {
+	    logoutput("ssh_authentication: publickey auth failed/no identity found");
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    goto finish;
 
-	    if (methods==0) {
+	}
 
-		/* no more methods required: ready */
-		session->status.substatus=SUBSTATUS_USERAUTH_OK;
-		required_methods=0;
-		result=0;
+	if (methods==0) {
 
-	    } else {
-
-		/* still methods to do */
-
-		if (methods & SSH_USERAUTH_PUBLICKEY) {
-
-		    /* another publickey is not supported */
-		    session->status.substatus=SUBSTATUS_USERAUTH_ERROR;
-		    result=-1;
-		    goto finish;
-
-		} else {
-
-		    required_methods=methods;
-
-		}
-
-	    }
+	    /* no more methods required: ready */
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
+	    required_methods=0;
+	    result=0;
 
 	} else {
 
-	    logoutput("ssh_authentication: publickey auth failed");
-	    goto finish;
+	    /* still methods to do */
+
+	    if (methods & (SSH_USERAUTH_PUBLICKEY | SSH_USERAUTH_UNKNOWN)) {
+
+		/* another publickey or unknown is not supported */
+		session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+		error=EPROTO;
+		result=-1;
+		goto finish;
+
+	    } else {
+
+		required_methods=methods;
+
+	    }
 
 	}
 
@@ -243,18 +241,15 @@ int ssh_authentication(struct ssh_session_s *session)
 
     if (required_methods & SSH_USERAUTH_HOSTBASED) {
 	unsigned int methods=0;
-	struct ssh_string_s remoteuser;
+	struct ssh_string_s remote_user;
 	struct ssh_string_s hostname;
-
-	session->status.status=SESSION_STATUS_USERAUTH;
-	session->status.substatus=SUBSTATUS_USERAUTH_STARTED;
 
 	localhostname=get_ssh_hostname(session, 0, &error);
 
 	if (localhostname==NULL) {
 
 	    logoutput("ssh_authentication: failed to get local hostname");
-	    session->status.substatus=SUBSTATUS_USERAUTH_ERROR;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 	    goto finish;
 
 	}
@@ -264,28 +259,28 @@ int ssh_authentication(struct ssh_session_s *session)
 
 	logoutput("ssh_authentication: found local host %s", localhostname);
 
-	remoteuser.ptr=session->identity.pwd.pw_name;
-	if (identity && identity->user) remoteuser.ptr=identity->user;
-	remoteuser.len=strlen(remoteuser.ptr);
+	remote_user.ptr=session->identity.pwd.pw_name;
+	if (identity && identity->user) remote_user.ptr=identity->user;
+	remote_user.len=strlen(remote_user.ptr);
 
-	result=ssh_auth_hostbased(session, &remoteuser, &hostname, &local_user, &methods);
+	result=ssh_auth_hostbased(session, &remote_user, &hostname, &local_user, &methods);
 
 	if (result==0) {
 
 	    if (methods==0) {
 
 		/* no more methods required: ready */
-		session->status.substatus=SUBSTATUS_USERAUTH_OK;
+		session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
 		required_methods=0;
 
 	    } else {
 
 		/* still methods to do */
 
-		if (methods & SSH_USERAUTH_HOSTBASED) {
+		if (methods & (SSH_USERAUTH_HOSTBASED | SSH_USERAUTH_UNKNOWN)) {
 
-		    /* another publickey is not supported */
-		    session->status.substatus=SUBSTATUS_USERAUTH_ERROR;
+		    /* another hostbased/unknown is not supported */
+		    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 		    result=-1;
 		    goto finish;
 
@@ -300,6 +295,7 @@ int ssh_authentication(struct ssh_session_s *session)
 	} else {
 
 	    logoutput("ssh_authentication: hostbased auth failed");
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 	    result=-1;
 
 	}
@@ -313,6 +309,7 @@ int ssh_authentication(struct ssh_session_s *session)
 	if (required_methods & SSH_USERAUTH_PUBLICKEY) logoutput("ssh_authentication: failed: publickey required");
 	if (required_methods & SSH_USERAUTH_HOSTBASED) logoutput("ssh_authentication: failed: hostbased required");
 	if (required_methods & SSH_USERAUTH_PASSWORD) logoutput("ssh_authentication: failed: password required");
+	if (required_methods & SSH_USERAUTH_UNKNOWN) logoutput("ssh_authentication: failed: unknown required");
 	result=-1;
 
     } else {

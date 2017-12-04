@@ -187,8 +187,7 @@ void init_session_data(struct ssh_session_s *session)
     init_ssh_string(&data->sessionid);
     init_ssh_string(&data->greeter_server);
 
-    crypto->keydata.status_s2c=0;
-    crypto->keydata.status_c2s=0;
+    crypto->keydata.status=0;
     init_ssh_string(&crypto->keydata.kexinit_server);
     init_ssh_string(&crypto->keydata.kexinit_client);
     init_ssh_string(&crypto->keydata.iv_s2c);

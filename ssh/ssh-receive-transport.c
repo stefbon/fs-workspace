@@ -53,18 +53,27 @@
 
 /* various callbacks for SSH transport */
 
-/*
-    disconnect
-*/
+/* disconnect */
 
 static void receive_msg_disconnect(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-    unsigned int reason=get_uint32(&payload->buffer[1]);
-    unsigned int len=get_uint32(&payload->buffer[5]);
+    unsigned int reason=0;
+    unsigned int len=0;
+
+    if (payload->len>=9) {
+
+	reason=get_uint32(&payload->buffer[1]);
+	len=get_uint32(&payload->buffer[5]);
+
+    } else {
+
+	reason=SSH_DISCONNECT_PROTOCOL_ERROR;
+
+    }
 
     /* server send a disconnect: client must also disconnect immediatly  */
 
-    if (len>0) {
+    if (len>0 && (9 + len <= payload->len)) {
 	char string[len+1];
 
 	memcpy(&string[0], &payload->buffer[9], len);
@@ -104,9 +113,7 @@ static void receive_msg_disconnect(struct ssh_session_s *session, struct ssh_pay
 
 }
 
-/*
-    ignore
-*/
+/* ignore */
 
 static void receive_msg_ignore(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
@@ -116,13 +123,17 @@ static void receive_msg_ignore(struct ssh_session_s *session, struct ssh_payload
 
 }
 
-/*
-    debug
-*/
+/* debug */
 
 static void receive_msg_debug(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-    unsigned int len=get_uint32(&payload->buffer[2]);
+    unsigned int len=0;
+
+    if (payload->len > 6) {
+
+	len=get_uint32(&payload->buffer[2]);
+
+    }
 
     /* TODO: split string into multiple parts when too large, with limit */
 
@@ -145,6 +156,12 @@ static void receive_msg_debug(struct ssh_session_s *session, struct ssh_payload_
     }
 
     free(payload);
+    return;
+
+    disconnect:
+
+    free(payload);
+    disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
 
 }
 
@@ -157,8 +174,7 @@ static void receive_msg_service_request(struct ssh_session_s *session, struct ss
 
     logoutput_info("receive_msg_service_request: error: received a service request from server....");
     free(payload);
-
-    disconnect_ssh_session(session, 0, 0);
+    disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
 
 }
 
@@ -198,21 +214,28 @@ static void receive_msg_service_accept(struct ssh_session_s *session, struct ssh
 
 static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-    struct ssh_receive_s *receive=&session->receive;
-    struct payload_queue_s *queue=&receive->payload_queue;
-    unsigned int sequence=get_uint32(&payload->buffer[1]);
 
-    logoutput_info("receive_msg_unimplemented: received a unimplemented message for number %i", sequence);
+    if (payload->len >= 5) {
+	struct ssh_receive_s *receive=&session->receive;
+	struct payload_queue_s *queue=&receive->payload_queue;
+	unsigned int sequence=get_uint32(&payload->buffer[1]);
 
-    /* signal any waiting thread */
+	logoutput_info("receive_msg_unimplemented: received a unimplemented message for number %i", sequence);
 
-    pthread_mutex_lock(queue->signal.mutex);
-    queue->signal.sequence_number_error=sequence;
-    queue->signal.error=EOPNOTSUPP;
-    pthread_cond_broadcast(queue->signal.cond);
-    pthread_mutex_unlock(queue->signal.mutex);
+	/* signal any waiting thread */
 
-    free(payload);
+	pthread_mutex_lock(queue->signal.mutex);
+	queue->signal.sequence_number_error=sequence;
+	queue->signal.error=EOPNOTSUPP;
+	pthread_cond_broadcast(queue->signal.cond);
+	pthread_mutex_unlock(queue->signal.mutex);
+
+	free(payload);
+	return;
+
+    }
+
+    disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
 
 }
 
@@ -236,9 +259,7 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
 	(https://tools.ietf.org/html/rfc4253#section-7.1)
     */
 
-    /*
-	start
-    */
+    /* start */
 
     if (store_kexinit_server(session, payload, 0, &error)==0) {
 

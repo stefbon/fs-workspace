@@ -92,18 +92,20 @@ static signed char create_hb_signature(struct ssh_session_s *session, struct ssh
 
     /* session id */
 
-    store_uint32((unsigned char *) &buffer[pos], session->data.sessionid.len);
+    store_uint32(&buffer[pos], session->data.sessionid.len);
     pos+=4;
     memcpy(&buffer[pos], (char *) session->data.sessionid.ptr, session->data.sessionid.len);
     pos+=session->data.sessionid.len;
 
-    pos+=write_userauth_hostbased_request(&buffer[pos], (len - pos), remote_user, service, public_key, hostname, local_user);
+    /* write the userauth hostbased message */
 
-    /* create a signature of this data using the private key belonging to the public key */
+    pos+=write_userauth_hostbased_request(&buffer[pos], (len - pos), remote_user, service, public_key, hostname, local_user);
 
     init_common_buffer(&data);
     data.ptr=&buffer[0];
     data.size=pos;
+
+    /* create a signature of this data using the private key belonging to the host key */
 
     if (create_signature(session, private_key, &data, signature, &error)>=0) {
 
@@ -127,7 +129,6 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     signature.len=0;
     signature.ptr=NULL;
-    session->status.substatus|=SUBSTATUS_USERAUTH_STARTED;
 
     if (create_hb_signature(session, remote_user, "ssh-connection", public_key, hostname, local_user, private_key, &signature)==-1) {
 
@@ -143,7 +144,6 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_SEND;
 	get_session_expire_init(session, &expire);
 
 	getresponse:
@@ -152,7 +152,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	if (! payload) {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 	    if (session->status.error==0) session->status.error=EIO;
 	    logoutput("ssh_send_hostbased_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
 	    goto out;
@@ -161,17 +161,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER ) {
 
-	    if (payload->type == SSH_MSG_USERAUTH_BANNER) {
-
-		log_userauth_banner(payload);
-
-	    } else if (payload->type == SSH_MSG_DEBUG) {
-
-		process_ssh_message(session, payload);
-
-	    }
-
-	    free(payload);
+	    process_ssh_message(session, payload);
 	    payload=NULL;
 	    goto getresponse;
 
@@ -182,13 +172,16 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
-	    result=handle_userauth_failure_message(session, payload, methods);
-	    free(payload);
-	    payload=NULL;
+	    result=handle_userauth_failure(session, payload, methods);
 
 	} else {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+
+	}
+
+	if (payload) {
+
 	    free(payload);
 	    payload=NULL;
 
@@ -241,6 +234,7 @@ int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remot
 	struct ssh_key_s private_key;
 
 	init_ssh_key(&public_key);
+	init_ssh_key(&private_key);
 
 	if (identity->file) logoutput("ssh_auth_hostbased: send public key (%s)", identity->file);
 
@@ -251,10 +245,6 @@ int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remot
 
 	}
 
-	/* get the next public hostkey and the hostname (as used in the key)
-	    note: the filename is usefull for getting the related private key file later */
-
-	init_ssh_key(&private_key);
 	private_key.type=_PUBKEY_METHOD_PRIVATE;
 	private_key.type|=public_key.type & (_PUBKEY_METHOD_SSH_DSS | _PUBKEY_METHOD_SSH_RSA | _PUBKEY_METHOD_SSH_ED25519);
 

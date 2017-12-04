@@ -88,7 +88,7 @@ struct userauth_pubkey_s {
     struct ssh_string_s 	*signature;
 };
 
-static int _write_userauth_pubkey_message(unsigned char *buffer, unsigned int size, void *ptr)
+static int _write_userauth_pubkey_message(char *buffer, unsigned int size, void *ptr)
 {
     struct userauth_pubkey_s *userauth=(struct userauth_pubkey_s *) ptr;
 
@@ -119,7 +119,7 @@ static int _write_userauth_pubkey_message(unsigned char *buffer, unsigned int si
 	return len;
 
     } else {
-	unsigned char *pos=buffer;
+	char *pos=buffer;
 	const unsigned char *algo=get_pubkey_name(userauth->public_key->type);
 	unsigned int lenservice=strlen(userauth->service);
 	unsigned int lenmethod=strlen("publickey");
@@ -221,13 +221,13 @@ static int _write_userauth_pubkey_message(unsigned char *buffer, unsigned int si
 static int _send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
     if (! payload) return _write_userauth_pubkey_message(NULL, 0, ptr);
-    return _write_userauth_pubkey_message(payload->buffer, payload->len, ptr);
+    return _write_userauth_pubkey_message((char *)payload->buffer, payload->len, ptr);
 }
 
 /* write the userauth request message to a buffer
     used for the creating of a signature with public key auth */
 
-unsigned int write_userauth_pubkey_request(unsigned char *buffer, unsigned int size, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key)
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key)
 {
     struct userauth_pubkey_s userauth;
     struct ssh_string_s signature;
@@ -288,7 +288,7 @@ static int _send_userauth_none_message(struct ssh_session_s *session, struct ssh
 	return len;
 
     } else {
-	unsigned char *pos=payload->buffer;
+	char *pos=payload->buffer;
 	unsigned int lenservice=strlen(userauth->service);
 	unsigned int lenmethod=strlen("none");
 

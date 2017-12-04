@@ -22,7 +22,7 @@
 
 /* prototypes */
 
-unsigned int create_greeter(unsigned char *pos);
+unsigned int create_greeter(char *pos);
 int send_greeter(struct ssh_session_s *ssh_session);
 
 #endif

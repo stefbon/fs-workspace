@@ -61,7 +61,7 @@ static int _send_disconnect_message(struct ssh_session_s *session, struct ssh_pa
 	return 1 + 4 + 4 + len + 4;
 
     } else {
-	unsigned char *pos=NULL;
+	char *pos=NULL;
 
 	pos=payload->buffer;
 	*pos=(unsigned char) SSH_MSG_DISCONNECT;
@@ -113,7 +113,7 @@ static int _send_service_request_message(struct ssh_session_s *ssh_session, stru
 	return 1 + 4 + len;
 
     } else {
-	unsigned char *pos=NULL;
+	char *pos=NULL;
 
 	pos=payload->buffer;
 	*pos=(unsigned char) SSH_MSG_SERVICE_REQUEST;
@@ -190,7 +190,7 @@ static int _send_global_request_message(struct ssh_session_s *ssh_session, struc
 	return 1 + 4 + len + 1 + 4 + global_request->size;
 
     } else {
-	unsigned char *pos=NULL;
+	char *pos=NULL;
 
 	pos=payload->buffer;
 	*pos=(unsigned char) SSH_MSG_SERVICE_REQUEST;

@@ -243,7 +243,6 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	unsigned int error=0;
 
 	session->status.status=SESSION_STATUS_INIT;
-	session->status.substatus=0;
 
 	if (add_session_eventloop(session, interface, &session->status.error)==-1) {
 
@@ -289,68 +288,73 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	unsigned int error=0;
 	struct ssh_payload_s *payload=NULL;
 
-	/* send keyxinit and wait for server to reply */
+	/* send kexinit and wait for server to reply */
 
 	session->status.status=SESSION_STATUS_KEXINIT;
-	session->status.substatus=0;
+	session->crypto.keydata.status=0;
 
 	logoutput("_setup_ssh_session: send kexinit");
 
 	if (send_ssh_message(session, send_kexinit, (void *) &session->crypto.keydata, &sequence_number)==-1) {
 
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    error=(session->status.error==0) ? EIO : session->status.error;
+	    logoutput("_setup_ssh_session: error %i sending packet (%s)", error, strerror(error));
+	    goto outkexinit;
 
 	}
 
-	session->status.substatus|=SUBSTATUS_KEXINIT_SEND;
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYINIT_C2S;
 	get_session_expire_init(session, &expire);
 
-	/* get/wait for a packet from the server */
+	/* get/wait for kexinit from server*/
 
 	payload=get_ssh_payload(session, &expire, NULL, &error);
 
 	if (! payload) {
 
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-	    logoutput("_setup_ssh_session: error %i waiting for packet (%s)", session->status.error, strerror(session->status.error));
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    if (error==0) error=EIO;
+	    logoutput("_setup_ssh_session: error %i waiting for packet (%s)", error, strerror(error));
+	    goto outkexinit;
 
 	}
 
 	if (payload->type==SSH_MSG_KEXINIT) {
 
-	    /*	copy the payload for the computation of the H (RFC4253 8.  Diffie-Hellman Key Exchange)
-		(what if another method for key exchange is used?) */
+	    logoutput_info("_setup_ssh_session: received server kexinit message");
+
+	    /*	copy the payload for the computation of the H (RFC4253 8.  Diffie-Hellman Key Exchange) */
 
 	    if (store_kexinit_server(session, payload, 1, &error)==0) {
 
-		logoutput("_setup_ssh_session: received and stored server kexinit message");
-		session->status.substatus|=SUBSTATUS_KEXINIT_RECEIVED;
+		logoutput("_setup_ssh_session: stored server kexinit message");
 
 	    } else {
 
-		if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-		logoutput("_setup_ssh_session: error storing kexinit message (%i:%s)", error, strerror(error));
-		free(payload);
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		if (error==0) error=EIO;
+		logoutput("_setup_ssh_session: error storing server kexinit message (%i:%s)", error, strerror(error));
+		goto outkexinit;
 
 	    }
 
-	    session->status.substatus|=SUBSTATUS_KEXINIT_RECEIVED;
-	    free(payload);
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYINIT_S2C;
 
 	} else {
 
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	    logoutput("_setup_ssh_session: received %i message. not expecting it, error", payload->type);
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EPROTO;
-	    free(payload);
-	    goto error;
+	    error=(error>0) ? error : EPROTO;
+	    goto outkexinit;
 
 	}
 
 	/* compare the different suggested algo's and select */
 
 	if (compare_msg_kexinit(session, 1, &algos)==0) {
+
+	    /* set those algo's here cause they are needed in the next step (others later) */
 
 	    if (set_keyx(session, algos.keyexchange, &error)==0) {
 
@@ -359,7 +363,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    } else {
 
 		logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos.keyexchange, strerror(error));
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		goto outkexinit;
 
 	    }
 
@@ -370,48 +375,57 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    } else {
 
 		logoutput("_setup_ssh_session: error %i setting pubkey method %s (%s)", error, algos.hostkey, strerror(error));
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		goto outkexinit;
 
 	    }
 
-	    if (strcmp(algos.encryption_c2s, "chacha20-poly1305@openssh.com")==0) {
+	    /* correct mac names for combined cipher/mac algo's */
 
-		/* correct mac names for combined cipher/mac algo's */
-
-		strcpy(algos.hmac_c2s, algos.encryption_c2s);
-
-	    }
-
-	    if (strcmp(algos.encryption_s2c, "chacha20-poly1305@openssh.com")==0) {
-
-		/* correct mac names for combined cipher/mac algo's */
-
-		strcpy(algos.hmac_s2c, algos.encryption_s2c);
-
-	    }
+	    if (strcmp(algos.encryption_c2s, "chacha20-poly1305@openssh.com")==0) strcpy(algos.hmac_c2s, algos.encryption_c2s);
+	    if (strcmp(algos.encryption_s2c, "chacha20-poly1305@openssh.com")==0) strcpy(algos.hmac_s2c, algos.encryption_s2c);
 
 	} else {
 
 	    logoutput("_setup_ssh_session: error finding common methods");
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto outkexinit;
+
+	}
+
+	outkexinit:
+
+	if (payload) {
+
+	    free(payload);
+	    payload=NULL;
+
+	}
+
+	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) {
+
+	    logoutput("_setup_ssh_session: error in kexinit phase (%i:%s)", error, strerror(error));
 	    goto error;
 
 	}
 
-    }
-
-    if (session->status.status==SESSION_STATUS_KEXINIT && !(session->status.substatus & SUBSTATUS_KEXINIT_ERROR)) {
-
-	/*
-	    start key exchange
-	    what method is used depends on the previous phase
-	*/
+	/* goto next phase: keyexchange  */
 
 	session->status.status=SESSION_STATUS_KEYEXCHANGE;
-	session->status.substatus=0;
+
+    }
+
+    if (session->status.status==SESSION_STATUS_KEYEXCHANGE) {
+
+	/* start key exchange (what method is used is set here before) */
 
 	logoutput("_setup_ssh_session: start keyexchange");
 
 	if (start_keyx(session, &algos)==-1) goto error;
+
+	/* goto next phase: newkeys  */
+
+	session->status.status=SESSION_STATUS_NEWKEYS;
 
     }
 
@@ -442,7 +456,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    without too much exceptions
     */
 
-    if (session->status.status==SESSION_STATUS_KEYEXCHANGE && !(session->status.substatus & SUBSTATUS_KEYEXCHANGE_ERROR)) {
+    if (session->status.status==SESSION_STATUS_NEWKEYS) {
 	unsigned int sequence_number=0;
 	struct timespec expire;
 	unsigned int error=0;
@@ -450,14 +464,15 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	/* send newkeys */
 
-	session->status.status=SESSION_STATUS_NEWKEYS;
-	session->status.substatus=0;
-
 	logoutput("_setup_ssh_session: start newkeys");
+
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_C2S;
 
 	if (send_ssh_message(session, send_newkeys, NULL, &sequence_number)==-1) {
 
-	    goto error;
+	    error=(session->status.error==0) ? EIO : session->status.error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto outnewkeys;
 
 	}
 
@@ -470,7 +485,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	} else {
 
 	    logoutput("_setup_ssh_session: error %i setting encryption method c2s to %s (%s)", error, algos.encryption_c2s, strerror(error));
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto outnewkeys;
 
 	}
 
@@ -481,7 +497,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	} else {
 
 	    logoutput("_setup_ssh_session: error %i setting hmac method c2s to %s (%s)", error, algos.hmac_c2s, strerror(error));
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto outnewkeys;
 
 	}
 
@@ -492,13 +509,14 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	} else {
 
 	    logoutput("_setup_ssh_session: error %i setting compression methods c2s to %s (%s)", error, algos.compression_c2s, strerror(error));
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto outnewkeys;
 
 	}
 
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_READY_C2S;
 	switch_send_process(session, "session");
 
-	session->status.substatus|=SUBSTATUS_NEWKEYS_SEND;
 	get_session_expire_init(session, &expire);
 
 	/* get/wait for a packet from the server */
@@ -509,14 +527,13 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
 	    logoutput("_setup_ssh_session: error %i waiting for SSH_MSG_NEWKEYS (%s)", session->status.error, strerror(session->status.error));
-	    goto error;
+	    goto outnewkeys;
 
 	}
 
 	if (payload->type == SSH_MSG_NEWKEYS) {
 
-	    session->status.substatus|=SUBSTATUS_NEWKEYS_RECEIVED;
-	    free(payload);
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_S2C;
 
 	    /* switch to new algo's for s2c */
 
@@ -527,7 +544,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    } else {
 
 		logoutput("_setup_ssh_session: error %i setting decryption method s2c to %s (%s)", error, algos.encryption_s2c, strerror(error));
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		goto outnewkeys;
 
 	    }
 
@@ -538,7 +556,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    } else {
 
 		logoutput("_setup_ssh_session: error %i setting hmac method s2c to %s (%s)", error, algos.hmac_s2c, strerror(error));
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		goto outnewkeys;
 
 	    }
 
@@ -549,94 +568,100 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    } else {
 
 		logoutput("_setup_ssh_session: error %i setting compression methods s2c to %s (%s)", error, algos.compression_s2c, strerror(error));
-		goto error;
+		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+		goto outnewkeys;
 
 	    }
 
 	    switch_process_rawdata_queue(session, "session");
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_READY_S2C;
 
 	} else {
 
 	    logoutput("_setup_ssh_session: received %i message. not expecting it, error", payload->type);
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EPROTO;
-	    free(payload);
-	    goto error;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    error=(error>0) ? error : EPROTO;
+	    goto outnewkeys;
 
 	}
+
+	outnewkeys:
 
 	/* free data and keys not required anymore */
 
 	free_kexinit_server(session, 1);
 	free_kexinit_client(session, 1);
 
+	if (payload) {
+
+	    free(payload);
+	    payload=NULL;
+
+	}
+
+	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) {
+
+	    logoutput("_setup_ssh_session: error in newkeys phase (%i:%s)", error, strerror(error));
+	    goto error;
+
+	}
+
+	session->crypto.keydata.status=0;
+	session->status.status=SESSION_STATUS_REQUEST_USERAUTH;
+
     }
 
-    if (session->status.status==SESSION_STATUS_NEWKEYS && !(session->status.substatus & SUBSTATUS_NEWKEYS_ERROR)) {
-
-	session->status.status=SESSION_STATUS_HOSTINFO;
-	session->status.substatus=0;
-
-    }
-
-    if (session->status.status==SESSION_STATUS_HOSTINFO) {
+    if (session->status.status==SESSION_STATUS_REQUEST_USERAUTH) {
 	struct timespec expire;
 	unsigned int error=0;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int sequence_number=0;
 
-	/*
-	    start userauth
-
-	    - send SSH_MSG_SERVICE_REQUEST with "ssh-userauth"
-	    - send SSH_MSG_USERAUTH_REQUEST with publickey and service ssh-connection
-
-	*/
-
-	session->status.status=SESSION_STATUS_USERAUTH;
-	session->status.substatus=SUBSTATUS_USERAUTH_STARTED;
-
-	logoutput("_setup_ssh_session: start ssh-userauth");
+	logoutput("_setup_ssh_session: request for service ssh-userauth");
 
 	if (send_service_request_message(session, "ssh-userauth", &sequence_number)==-1) {
 
-	    if (session->status.error==0) session->status.error=EIO;
-
-	    logoutput("_setup_ssh_session: error %i sending service request ssh-userauth (%s)", session->status.error, strerror(session->status.error));
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-	    goto error;
+	    error=(session->status.error==0) ? EIO : session->status.error;
+	    logoutput("_setup_ssh_session: error %i sending service request ssh-userauth (%s)", error, strerror(error));
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    goto outrequest;
 
 	}
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_SEND;
+	session->userauth.status=SESSION_USERAUTH_STATUS_REQUEST;
 	get_session_expire_init(session, &expire);
 
-	getuserauth:
+	getrequest:
 
 	payload=get_ssh_payload(session, &expire, &sequence_number, &error);
 
 	if (! payload) {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-	    if (session->status.error==0) session->status.error=(error==0) ? EIO : error;
-	    logoutput("_setup_ssh_session: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
-	    goto error;
+	    if (error==0) error=EIO;
+	    logoutput("_setup_ssh_session: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    goto outrequest;
 
 	}
 
 	if (payload->type == SSH_MSG_SERVICE_ACCEPT) {
-	    unsigned int lenstring=strlen("ssh-userauth");
+	    unsigned int len=strlen("ssh-userauth");
+	    char buffer[5 + len];
 
-	    if (payload->len > 4 + lenstring && get_uint32(&payload->buffer[1]) == lenstring && memcmp(&payload->buffer[5], "ssh-userauth", lenstring)==0) {
+	    buffer[0]=(unsigned char) SSH_MSG_SERVICE_ACCEPT;
+	    store_uint32(&buffer[1], len);
+	    memcpy(&buffer[5], "ssh-userauth", len);
+
+	    if (memcmp(payload->buffer, buffer, len)==0) {
 
 		logoutput("_setup_ssh_session: server accepted service ssh-userauth");
-		session->status.substatus|=SUBSTATUS_USERAUTH_RECEIVED;
+		session->userauth.status|=SESSION_USERAUTH_STATUS_ACCEPT;
 
 	    } else {
 
 		logoutput("_setup_ssh_session: server has sent an invalid service accept message");
-		session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-		free(payload);
-		goto error;
+		session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+		goto outrequest;
 
 	    }
 
@@ -645,8 +670,9 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG) {
 
 		process_ssh_message(session, payload);
+		free(payload);
 		payload=NULL;
-		goto getuserauth;
+		goto getrequest;
 
 	    } else {
 
@@ -654,18 +680,38 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    }
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    goto outrequest;
+
+	}
+
+	outrequest:
+
+	if (payload) {
+
 	    free(payload);
+	    payload=NULL;
+
+	}
+
+	if (session->userauth.status&SESSION_USERAUTH_STATUS_ERROR) {
+
+	    logoutput("_setup_ssh_session: error in request for userauth phase (%i:%s)", error, strerror(error));
 	    goto error;
 
 	}
 
-	free(payload);
-	payload=NULL;
+	session->status.status=SESSION_STATUS_USERAUTH;
+
+    }
+
+    if (session->status.status==SESSION_STATUS_USERAUTH) {
 
 	if (ssh_authentication(session)==0) {
 
 	    logoutput("_setup_ssh_session: authentication succes");
+	    session->status.status=SESSION_STATUS_COMPLETE;
+	    session->userauth.status=0;
 
 	} else {
 
@@ -676,12 +722,9 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
     }
 
-    if (session->status.status==SESSION_STATUS_USERAUTH && !(session->status.substatus & SUBSTATUS_USERAUTH_ERROR)) {
+    if (session->status.status==SESSION_STATUS_COMPLETE) {
 
-	session->status.status=SESSION_STATUS_COMPLETE;
-	session->status.substatus=SUBSTATUS_COMPLETE_OK;
 	switch_process_payload_queue(session, "session");
-
 	return 0;
 
     }
@@ -717,8 +760,8 @@ void _free_ssh_session(struct ssh_session_s *session)
     free_decrypt(session);
 
     free_session_status(session);
-
     free(session);
+
     session=NULL;
 
 }
@@ -975,7 +1018,6 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 	disconnect_ssh_server(session);
 
 	session->status.status=SESSION_STATUS_DISCONNECT;
-	session->status.substatus=0;
 
     }
 

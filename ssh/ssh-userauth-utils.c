@@ -58,13 +58,14 @@
 
 #include "ssh-utils.h"
 #include "ssh-userauth-pubkey.h"
+#include "ssh-pubkey-layout.h"
 
 /*
     generic function to read the comma seperated name list of names of authentications that can continue
     used when processing the MSG_USERAUTH_FAILURE response
 */
 
-unsigned int get_required_auth_methods(unsigned char *namelist, unsigned int len)
+unsigned int get_required_auth_methods(char *namelist, unsigned int len)
 {
     unsigned int methods=0;
     char list[len+1];
@@ -93,6 +94,10 @@ unsigned int get_required_auth_methods(unsigned char *namelist, unsigned int len
 
 	methods|=SSH_USERAUTH_HOSTBASED;
 
+    } else {
+
+	methods|=SSH_USERAUTH_UNKNOWN;
+
     }
 
     if (sep) {
@@ -106,35 +111,6 @@ unsigned int get_required_auth_methods(unsigned char *namelist, unsigned int len
     return methods;
 
 }
-/* banner message
-    see: https://tools.ietf.org/html/rfc4252#section-5.4 Banner Message
-    This software is running in background, so the message cannot be displayed on screen...
-    log it anyway (ignore message)
-
-    message looks like:
-    - byte			SSH_MSG_USERAUTH_BANNER
-    - string			message in ISO-10646 UTF-8 encoding
-    - string			language tag 
-    */
-
-void log_userauth_banner(struct ssh_payload_s *payload)
-{
-    if (payload->len>9) {
-	unsigned int len=get_uint32(&payload->buffer[1]);
-
-	if (payload->len>=9+len) {
-	    unsigned char banner[len+1];
-
-	    memcpy(banner, &payload->buffer[5], len);
-	    banner[len]='\0';
-
-	    logoutput("log_userauth_banner: received banner %s", banner);
-
-	}
-
-    }
-
-}
 
 /* generic function to handle the userauth failure response
     see: https://tools.ietf.org/html/rfc4252#section-5.1 Responses to Authentication Request
@@ -146,52 +122,50 @@ void log_userauth_banner(struct ssh_payload_s *payload)
 
 */
 
-int handle_userauth_failure_message(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *methods)
+int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *methods)
 {
     unsigned int result=-1;
+    unsigned int len=0;
 
-    logoutput("handle_userauth_failure_message: len %i", payload->len);
+    if (payload->len<6) return -1;
 
-    if (payload->len>=6) {
-	unsigned int len=get_uint32(&payload->buffer[1]);
+    len=get_uint32(&payload->buffer[1]);
 
-	if (payload->len==6+len) {
-	    unsigned char partial_success=(unsigned char) payload->buffer[5+len];
+    if (payload->len==6+len) {
+	unsigned char partial_success=(unsigned char) payload->buffer[5+len];
 
-	    if (partial_success>0) {
+	/* there is a byte for partial success */
 
-		if (len>0) {
+	if (partial_success>0) {
 
-		    *methods=get_required_auth_methods(&payload->buffer[5], len);
-		    session->status.substatus|=SUBSTATUS_USERAUTH_OK;
-		    result=0;
+	    /* success */
 
-		} else {
+	    if (len>0) {
 
-		    /* partial success and no additional methods is an error
-			there should be send a MSG_USERAUTH_SUCCESS in stead of an MSG_USERAUTH_FAILURE */
-
-		    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-
-		}
+		*methods=get_required_auth_methods(&payload->buffer[5], len);
+		result=0;
 
 	    } else {
 
-		if (len>0) *methods=get_required_auth_methods(&payload->buffer[5], len);
-		session->status.substatus|=SUBSTATUS_USERAUTH_FAILURE;
+		/* partial success and no additional methods is an error
+		    there should be send a MSG_USERAUTH_SUCCESS in stead of an MSG_USERAUTH_FAILURE */
+
+		result=-1;
 
 	    }
 
 	} else {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	    /* failed */
+
+	    if (len>0) *methods=get_required_auth_methods(&payload->buffer[5], len);
+	    result=-1;
 
 	}
 
     } else {
 
 	session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
-	logoutput("handle_userauth_failure_message: message too short (%i)", payload->len);
 
     }
 

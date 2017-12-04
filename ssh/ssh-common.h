@@ -45,9 +45,9 @@ struct ssh_string_s {
 };
 
 struct commalist_s {
-    unsigned char *list;
-    unsigned int len;
-    unsigned int size;
+    char 				*list;
+    unsigned int 			len;
+    unsigned int 			size;
 };
 
 #define _LIBRARY_NONE			0
@@ -66,7 +66,7 @@ struct ssh_payload_s {
     unsigned int			len;
     struct ssh_payload_s		*next;
     struct ssh_payload_s		*prev;
-    unsigned char			buffer[];
+    char				buffer[];
 };
 
 struct ssh_packet_s {
@@ -74,7 +74,7 @@ struct ssh_packet_s {
     unsigned char			padding;
     unsigned int 			error;
     unsigned int			sequence;
-    unsigned char 			*buffer;
+    char 				*buffer;
 };
 
 struct rawdata_s {
@@ -99,13 +99,6 @@ struct ssh_init_algo {
     char				compression_s2c[32];
 };
 
-#define _SSH_SERVICE_USERAUTH		1
-#define _SSH_SERVICE_CONNECTION		2
-
-#define SERVER_REPLY_TYPE_PK		1
-#define SERVER_REPLY_TYPE_SERVICE	2
-#define SERVER_REPLY_TYPE_PAYLOAD	3
-
 struct server_reply_s {
     unsigned char 			reply;
     unsigned int			sequence;
@@ -120,11 +113,8 @@ struct server_reply_s {
 #define SESSION_STATUS_KEXINIT				1
 #define SESSION_STATUS_KEYEXCHANGE			2
 #define SESSION_STATUS_NEWKEYS				3
-#define SESSION_STATUS_SWITCH				4
-#define SESSION_STATUS_HOSTINFO				5
-#define SESSION_STATUS_USERAUTH				6
-#define SESSION_STATUS_USERAUTH_NONE			7
-#define SESSION_STATUS_USERAUTH_PK			8
+#define SESSION_STATUS_REQUEST_USERAUTH			4
+#define SESSION_STATUS_USERAUTH				5
 #define SESSION_STATUS_DISCONNECT			99
 #define SESSION_STATUS_COMPLETE				100
 
@@ -175,7 +165,8 @@ struct server_reply_s {
 #define SSH_USERAUTH_PUBLICKEY				2
 #define SSH_USERAUTH_PASSWORD				4
 #define SSH_USERAUTH_HOSTBASED				8
-#define SSH_USERAUTH_SUCCESS				16
+#define SSH_USERAUTH_UNKNOWN				16
+#define SSH_USERAUTH_SUCCESS				32
 
 struct ssh_status_s {
     uint64_t				unique;
@@ -364,11 +355,11 @@ struct ssh_dh_s {
     void				(* free)(struct ssh_dh_s *dh);
     unsigned int			(* get_size_modgroup)(struct ssh_dh_s *dh);
     void				(* calc_e)(struct ssh_dh_s *dh);
-    unsigned int			(* write_e)(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len);
-    unsigned int			(* read_f)(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len);
-    unsigned int			(* write_f)(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len);
+    unsigned int			(* write_e)(struct ssh_dh_s *dh, char *pos, unsigned int len);
+    unsigned int			(* read_f)(struct ssh_dh_s *dh, char *pos, unsigned int len);
+    unsigned int			(* write_f)(struct ssh_dh_s *dh, char *pos, unsigned int len);
     void				(* calc_K)(struct ssh_dh_s *dh);
-    unsigned int			(* write_K)(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len);
+    unsigned int			(* write_K)(struct ssh_dh_s *dh, char *pos, unsigned int len);
 };
 
 struct ssh_keyx_s {
@@ -385,7 +376,7 @@ struct ssh_utils_s {
     unsigned int 			(* hash)(const char *name, struct common_buffer_s *in, struct common_buffer_s *out, unsigned int *error);
     unsigned int 			(* get_digest_len)(const char *name);
     uint64_t 				(* ntohll)(uint64_t value);
-    unsigned int			(* fill_random)(unsigned char *pos, unsigned int len);
+    unsigned int			(* fill_random)(char *pos, unsigned int len);
 };
 
 #define _SSH_CONNECTION_TYPE_IPV4	1
@@ -430,7 +421,7 @@ struct ssh_receive_s {
     struct payload_queue_s		payload_queue;
     struct rawdata_queue_s		rawdata_queue;
     unsigned int 			size;
-    unsigned char			*buffer;
+    char				*buffer;
 };
 
 /* TODO use */
@@ -484,15 +475,19 @@ struct session_data_s {
     - initialization vectors
 */
 
-#define		SESSION_KEYDATA_STATUS_INIT			1
-#define		SESSION_KEYDATA_STATUS_KEYINIT			2
-#define		SESSION_KEYDATA_STATUS_KEYEXCHANGE		4
-#define		SESSION_KEYDATA_STATUS_NEWKEYS			8
-#define		SESSION_KEYDATA_STATUS_READY			16
+#define		SESSION_CRYPTO_STATUS_KEYINIT_C2S		1
+#define		SESSION_CRYPTO_STATUS_KEYINIT_S2C		2
+#define		SESSION_CRYPTO_STATUS_KEYX_C2S			4
+#define		SESSION_CRYPTO_STATUS_KEYX_S2C			8
+#define		SESSION_CRYPTO_STATUS_NEWKEYS_C2S		16
+#define		SESSION_CRYPTO_STATUS_NEWKEYS_S2C		32
+#define		SESSION_CRYPTO_STATUS_READY_C2S			64
+#define		SESSION_CRYPTO_STATUS_READY_S2C			128
+
+#define		SESSION_CRYPTO_STATUS_ERROR			256
 
 struct session_keydata_s {
-    unsigned int			status_c2s;
-    unsigned int			status_s2c;
+    unsigned int			status;
     struct ssh_string_s			kexinit_server;
     struct ssh_string_s			kexinit_client;
     struct ssh_string_s			iv_c2s;
@@ -508,6 +503,15 @@ struct session_crypto_s {
     struct ssh_keyx_s			keyx;
 };
 
+#define		SESSION_USERAUTH_STATUS_REQUEST			1
+#define		SESSION_USERAUTH_STATUS_ACCEPT			2
+#define		SESSION_USERAUTH_STATUS_SUCCESS			32
+#define		SESSION_USERAUTH_STATUS_ERROR			64
+
+struct ssh_userauth_s {
+    unsigned int			status;
+};
+
 struct session_list_s {
     struct ssh_session_s		*next;
     struct ssh_session_s		*prev;
@@ -521,6 +525,7 @@ struct ssh_session_s {
     struct channel_table_s		channel_table;
     struct session_data_s		data;
     struct session_crypto_s		crypto;
+    struct ssh_userauth_s		userauth;
     struct ssh_connection_s		connection;
     struct ssh_receive_s		receive;
     struct ssh_send_s			send;
@@ -535,7 +540,6 @@ void remove_full_session(struct ssh_session_s *session);
 void umount_ssh_session(struct context_interface_s *interface);
 
 unsigned int get_window_size(struct ssh_session_s *session);
-
 unsigned int get_max_packet_size(struct ssh_session_s *session);
 void set_max_packet_size(struct ssh_session_s *session, unsigned int size);
 

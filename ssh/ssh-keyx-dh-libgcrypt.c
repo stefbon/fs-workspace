@@ -90,7 +90,7 @@ static void calc_e_libgcrypt(struct ssh_dh_s *dh)
 
 }
 
-static unsigned int write_e_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len)
+static unsigned int write_e_libgcrypt(struct ssh_dh_s *dh, char *pos, unsigned int len)
 {
     struct libgcrypt_dh_s *lg=(struct libgcrypt_dh_s *) dh->library.ptr;
     size_t nwritten=0;
@@ -101,7 +101,7 @@ static unsigned int write_e_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, u
 
 	/* write e in mpint format */
 
-	gcry_mpi_print(GCRYMPI_FMT_SSH, pos, len, &nwritten, lg->e);
+	gcry_mpi_print(GCRYMPI_FMT_SSH, (unsigned char *)pos, len, &nwritten, lg->e);
 
 	logoutput("write_e_libgcrypt: written %i", nwritten);
 
@@ -115,7 +115,7 @@ static unsigned int write_e_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, u
 
 }
 
-static unsigned int write_f_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len)
+static unsigned int write_f_libgcrypt(struct ssh_dh_s *dh, char *pos, unsigned int len)
 {
     struct libgcrypt_dh_s *lg=(struct libgcrypt_dh_s *) dh->library.ptr;
     size_t nwritten=0;
@@ -124,7 +124,7 @@ static unsigned int write_f_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, u
 
 	/* write f in mpint format */
 
-	gcry_mpi_print(GCRYMPI_FMT_SSH, pos, len, &nwritten, lg->f);
+	gcry_mpi_print(GCRYMPI_FMT_SSH, (unsigned char *)pos, len, &nwritten, lg->f);
 
     }
 
@@ -132,13 +132,13 @@ static unsigned int write_f_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, u
 
 }
 
-static unsigned int read_f_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len)
+static unsigned int read_f_libgcrypt(struct ssh_dh_s *dh, char *pos, unsigned int len)
 {
     struct libgcrypt_dh_s *lg=(struct libgcrypt_dh_s *) dh->library.ptr;
     gcry_error_t ecode;
     size_t nwritten=0;
 
-    if (gcry_mpi_scan(&lg->f, GCRYMPI_FMT_SSH, pos, len, &nwritten)!=GPG_ERR_NO_ERROR) nwritten=0;
+    if (gcry_mpi_scan(&lg->f, GCRYMPI_FMT_SSH, (unsigned char *)pos, len, &nwritten)!=GPG_ERR_NO_ERROR) nwritten=0;
 
     return (unsigned int) nwritten;
 
@@ -154,7 +154,7 @@ static void calc_K_libgcrypt(struct ssh_dh_s *dh)
 
 }
 
-static unsigned int write_K_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, unsigned int len)
+static unsigned int write_K_libgcrypt(struct ssh_dh_s *dh, char *pos, unsigned int len)
 {
     struct libgcrypt_dh_s *lg=(struct libgcrypt_dh_s *) dh->library.ptr;
     size_t nwritten=0;
@@ -163,7 +163,7 @@ static unsigned int write_K_libgcrypt(struct ssh_dh_s *dh, unsigned char *pos, u
 
 	/* write K in mpint format */
 
-	gcry_mpi_print(GCRYMPI_FMT_SSH, pos, len, &nwritten, lg->K);
+	gcry_mpi_print(GCRYMPI_FMT_SSH, (unsigned char *)pos, len, &nwritten, lg->K);
 
     }
 

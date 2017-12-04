@@ -79,7 +79,7 @@
     - boolean		want reply
     ....		request specific data
 
-    like "hostkeys-prove-00@openssh.com"
+    like "hostkeys-00@openssh.com"
 */
 
 static void receive_msg_global_request(struct ssh_session_s *session, struct ssh_payload_s *payload)
@@ -98,7 +98,7 @@ static void receive_msg_global_request(struct ssh_session_s *session, struct ssh
 	    memcpy(string, &payload->buffer[pos], len);
 	    string[len]='\0';
 
-	    logoutput("receive_msg_global_request: request %s", string);
+	    logoutput("receive_msg_global_request: %s", string);
 
 	    if (strcmp(string, "hostkeys-00@openssh.com")==0) {
 
@@ -109,7 +109,7 @@ static void receive_msg_global_request(struct ssh_session_s *session, struct ssh
 		    len=get_uint32(&payload->buffer[pos]);
 
 		    if (pos + 4 + len < payload->len) {
-			char hostkey[4 + len + 1];
+			char hostkey[len + 1];
 
 			pos+=4;
 			memcpy(hostkey, &payload->buffer[pos], len);

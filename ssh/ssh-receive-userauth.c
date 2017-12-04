@@ -161,19 +161,36 @@ static void receive_msg_userauth_pk_ok(struct ssh_session_s *session, struct ssh
 
 }
 
+/* banner message
+    see: https://tools.ietf.org/html/rfc4252#section-5.4 Banner Message
+    This software is running in background, so the message cannot be displayed on screen...
+    log it anyway (ignore message)
+
+    message looks like:
+    - byte			SSH_MSG_USERAUTH_BANNER
+    - string			message in ISO-10646 UTF-8 encoding
+    - string			language tag
+    */
+
 static void receive_msg_userauth_banner(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
-    unsigned int len=get_uint32(&payload->buffer[1]);
+    if (payload->len>9) {
+	unsigned int len=get_uint32(&payload->buffer[1]);
 
-    if (len < 256) {
-	char banner[len+1];
+	if (payload->len>=9+len) {
+	    char banner[len+1];
 
-	memcpy(banner, &payload->buffer[5], len);
-	banner[len]='\0';
+	    memcpy(banner, &payload->buffer[5], len);
+	    banner[len]='\0';
 
-	logoutput("receive_msg_userauth_banner: banner %s", banner);
+	    logoutput("receive_msg_userauth_banner: received banner %s", banner);
+
+	}
 
     }
+
+    free(payload);
+
 }
 
 void register_userauth_cb()

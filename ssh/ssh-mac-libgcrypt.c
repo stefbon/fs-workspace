@@ -107,16 +107,16 @@ static int _verify_mac_post(struct rawdata_s *data)
     struct ssh_session_s *session=data->session;
     struct ssh_hmac_s *hmac=&session->crypto.hmac;
     struct libgcrypt_mac_s *ll_mac=(struct libgcrypt_mac_s *) hmac->library_s2c.ptr;
-    unsigned char tmp[4];
+    char tmp[4];
     gcry_error_t result=0;
 
     memset(tmp, '\0', 4);
     store_uint32(tmp, data->sequence);
 
-    gcry_mac_write(ll_mac->handle, &tmp[0], 4);
-    gcry_mac_write(ll_mac->handle, data->buffer, data->len - data->maclen);
+    gcry_mac_write(ll_mac->handle, (void *)&tmp[0], 4);
+    gcry_mac_write(ll_mac->handle, (void *)data->buffer, data->len - data->maclen);
 
-    result=gcry_mac_verify(ll_mac->handle, data->buffer + data->len - data->maclen, data->maclen);
+    result=gcry_mac_verify(ll_mac->handle, (void *)(data->buffer + data->len - data->maclen), data->maclen);
 
     if (result==GPG_ERR_CHECKSUM) {
 
@@ -137,18 +137,19 @@ static void _reset_c2s(struct ssh_hmac_s *hmac)
     gcry_mac_reset(ll_mac->handle);
 }
 
-/* create the mac */
+/* create the mac 
+    default the mac is created before encryption */
 
 static void _write_mac_pre(struct ssh_hmac_s *hmac, struct ssh_packet_s *packet)
 {
     struct libgcrypt_mac_s *ll_mac=(struct libgcrypt_mac_s *) hmac->library_c2s.ptr;
-    unsigned char tmp[4];
+    char tmp[4];
 
     memset(tmp, '\0', 4);
     store_uint32(tmp, packet->sequence);
 
-    gcry_mac_write(ll_mac->handle, &tmp[0], 4);
-    gcry_mac_write(ll_mac->handle, packet->buffer, packet->len);
+    gcry_mac_write(ll_mac->handle, (void *)&tmp[0], 4);
+    gcry_mac_write(ll_mac->handle, (void *)packet->buffer, packet->len);
 
 }
 
@@ -166,8 +167,7 @@ static ssize_t _send_c2s(struct ssh_session_s *session, struct ssh_packet_s *pac
     size_t size=hmac->maclen_c2s;
     char mac[size];
 
-
-    if (gcry_mac_read(ll_mac->handle, &mac[0], &size)==0) {
+    if (gcry_mac_read(ll_mac->handle, (void *)&mac[0], &size)==0) {
 	struct iovec iov[2];
 
 	iov[0].iov_base=(void *) packet->buffer;
@@ -176,7 +176,6 @@ static ssize_t _send_c2s(struct ssh_session_s *session, struct ssh_packet_s *pac
 	iov[1].iov_len=hmac->maclen_c2s;
 
 	written=writev(session->connection.fd, iov, 2);
-
 	if (written==-1) packet->error=errno;
 
     } else {
@@ -341,7 +340,6 @@ static int _set_hmac_c2s(struct ssh_hmac_s *hmac, const char *name, unsigned int
 	hmac->free_c2s 			= _free_c2s;
 
 	gcry_mac_setkey(ll_mac->handle, hmac->key_c2s.ptr, hmac->key_c2s.len);
-
 	hmac->maclen_c2s=maclen;
 
 	_reset_c2s(hmac);

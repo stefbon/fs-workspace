@@ -103,6 +103,6 @@
 
 /* prototypes */
 
-unsigned int write_disconnect_reason(unsigned int reason, unsigned char *pos, unsigned int size, unsigned int *error);
+unsigned int write_disconnect_reason(unsigned int reason, char *pos, unsigned int size, unsigned int *error);
 
 #endif
