@@ -362,6 +362,19 @@ struct ssh_dh_s {
     unsigned int			(* write_K)(struct ssh_dh_s *dh, char *pos, unsigned int len);
 };
 
+/*
+    TODO:
+    struct ssh_ecdh_s {
+	free
+	void				(calc q_c)
+	unsigned int			(write q_c)
+	unsigned int			(read q_s)
+	unsigned int			(write q_s)
+	void				(calc K)
+	unsigned int			(write K)
+    }
+*/
+
 struct ssh_keyx_s {
     char 				digestname[32];
     int					(* start_keyx)(struct ssh_session_s *session, struct ssh_init_algo *algos);
