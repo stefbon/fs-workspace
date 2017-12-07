@@ -90,8 +90,6 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
 
     memset(receive, 0, sizeof(struct ssh_receive_s));
 
-    /* rawdata queue */
-
     init_receive_rawdata_queue(session);
 
     /* packet queue */
