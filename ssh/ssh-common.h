@@ -88,17 +88,6 @@ struct rawdata_s {
     unsigned char 			buffer[];
 };
 
-struct ssh_init_algo {
-    char				keyexchange[64];
-    char				hostkey[32];
-    char				encryption_c2s[64];
-    char				encryption_s2c[64];
-    char				hmac_c2s[64];
-    char				hmac_s2c[64];
-    char				compression_c2s[32];
-    char				compression_s2c[32];
-};
-
 struct server_reply_s {
     unsigned char 			reply;
     unsigned int			sequence;
@@ -210,8 +199,6 @@ struct ssh_signal_s {
 #define _CHANNEL_TYPE_DIRECT_STREAMLOCAL			3
 #define _CHANNEL_TYPE_DIRECT_TCPIP				4
 
-#define _CHANNEL_TARGET_PROTOCOL_BFILESERVER			1
-
 struct ssh_channel_s {
     struct ssh_session_s 		*session;
     unsigned char			type;
@@ -285,7 +272,7 @@ struct ssh_encrypt_s {
     unsigned int			blocksize;
     int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		key;
+    struct ssh_string_s 		*key;
     struct ssh_string_s 		*iv;
     unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
 };
@@ -301,7 +288,7 @@ struct ssh_decrypt_s {
     unsigned int			blocksize;
     int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		key;
+    struct ssh_string_s 		*key;
     struct ssh_string_s 		*iv;
     unsigned int			size_firstbytes;
 };
@@ -331,8 +318,8 @@ struct ssh_hmac_s {
     unsigned int 			(*get_mac_keylen)(char *name);
     int					(*setkey_c2s)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setkey_s2c)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    struct ssh_string_s 		key_s2c;
-    struct ssh_string_s 		key_c2s;
+    struct ssh_string_s 		*key_s2c;
+    struct ssh_string_s 		*key_c2s;
     unsigned int 			maclen_c2s;
     unsigned int 			maclen_s2c;
 };
@@ -374,10 +361,11 @@ struct ssh_dh_s {
 	unsigned int			(write K)
     }
 */
+struct ssh_kexinit_algo;
 
 struct ssh_keyx_s {
     char 				digestname[32];
-    int					(* start_keyx)(struct ssh_session_s *session, struct ssh_init_algo *algos);
+    int					(* start_keyx)(struct ssh_session_s *session, struct ssh_kexinit_algo *algos);
     void				(* free)(struct ssh_session_s *ssh_session);
     union {
 	struct ssh_dh_s			dh;
@@ -404,14 +392,6 @@ struct ssh_connection_s {
     unsigned int 			fd;
     struct bevent_xdata_s 		*xdata;
 };
-
-/*
-    payload queue for ssh messages
-    payload may not be uncompressed
-    the mutex and cond is not only used for the session only, but also for the channel payload queue and server reply
-    this to make it possible to process the SSH_MSG_UNIMPLEMENTED
-    waiting threads for channel related messages must also wait
-*/
 
 struct payload_queue_s {
     struct ssh_payload_s 		*first;
@@ -481,6 +461,17 @@ struct session_data_s {
     struct ssh_string_s			greeter_server;
 };
 
+struct ssh_kexinit_algo {
+    char				keyexchange[64];
+    char				hostkey[32];
+    char				encryption_c2s[64];
+    char				encryption_s2c[64];
+    char				hmac_c2s[64];
+    char				hmac_s2c[64];
+    char				compression_c2s[32];
+    char				compression_s2c[32];
+};
+
 /*
     data per crypto session:
     - kexinit message send by server
@@ -505,6 +496,11 @@ struct session_keydata_s {
     struct ssh_string_s			kexinit_client;
     struct ssh_string_s			iv_c2s;
     struct ssh_string_s			iv_s2c;
+    struct ssh_string_s 		hmac_key_s2c;
+    struct ssh_string_s 		hmac_key_c2s;
+    struct ssh_string_s 		cipher_key_s2c;
+    struct ssh_string_s 		cipher_key_c2s;
+    struct ssh_kexinit_algo		algos;
 };
 
 struct session_crypto_s {
