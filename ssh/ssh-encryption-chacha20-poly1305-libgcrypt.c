@@ -298,7 +298,6 @@ static int _init_encryption_chacha20_poly1305(struct library_s *library, unsigne
 	    library->type=_LIBRARY_LIBGCRYPT;
 	    library->ptr=(void *) cipher;
 
-
 	} else {
 
 	    _free_cipher(cipher);
@@ -324,6 +323,7 @@ int init_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
+	struct ssh_string_s *key=encryption->encrypt.key;
 
 	encryption->encrypt.encrypt=_encrypt_packet;
 	encryption->encrypt.reset_encrypt=_reset_encrypt;
@@ -332,8 +332,8 @@ int init_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 
 	/* divide the 64 bytes key into two 32 bytes */
 
-	gcry_cipher_setkey(cipher->main_handle, encryption->encrypt.key.ptr, 32);
-	gcry_cipher_setkey(cipher->header_handle, encryption->encrypt.key.ptr+32, 32);
+	gcry_cipher_setkey(cipher->main_handle, key->ptr, 32);
+	gcry_cipher_setkey(cipher->header_handle, key->ptr+32, 32);
 
 	encryption->encrypt.blocksize=CHACHA20_BLOCKSIZE;
 	encryption->encrypt.get_message_padding=get_padding_custom; /* padding is different */
@@ -362,6 +362,7 @@ int init_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
+	struct ssh_string_s *key=encryption->decrypt.key;
 
 	encryption->decrypt.decrypt_length=_decrypt_length;
 	encryption->decrypt.decrypt_packet=_decrypt_packet;
@@ -370,8 +371,8 @@ int init_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 	encryption->decrypt.free_decrypt=_free_decrypt;
 	encryption->decrypt.size_firstbytes=4;
 
-	gcry_cipher_setkey(cipher->main_handle, encryption->decrypt.key.ptr, 32);
-	gcry_cipher_setkey(cipher->header_handle, encryption->decrypt.key.ptr+32, 32);
+	gcry_cipher_setkey(cipher->main_handle, key->ptr, 32);
+	gcry_cipher_setkey(cipher->header_handle, key->ptr+32, 32);
 
 	encryption->decrypt.blocksize=CHACHA20_BLOCKSIZE;
 
