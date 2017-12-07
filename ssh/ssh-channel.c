@@ -458,17 +458,9 @@ void add_admin_channel(struct ssh_session_s *session)
 
 	logoutput("add_admin_channel: created admin channel");
 
-    } else {
-
-	result=-1;
-	free_ssh_channel(channel);
-	channel=NULL;
-
     }
 
     pthread_mutex_lock(&table->mutex);
-
-    if (channel) 
 
     if (table->lock & TABLE_LOCK_OPENCHANNEL) {
 
@@ -482,7 +474,6 @@ void add_admin_channel(struct ssh_session_s *session)
     if (result==-1) {
 
 	remove_channel_table(channel);
-	send_channel_close_message(channel);
 	free_ssh_channel(channel);
 	channel=NULL;
 
