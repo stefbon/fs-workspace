@@ -332,6 +332,7 @@ static int _set_hmac_c2s(struct ssh_hmac_s *hmac, const char *name, unsigned int
 
     if (_init_hmac(&hmac->library_c2s, name, &maclen, error)==0) {
 	struct libgcrypt_mac_s *ll_mac=(struct libgcrypt_mac_s *) hmac->library_c2s.ptr;
+	struct ssh_string_s *key=hmac->key_c2s;
 
 	hmac->reset_c2s 		= _reset_c2s;
 	hmac->write_mac_pre 		= _write_mac_pre;
@@ -339,7 +340,7 @@ static int _set_hmac_c2s(struct ssh_hmac_s *hmac, const char *name, unsigned int
 	hmac->send_c2s 			= _send_c2s;
 	hmac->free_c2s 			= _free_c2s;
 
-	gcry_mac_setkey(ll_mac->handle, hmac->key_c2s.ptr, hmac->key_c2s.len);
+	gcry_mac_setkey(ll_mac->handle, key->ptr, key->len);
 	hmac->maclen_c2s=maclen;
 
 	_reset_c2s(hmac);
@@ -367,13 +368,14 @@ static int _set_hmac_s2c(struct ssh_hmac_s *hmac, const char *name, unsigned int
 
     if (_init_hmac(&hmac->library_s2c, name, &maclen, error)==0) {
 	struct libgcrypt_mac_s *ll_mac=(struct libgcrypt_mac_s *) hmac->library_s2c.ptr;
+	struct ssh_string_s *key=hmac->key_s2c;
 
 	hmac->reset_s2c 		= _reset_s2c;
 	hmac->verify_mac_pre 		= _verify_mac_pre;
 	hmac->verify_mac_post 		= _verify_mac_post;
 	hmac->free_s2c 			= _free_s2c;
 
-	gcry_mac_setkey(ll_mac->handle, hmac->key_s2c.ptr, hmac->key_s2c.len);
+	gcry_mac_setkey(ll_mac->handle, key->ptr, key->len);
 
 	hmac->maclen_s2c=maclen;
 
