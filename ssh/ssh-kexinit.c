@@ -63,7 +63,7 @@
     on the server list
 */
 
-static void get_best_guess(unsigned char *pos_client, unsigned int len_client, unsigned char *pos_server, unsigned int len_server, char *name, unsigned int size)
+static void get_best_guess(char *pos_client, unsigned int len_client, char *pos_server, unsigned int len_server, char *name, unsigned int size)
 {
     char list_client[len_client+1];
     char list_server[len_server+1];
@@ -73,8 +73,8 @@ static void get_best_guess(unsigned char *pos_client, unsigned int len_client, u
     memset(&list_client[0], '\0', len_client+1);
     memset(&list_server[0], '\0', len_server+1);
 
-    memcpy(&list_client[0], (char *) pos_client, len_client);
-    memcpy(&list_server[0], (char *) pos_server, len_server);
+    memcpy(&list_client[0], pos_client, len_client);
+    memcpy(&list_server[0], pos_server, len_server);
 
     logoutput("get_best_guess: compare %s - %s", list_client, list_server);
 
@@ -162,7 +162,7 @@ static void get_best_guess(unsigned char *pos_client, unsigned int len_client, u
 	(none is allowed)
     */
 
-int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struct ssh_init_algo *algos)
+int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struct ssh_kexinit_algo *algos)
 {
     struct session_data_s *data=&session->data;
     struct ssh_string_s *kexinit_client=&session->crypto.keydata.kexinit_client;
