@@ -462,7 +462,7 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
 
 }
 
-static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffer_s *H, struct ssh_init_algo *algos)
+static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffer_s *H, struct ssh_kexinit_algo *algos)
 {
     unsigned int keylen=0;
     unsigned int error=0;
@@ -732,7 +732,7 @@ static int _send_kexdh_init_message(struct ssh_session_s *session, struct ssh_pa
 
 }
 
-static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_init_algo *algos)
+static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_kexinit_algo *algos)
 {
     struct ssh_key_s *hostkey=&session->crypto.pubkey.server_hostkey;
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
@@ -1019,7 +1019,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
     - check hostkey is really hostkey of server, calculate the shared key K, create the exchange hash H and verify the signature of H using the public key
 */
 
-static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_init_algo *algos)
+static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
 {
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
