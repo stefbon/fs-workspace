@@ -50,6 +50,7 @@
 #include "ssh-utils-libgcrypt.h"
 
 extern int initialize_group_ssh_sessions(unsigned int *error);
+extern void free_group_ssh_sessions();
 
 static struct ssh_utils_s utils;
 static unsigned char done=0;
