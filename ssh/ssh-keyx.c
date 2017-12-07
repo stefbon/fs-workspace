@@ -51,7 +51,7 @@
 
 #include "ctx-options.h"
 
-static int start_keyx_dummy(struct ssh_session_s *session, struct ssh_init_algo *algos)
+static int start_keyx_dummy(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
 {
     return 0;
 }
@@ -60,7 +60,7 @@ static void free_keyx_dummy(struct ssh_session_s *session)
 {
 }
 
-int start_keyx(struct ssh_session_s *session, struct ssh_init_algo *algos)
+int start_keyx(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
 {
     struct ssh_keyx_s *keyx=&session->crypto.keyx;
     return (* keyx->start_keyx)(session, algos);
