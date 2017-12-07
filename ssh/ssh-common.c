@@ -232,9 +232,9 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 
 static int _setup_ssh_session(struct ssh_session_s *session, struct context_interface_s *interface)
 {
-    struct ssh_init_algo algos;
+    struct ssh_kexinit_algo *algos=&session->crypto.keydata.algos;
 
-    init_ssh_algo(&algos);
+    init_ssh_algo(algos);
 
     /* send a greeter and wait for greeter from server */
 
@@ -352,29 +352,29 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	/* compare the different suggested algo's and select */
 
-	if (compare_msg_kexinit(session, 1, &algos)==0) {
+	if (compare_msg_kexinit(session, 1, algos)==0) {
 
 	    /* set those algo's here cause they are needed in the next step (others later) */
 
-	    if (set_keyx(session, algos.keyexchange, &error)==0) {
+	    if (set_keyx(session, algos->keyexchange, &error)==0) {
 
-		logoutput("_setup_ssh_session: set keyx method to %s", algos.keyexchange);
+		logoutput("_setup_ssh_session: set keyx method to %s", algos->keyexchange);
 
 	    } else {
 
-		logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos.keyexchange, strerror(error));
+		logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos->keyexchange, strerror(error));
 		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 		goto outkexinit;
 
 	    }
 
-	    if (set_pubkey(session, algos.hostkey, &error)==0) {
+	    if (set_pubkey(session, algos->hostkey, &error)==0) {
 
-		logoutput("_setup_ssh_session: set pubkey method %s", algos.hostkey);
+		logoutput("_setup_ssh_session: set pubkey method %s", algos->hostkey);
 
 	    } else {
 
-		logoutput("_setup_ssh_session: error %i setting pubkey method %s (%s)", error, algos.hostkey, strerror(error));
+		logoutput("_setup_ssh_session: error %i setting pubkey method %s (%s)", error, algos->hostkey, strerror(error));
 		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 		goto outkexinit;
 
@@ -382,8 +382,8 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    /* correct mac names for combined cipher/mac algo's */
 
-	    if (strcmp(algos.encryption_c2s, "chacha20-poly1305@openssh.com")==0) strcpy(algos.hmac_c2s, algos.encryption_c2s);
-	    if (strcmp(algos.encryption_s2c, "chacha20-poly1305@openssh.com")==0) strcpy(algos.hmac_s2c, algos.encryption_s2c);
+	    if (strcmp(algos->encryption_c2s, "chacha20-poly1305@openssh.com")==0) strcpy(algos->hmac_c2s, algos->encryption_c2s);
+	    if (strcmp(algos->encryption_s2c, "chacha20-poly1305@openssh.com")==0) strcpy(algos->hmac_s2c, algos->encryption_s2c);
 
 	} else {
 
@@ -422,7 +422,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	logoutput("_setup_ssh_session: start keyexchange");
 
-	if (start_keyx(session, &algos)==-1) goto error;
+	if (start_keyx(session, algos)==-1) goto error;
 
 	/* goto next phase: newkeys  */
 
@@ -479,37 +479,37 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	/* switch to new algo's for c2s */
 
-	if (set_encryption(session, algos.encryption_c2s, &error)==0) {
+	if (set_encryption(session, algos->encryption_c2s, &error)==0) {
 
-	    logoutput("_setup_ssh_session: encryption method c2s set to %s", algos.encryption_c2s);
+	    logoutput("_setup_ssh_session: encryption method c2s set to %s", algos->encryption_c2s);
 
 	} else {
 
-	    logoutput("_setup_ssh_session: error %i setting encryption method c2s to %s (%s)", error, algos.encryption_c2s, strerror(error));
+	    logoutput("_setup_ssh_session: error %i setting encryption method c2s to %s (%s)", error, algos->encryption_c2s, strerror(error));
 	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	    goto outnewkeys;
 
 	}
 
-	if (set_hmac_c2s(session, algos.hmac_c2s, &error)==0) {
+	if (set_hmac_c2s(session, algos->hmac_c2s, &error)==0) {
 
-	    logoutput("_setup_ssh_session: hmac method c2s %s", algos.hmac_c2s);
+	    logoutput("_setup_ssh_session: hmac method c2s %s", algos->hmac_c2s);
 
 	} else {
 
-	    logoutput("_setup_ssh_session: error %i setting hmac method c2s to %s (%s)", error, algos.hmac_c2s, strerror(error));
+	    logoutput("_setup_ssh_session: error %i setting hmac method c2s to %s (%s)", error, algos->hmac_c2s, strerror(error));
 	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	    goto outnewkeys;
 
 	}
 
-	if (set_compression_c2s(session, algos.compression_c2s, &error)==0) {
+	if (set_compression_c2s(session, algos->compression_c2s, &error)==0) {
 
-	    logoutput("_setup_ssh_session: set compression methods c2s to %s", algos.compression_c2s);
+	    logoutput("_setup_ssh_session: set compression methods c2s to %s", algos->compression_c2s);
 
 	} else {
 
-	    logoutput("_setup_ssh_session: error %i setting compression methods c2s to %s (%s)", error, algos.compression_c2s, strerror(error));
+	    logoutput("_setup_ssh_session: error %i setting compression methods c2s to %s (%s)", error, algos->compression_c2s, strerror(error));
 	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	    goto outnewkeys;
 
@@ -538,37 +538,37 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	    /* switch to new algo's for s2c */
 
-	    if (set_decryption(session, algos.encryption_s2c, &error)==0) {
+	    if (set_decryption(session, algos->encryption_s2c, &error)==0) {
 
-		logoutput("_setup_ssh_session: decryption method s2c set to %s", algos.encryption_s2c);
+		logoutput("_setup_ssh_session: decryption method s2c set to %s", algos->encryption_s2c);
 
 	    } else {
 
-		logoutput("_setup_ssh_session: error %i setting decryption method s2c to %s (%s)", error, algos.encryption_s2c, strerror(error));
+		logoutput("_setup_ssh_session: error %i setting decryption method s2c to %s (%s)", error, algos->encryption_s2c, strerror(error));
 		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 		goto outnewkeys;
 
 	    }
 
-	    if (set_hmac_s2c(session, algos.hmac_s2c, &error)==0) {
+	    if (set_hmac_s2c(session, algos->hmac_s2c, &error)==0) {
 
-		logoutput("_setup_ssh_session: hmac method s2c %s", algos.hmac_s2c);
+		logoutput("_setup_ssh_session: hmac method s2c %s", algos->hmac_s2c);
 
 	    } else {
 
-		logoutput("_setup_ssh_session: error %i setting hmac method s2c to %s (%s)", error, algos.hmac_s2c, strerror(error));
+		logoutput("_setup_ssh_session: error %i setting hmac method s2c to %s (%s)", error, algos->hmac_s2c, strerror(error));
 		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 		goto outnewkeys;
 
 	    }
 
-	    if (set_compression_s2c(session, algos.compression_s2c, &error)==0) {
+	    if (set_compression_s2c(session, algos->compression_s2c, &error)==0) {
 
-		logoutput("_setup_ssh_session: set compression methods s2c to %s", algos.compression_s2c);
+		logoutput("_setup_ssh_session: set compression methods s2c to %s", algos->compression_s2c);
 
 	    } else {
 
-		logoutput("_setup_ssh_session: error %i setting compression methods s2c to %s (%s)", error, algos.compression_s2c, strerror(error));
+		logoutput("_setup_ssh_session: error %i setting compression methods s2c to %s (%s)", error, algos->compression_s2c, strerror(error));
 		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 		goto outnewkeys;
 
