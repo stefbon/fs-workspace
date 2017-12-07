@@ -134,10 +134,12 @@ void init_encryption(struct ssh_session_s *session)
     set_decrypt_none(encryption);
     set_encrypt_none(encryption);
 
-    /* initialization vectors are stored on a central location */
+    /* initialization vectors and keys are stored on a central location */
 
     encryption->decrypt.iv=&session->crypto.keydata.iv_s2c;
     encryption->encrypt.iv=&session->crypto.keydata.iv_c2s;
+    encryption->encrypt.key=&session->crypto.keydata.cipher_key_c2s;
+    encryption->decrypt.key=&session->crypto.keydata.cipher_key_s2c;
 
     init_encryption_libgcrypt(encryption);
 
@@ -227,7 +229,7 @@ int set_cipher_key_c2s(struct ssh_session_s *session, char *name, struct ssh_str
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_encrypt_s *encrypt=&encryption->encrypt;
-    return (* encrypt->setkey)(&encrypt->key, name, key);
+    return (* encrypt->setkey)(encrypt->key, name, key);
 }
 
 int set_cipher_iv_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
@@ -297,7 +299,7 @@ int set_cipher_key_s2c(struct ssh_session_s *session, char *name, struct ssh_str
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_decrypt_s *decrypt=&encryption->decrypt;
-    return (* decrypt->setkey)(&decrypt->key, name, key);
+    return (* decrypt->setkey)(decrypt->key, name, key);
 }
 
 int set_cipher_iv_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
