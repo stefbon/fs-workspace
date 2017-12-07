@@ -107,6 +107,8 @@ struct ssh_session_s *get_next_ssh_session(void **index, unsigned int *hashvalue
 {
     struct ssh_session_s *session=(struct ssh_session_s *) get_next_hashed_value(&group_ssh_sessions, index, *hashvalue);
 
+    /* find every session */
+
     while(session==NULL && *hashvalue<group_ssh_sessions.len) {
 
 	(*hashvalue)++;
