@@ -512,6 +512,14 @@ struct session_crypto_s {
     struct ssh_keyx_s			keyx;
 };
 
+struct key_reexchange_s {
+    struct session_keydata_s		keydata;
+    struct ssh_payload_s 		*first;
+    struct ssh_payload_s 		*last;
+    pthread_mutex_t			mutex;
+    pthread_cond_t			cond;
+};
+
 #define		SESSION_USERAUTH_STATUS_REQUEST			1
 #define		SESSION_USERAUTH_STATUS_ACCEPT			2
 #define		SESSION_USERAUTH_STATUS_SUCCESS			32
@@ -534,6 +542,7 @@ struct ssh_session_s {
     struct channel_table_s		channel_table;
     struct session_data_s		data;
     struct session_crypto_s		crypto;
+    struct key_reexchange_s		*reexchange;
     struct ssh_userauth_s		userauth;
     struct ssh_connection_s		connection;
     struct ssh_receive_s		receive;
