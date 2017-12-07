@@ -130,7 +130,6 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
     pthread_mutex_unlock(queue->signal.mutex);
 
     payload->type=(unsigned char) payload->buffer[0];
-
     logoutput("get_ssh_payload: (%i) type %i", gettid(), payload->type);
 
     return payload;
@@ -236,13 +235,6 @@ static void process_payload_queue_disconnect(struct ssh_session_s *session)
     /* TODO */
 }
 
-/* queue data read from the rawdata queue on the payload queue
-*/
-
-void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet)
-{
-    struct ssh_payload_s *payload=NULL;
-    unsigned int len=packet->len - packet->padding - 1;
 
     /*
 	allocate a new payload when a packet is found in the buffer
@@ -260,6 +252,13 @@ void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet
 	when here mac and encryption are already processed, the payload is still compressed
 
     */
+
+/* queue payload on the transport queue */
+
+void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet)
+{
+    struct ssh_payload_s *payload=NULL;
+    unsigned int len=packet->len - packet->padding - 1;
 
     payload=malloc(sizeof(struct ssh_payload_s) + len);
 
@@ -290,8 +289,6 @@ void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet
 
 	    queue->last=payload;
 	    queue->first=payload;
-
-	    /* depending the phase (init or session) what to do? */
 
 	    (* queue->process_payload_queue)(session);
 
