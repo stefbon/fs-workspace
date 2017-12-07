@@ -23,7 +23,7 @@
 void init_ssh_string(struct ssh_string_s *s);
 void free_ssh_string(struct ssh_string_s *s);
 
-void init_ssh_algo(struct ssh_init_algo *algo);
+void init_ssh_algo(struct ssh_kexinit_algo *algo);
 
 int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error);
 int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error);
