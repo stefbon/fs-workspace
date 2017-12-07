@@ -66,9 +66,9 @@ void free_ssh_string(struct ssh_string_s *s)
     s->len=0;
 }
 
-void init_ssh_algo(struct ssh_init_algo *algo)
+void init_ssh_algo(struct ssh_kexinit_algo *algo)
 {
-    memset(algo, 0, sizeof(struct ssh_init_algo));
+    memset(algo, 0, sizeof(struct ssh_kexinit_algo));
 
     strcpy(algo->encryption_c2s, "none");
     strcpy(algo->encryption_s2c, "none");
@@ -192,6 +192,11 @@ void init_session_data(struct ssh_session_s *session)
     init_ssh_string(&crypto->keydata.kexinit_client);
     init_ssh_string(&crypto->keydata.iv_s2c);
     init_ssh_string(&crypto->keydata.iv_c2s);
+    init_ssh_string(&crypto->keydata.cipher_key_s2c);
+    init_ssh_string(&crypto->keydata.cipher_key_c2s);
+    init_ssh_string(&crypto->keydata.hmac_key_s2c);
+    init_ssh_string(&crypto->keydata.hmac_key_c2s);
+
 }
 
 void free_session_data(struct ssh_session_s *session)
@@ -206,4 +211,9 @@ void free_session_data(struct ssh_session_s *session)
     free_ssh_string(&crypto->keydata.kexinit_client);
     free_ssh_string(&crypto->keydata.iv_s2c);
     free_ssh_string(&crypto->keydata.iv_c2s);
+    free_ssh_string(&crypto->keydata.cipher_key_s2c);
+    free_ssh_string(&crypto->keydata.cipher_key_c2s);
+    free_ssh_string(&crypto->keydata.hmac_key_s2c);
+    free_ssh_string(&crypto->keydata.hmac_key_c2s);
+
 }
