@@ -23,7 +23,7 @@
 void init_keyx(struct ssh_session_s *session);
 int set_keyx(struct ssh_session_s *session, const char *name, unsigned int *error);
 
-int start_keyx(struct ssh_session_s *session, struct ssh_init_algo *algos);
+int start_keyx(struct ssh_session_s *session, struct ssh_kexinit_algo *algos);
 void free_keyx(struct ssh_session_s *session);
 
 unsigned int ssh_get_keyx_list(struct commalist_s *clist);
