@@ -121,6 +121,9 @@ void init_mac(struct ssh_session_s *session)
     hmac->maclen_c2s=0;
     hmac->maclen_s2c=0;
 
+    hmac->key_c2s=&session->crypto.keydata.hmac_key_c2s;
+    hmac->key_s2c=&session->crypto.keydata.hmac_key_s2c;
+
     init_mac_libgcrypt(hmac);
 
 }
@@ -234,13 +237,13 @@ unsigned int get_maclen_s2c(struct ssh_session_s *session)
 int set_mac_key_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
 {
     struct ssh_hmac_s *hmac=&session->crypto.hmac;
-    return (* hmac->setkey_c2s)(&hmac->key_c2s, name, key);
+    return (* hmac->setkey_c2s)(hmac->key_c2s, name, key);
 }
 
 int set_mac_key_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *key)
 {
     struct ssh_hmac_s *hmac=&session->crypto.hmac;
-    return (* hmac->setkey_s2c)(&hmac->key_s2c, name, key);
+    return (* hmac->setkey_s2c)(hmac->key_s2c, name, key);
 }
 
 unsigned int get_mac_keylen(struct ssh_session_s *session, const char *name)
