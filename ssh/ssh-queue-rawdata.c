@@ -292,11 +292,11 @@ static void process_rawdata_session(struct rawdata_s *data)
 			if (crypto->keydata.status==(SESSION_CRYPTO_STATUS_KEYINIT_S2C | SESSION_CRYPTO_STATUS_KEYX_S2C)) {
 
 			    logoutput("process_rawdata_session: received newkeys, check ok");
-			    crypto->keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_S2C;
+			    //crypto->keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_S2C;
 
 			} else {
 
-			    logoutput("process_rawdata_session: received newkeys, check failed");
+			    logoutput("process_rawdata_session: received newkeys, check failed (%i)", crypto->keydata.status);
 
 			}
 
