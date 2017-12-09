@@ -51,42 +51,39 @@
 
 #include "ctx-options.h"
 
-static int start_keyx_dummy(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
+static int start_keyx_dummy(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos)
 {
     return 0;
 }
 
-static void free_keyx_dummy(struct ssh_session_s *session)
+static void free_keyx_dummy(struct ssh_keyx_s *keyx)
 {
 }
 
-int start_keyx(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
+int start_keyx(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
-    return (* keyx->start_keyx)(session, algos);
+    return (* keyx->start_keyx)(session, keyx, algos);
 }
 
-void free_keyx(struct ssh_session_s *session)
+void free_keyx(struct ssh_keyx_s *keyx)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
-    (* keyx->free)(session);
+    (* keyx->free)(keyx);
 }
 
-void init_keyx(struct ssh_session_s *session)
+void init_keyx(struct ssh_keyx_s *keyx)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
 
     memset(keyx, 0, sizeof(struct ssh_keyx_s));
     memset(keyx->digestname, '\0', sizeof(keyx->digestname));
+    keyx->type_hostkey=0;
 
     keyx->start_keyx=start_keyx_dummy;
     keyx->free=free_keyx_dummy;
 
 }
 
-int set_keyx(struct ssh_session_s *session, const char *name, unsigned int *error)
+int set_keyx(struct ssh_keyx_s *keyx, const char *name, const char *keyname, unsigned int *error)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
 
     /*
 	TODO
@@ -94,9 +91,18 @@ int set_keyx(struct ssh_session_s *session, const char *name, unsigned int *erro
 	(and none)
     */
 
+    keyx->type_hostkey=get_pubkey_type((unsigned char *) keyname, strlen(keyname));
+
+    if (keyx->type_hostkey==0) {
+
+	*error=EINVAL;
+	return -1;
+
+    }
+
     if (strcmp(name, "diffie-hellman-group1-sha1")==0 || strcmp(name, "diffie-hellman-group14-sha1")==0) {
 
-	return set_keyx_dh(session, name, error);
+	return set_keyx_dh(keyx, name, error);
 
     } else if (strcmp(name, "none") == 0) {
 
@@ -114,9 +120,7 @@ int set_keyx(struct ssh_session_s *session, const char *name, unsigned int *erro
 
 }
 
-/*
-    get a list of supported key exchange algo's like diffie-hellman
-*/
+/* get a list of supported key exchange algo's like diffie-hellman */
 
 unsigned int check_add_keyxname(const char *name, struct commalist_s *clist)
 {
