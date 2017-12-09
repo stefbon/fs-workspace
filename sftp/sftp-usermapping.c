@@ -139,7 +139,7 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	memcpy(string, output, size);
 	string[size]='\0';
 
-	logoutput("get_remote_sftp_userinfo: received %s", string);
+	// logoutput("get_remote_sftp_userinfo: received %s", string);
 
 	searchoutput:
 
