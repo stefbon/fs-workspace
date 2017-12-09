@@ -240,6 +240,8 @@ static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_
 static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
     unsigned int error=0;
+    struct key_reexchange_s *keyexchange=NULL;
+    unsigned int seq=0;
 
     /*
 	start re exchange. See:
@@ -258,24 +260,7 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
 
     /* start */
 
-    if (store_kexinit_server(session, payload, 0, &error)==0) {
-
-	logoutput("receive_msg_kexinit: received and stored server kexinit message");
-
-    } else {
-
-	logoutput("receive_msg_kexinit: error storing kexinit message (%i:%s)", error, strerror(error));
-	free(payload);
-	goto error;
-
-    }
-
-    /* test client hash sent kexinit, if not send it here */
-
     free(payload);
-    return;
-
-    error:
     return;
 
 }
