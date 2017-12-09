@@ -21,6 +21,6 @@
 #define FS_WORKSPACE_SSH_KEYX_DH_H
 
 unsigned int ssh_get_keyx_list(struct commalist_s *clist);
-int set_keyx_dh(struct ssh_session_s *session, const char *name, unsigned int *error);
+int set_keyx_dh(struct ssh_keyx_s *keyx, const char *name, unsigned int *error);
 
 #endif
