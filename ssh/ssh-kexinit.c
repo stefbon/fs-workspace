@@ -164,9 +164,8 @@ static void get_best_guess(char *pos_client, unsigned int len_client, char *pos_
 
 int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struct ssh_kexinit_algo *algos)
 {
-    struct session_data_s *data=&session->data;
-    struct ssh_string_s *kexinit_client=&session->crypto.keydata.kexinit_client;
-    struct ssh_string_s *kexinit_server=&session->crypto.keydata.kexinit_server;
+    struct ssh_string_s *kexinit_client=(init==1) ? &session->crypto.keydata.kexinit_client : &session->reexchange->keydata.kexinit_client;
+    struct ssh_string_s *kexinit_server=(init==1) ? &session->crypto.keydata.kexinit_server : &session->reexchange->keydata.kexinit_server;
     char *pos_client=kexinit_client->ptr;
     char *pos_server=kexinit_server->ptr;
     unsigned int len_client=0, total_len_client=0;
@@ -510,3 +509,4 @@ int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struc
     return 0;
 
 }
+
