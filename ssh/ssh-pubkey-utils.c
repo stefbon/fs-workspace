@@ -94,7 +94,7 @@ const unsigned char *get_pubkey_name(unsigned char type)
 }
 
 /* read the key type from a buffer
-    very often in the communicatuion between server and client, but also with keys stored on disk (or another backend)
+    very often in the communication between server and client, but also with keys stored on disk (or another backend)
     the type of the key is part of the format. For example a public key looks like:
     ssh-rsa AAAA..... sbon@example
     this function reads this type and updates the pointer in the buffer
