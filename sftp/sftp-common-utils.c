@@ -70,7 +70,7 @@ int get_session_status_ctx(struct context_interface_s *interface)
     if (sftp_subsystem) {
 	struct ssh_session_s *session=sftp_subsystem->channel.session;
 
-	return (session->status.status == SESSION_STATUS_COMPLETE) ? 0 : -1;
+	return (session->status.status == SESSION_STATUS_CONNECTION || session->status.status == SESSION_STATUS_REEXCHANGE) ? 0 : -1;
 
     }
 
