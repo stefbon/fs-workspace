@@ -112,10 +112,8 @@ static unsigned char dh_g_group14_value[] = {0x02};
 
 #define G_GROUP14_LEN 1
 
-static int create_H(struct ssh_session_s *session, struct common_buffer_s *out)
+static int create_H(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_key_s *hostkey, struct common_buffer_s *out)
 {
-    struct ssh_key_s *hostkey=&session->crypto.pubkey.server_hostkey;
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
     char buffer[4096]; /* buffer large enough to create H */
     unsigned int len=0;
@@ -269,9 +267,8 @@ static int create_H(struct ssh_session_s *session, struct common_buffer_s *out)
 
 }
 
-static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singlechar, struct common_buffer_s *H, struct common_buffer_s *key)
+static void _create_keyx_hash(struct ssh_session_s *session, struct ssh_keyx_s *keyx, unsigned char singlechar, struct common_buffer_s *H, struct common_buffer_s *key)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
     unsigned int hashlen=get_digest_len(keyx->digestname);
     char out[hashlen];
@@ -462,14 +459,12 @@ static void _create_keyx_hash(struct ssh_session_s *session, unsigned char singl
 
 }
 
-static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffer_s *H, struct ssh_kexinit_algo *algos)
+static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct common_buffer_s *H, struct ssh_kexinit_algo *algos)
 {
     unsigned int keylen=0;
     unsigned int error=0;
 
-    /*
-	iv client to server: c2s
-    */
+    /* iv client to server: c2s */
 
     keylen=get_session_ivsize(session, algos->encryption_c2s, algos->hmac_c2s);
 
@@ -487,7 +482,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'A', H, &buff);
+	_create_keyx_hash(session, keyx, 'A', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -505,9 +500,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 
     }
 
-    /*
-	iv server to client: s2c
-    */
+    /* iv server to client: s2c */
 
     keylen=get_session_ivsize(session, algos->encryption_s2c, algos->hmac_s2c);
 
@@ -525,7 +518,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'B', H, &buff);
+	_create_keyx_hash(session, keyx, 'B', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -561,7 +554,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'C', H, &buff);
+	_create_keyx_hash(session, keyx, 'C', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -597,7 +590,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'D', H, &buff);
+	_create_keyx_hash(session, keyx, 'D', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -633,7 +626,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'E', H, &buff);
+	_create_keyx_hash(session, keyx, 'E', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -671,7 +664,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 	buff.size=keylen;
 	buff.len=0;
 
-	_create_keyx_hash(session, 'F', H, &buff);
+	_create_keyx_hash(session, keyx, 'F', H, &buff);
 
 	key.ptr=buff.ptr;
 	key.len=buff.len;
@@ -701,7 +694,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct common_buffe
 
 static int _send_kexdh_init_message(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
+    struct ssh_keyx_s *keyx=(struct ssh_keyx_s *) ptr;
     struct ssh_dh_s *dh=&keyx->method.dh;
 
     if (payload==NULL) {
@@ -732,10 +725,9 @@ static int _send_kexdh_init_message(struct ssh_session_s *session, struct ssh_pa
 
 }
 
-static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_kexinit_algo *algos)
+static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_payload_s *payload, struct ssh_kexinit_algo *algos)
 {
-    struct ssh_key_s *hostkey=&session->crypto.pubkey.server_hostkey;
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
+    struct ssh_key_s hostkey;
     struct ssh_dh_s *dh=&keyx->method.dh;
     unsigned int hashlen=get_digest_len(keyx->digestname);
     char hash[hashlen];
@@ -756,9 +748,12 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 	string	signature of H
     */
 
-    init_common_buffer(&sigH);
-    init_common_buffer(&H);
-    init_common_buffer(&message);
+    init_ssh_key(&hostkey);
+    hostkey.type=keyx->type_hostkey;
+
+    init_common_buffer(&sigH); 		/* signature */
+    init_common_buffer(&H);		/* exchange hash */
+    init_common_buffer(&message);	/* server reply message */
 
     message.ptr=payload->buffer;
     message.size=payload->len;
@@ -784,14 +779,40 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
     }
 
     if (len>0 && len < left) {
+	struct common_buffer_s test;
+	unsigned char type=0;
 
-	hostkey->data.ptr=malloc(len);
+	init_common_buffer(&test);
+	test.ptr=message.pos;
+	test.size=len;
+	test.len=len;
+	test.pos=test.ptr;
 
-	if (hostkey->data.ptr) {
+	if (read_ssh_type_pubkey_buffer(&test, &type, &error)>0) {
 
-	    memcpy(hostkey->data.ptr, message.pos, len);
-	    hostkey->data.size=len;
-	    hostkey->data.len=len;
+	    if (type!=keyx->type_hostkey) {
+
+		logoutput("keyx_read_dh_reply: type of received hostkey keyx does not match type keyinit");
+		error=EINVAL;
+		goto error;
+
+	    }
+
+	} else {
+
+	    logoutput("keyx_read_dh_reply: error %i reading public key type (%s)", error, strerror(error));
+	    error=EINVAL;
+	    goto error;
+
+	}
+
+	hostkey.data.ptr=malloc(len);
+
+	if (hostkey.data.ptr) {
+
+	    memcpy(hostkey.data.ptr, message.pos, len);
+	    hostkey.data.size=len;
+	    hostkey.data.len=len;
 
 	} else {
 
@@ -812,7 +833,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 
     /* check the received public hostkey (against a "known hosts file" etcetera) */
 
-    if (check_serverkey(session, hostkey)==0) {
+    if (check_serverkey(session, &hostkey)==0) {
 
 	logoutput_info("keyx_read_dh_reply: check public key server success");
 
@@ -826,7 +847,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 
     /* read parameters (type has been set in negotiation) */
 
-    if (read_parameters_pubkey(session, hostkey, &error)==-1) {
+    if (read_parameters_pubkey(session, &hostkey, &error)==-1) {
 
 	error=EIO;
 	logoutput_info("keyx_read_dh_reply: reading parameters server public key failed: error %i:%s", error, strerror(error));
@@ -845,7 +866,6 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 
     }
 
-    dh->status=_DH_STATUS_FRECEIVED;
     message.pos+=len;
     left-=len;
 
@@ -894,7 +914,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 	left=len;
 	len=read_ssh_type_pubkey_buffer(&message, &type, &error);
 
-	if (len==0 || ! (type==hostkey->type)) {
+	if (len==0 || ! (type==hostkey.type)) {
 
 	    logoutput("keyx_read_dh_reply: error type signature different from server hostkey");
 	    goto error;
@@ -954,7 +974,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
     H.ptr=&hash[0];
     H.size=hashlen;
 
-    if (create_H(session, &H)==-1) {
+    if (create_H(session, keyx, &hostkey, &H)==-1) {
 
 	error=EIO;
 	logoutput_info("keyx_read_dh_reply: error creating H (%i bytes)", hashlen);
@@ -966,7 +986,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 
     }
 
-    if (verify_sigH(session, hostkey, &H, &sigH)==-1) {
+    if (verify_sigH(session, &hostkey, &H, &sigH)==-1) {
 
 	error=EACCES;
 	logoutput_info("keyx_read_dh_reply: check sig H failed");
@@ -990,7 +1010,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
 
     /* create the different hashes */
 
-    if (create_keyx_hashes(session, &H, algos)==-1) {
+    if (create_keyx_hashes(session, keyx, &H, algos)==-1) {
 
 	error=ENOMEM;
 	logoutput_info("keyx_read_dh_reply: failed to create key hashes");
@@ -1019,9 +1039,8 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_payload_
     - check hostkey is really hostkey of server, calculate the shared key K, create the exchange hash H and verify the signature of H using the public key
 */
 
-static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_kexinit_algo *algos)
+static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
     struct timespec expire;
     unsigned int error=0;
@@ -1030,22 +1049,13 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_kexini
 
     logoutput("start_keyx_dh_static");
 
-    if (session->status.status != SESSION_STATUS_KEYEXCHANGE) {
-
-	error=EINVAL;
-	goto error;
-
-    }
-
-    session->status.substatus|=SUBSTATUS_KEYEXCHANGE_STARTED;
-
     /* client: calculate e */
 
     (* dh->calc_e)(dh);
 
     /* send the kexdh init message */
 
-    if (send_ssh_message(session, _send_kexdh_init_message, NULL, &sequence)==-1) {
+    if (send_ssh_message(session, _send_kexdh_init_message, (void*) keyx, &sequence)==-1) {
 
 	error=session->status.error;
 	logoutput("start_keyx_dh_static: error %i:%s sending kexdh_init", error, strerror(error));
@@ -1053,7 +1063,7 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_kexini
 
     }
 
-    dh->status=_DH_STATUS_ESEND;
+    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYX_C2S;
 
     /* wait for SSH_MSG_KEXDH_REPLY */
 
@@ -1064,62 +1074,60 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_kexini
 
 	if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
 	logoutput("start_keyx_dh_static: error waiting for kexdh_reply");
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	error=EIO;
 	goto error;
 
-    } else {
+    }
 
-	if (payload->type == SSH_MSG_KEXDH_REPLY) {
+    if (payload->type == SSH_MSG_KEXDH_REPLY) {
 
-	    if (read_keyx_dh_reply(session, payload, algos)==-1) {
+	if (read_keyx_dh_reply(session, keyx, payload, algos)==-1) {
 
-		logoutput("start_keyx_dh_static: error reading dh reply");
-		error=EIO;
-		free(payload);
-		goto error;
-
-	    }
-
-	} else {
-
-	    logoutput("start_keyx_dh_static: error: received a %i message, expecting %i", payload->type, SSH_MSG_KEXDH_REPLY);
+	    logoutput("start_keyx_dh_static: error reading dh reply");
+	    error=EIO;
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 	    free(payload);
-	    error=EPROTO;
 	    goto error;
 
 	}
 
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYX_S2C;
+
+    } else {
+
+	logoutput("start_keyx_dh_static: error: received a %i message, expecting %i", payload->type, SSH_MSG_KEXDH_REPLY);
 	free(payload);
+	error=EPROTO;
+	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	goto error;
 
     }
 
-    session->status.substatus|=SUBSTATUS_KEYEXCHANGE_FINISHED;
+    free(payload);
+
     return 0;
 
     error:
 
     if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-    session->status.substatus|=SUBSTATUS_KEYEXCHANGE_ERROR;
     return -1;
 
 }
 
-static void free_keyx_dh_static(struct ssh_session_s *session)
+static void free_keyx_dh_static(struct ssh_keyx_s *keyx)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
 
     (* dh->free)(dh);
 
 }
 
-int set_keyx_dh(struct ssh_session_s *session, const char *name, unsigned int *error)
+int set_keyx_dh(struct ssh_keyx_s *keyx, const char *name, unsigned int *error)
 {
-    struct ssh_keyx_s *keyx=&session->crypto.keyx;
     struct ssh_dh_s *dh=&keyx->method.dh;
 
     memset(dh, 0, sizeof(struct ssh_dh_s));
-    dh->status=_DH_STATUS_INIT;
 
     if (strcmp(name, "diffie-hellman-group1-sha1")==0) {
 
