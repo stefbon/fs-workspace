@@ -98,38 +98,21 @@ struct server_reply_s {
     } response;
 };
 
-#define SESSION_STATUS_INIT				0
-#define SESSION_STATUS_KEXINIT				1
-#define SESSION_STATUS_KEYEXCHANGE			2
-#define SESSION_STATUS_NEWKEYS				3
-#define SESSION_STATUS_REQUEST_USERAUTH			4
-#define SESSION_STATUS_USERAUTH				5
-#define SESSION_STATUS_DISCONNECT			99
-#define SESSION_STATUS_COMPLETE				100
+#define SESSION_STATUS_SETUP					1
 
-#define SUBSTATUS_KEXINIT_STARTED			1
-#define SUBSTATUS_KEXINIT_SEND				2
-#define SUBSTATUS_KEXINIT_RECEIVED			4
-#define SUBSTATUS_KEXINIT_ERROR				8
+#define SESSION_SUBSTATUS_GREETER				1
+#define SESSION_SUBSTATUS_KEXINIT				2
+#define SESSION_SUBSTATUS_KEYEXCHANGE				4
+#define SESSION_SUBSTATUS_NEWKEYS				8
+#define SESSION_SUBSTATUS_REQUEST_USERAUTH			16
+#define SESSION_SUBSTATUS_USERAUTH				32
 
-#define SUBSTATUS_KEYEXCHANGE_STARTED			1
-#define SUBSTATUS_KEYEXCHANGE_FINISHED			2
-#define SUBSTATUS_KEYEXCHANGE_ERROR			4
+#define SESSION_STATUS_CONNECTION				2
+#define SESSION_STATUS_REEXCHANGE				3
 
-#define SUBSTATUS_NEWKEYS_SEND				1
-#define SUBSTATUS_NEWKEYS_RECEIVED			2
-#define SUBSTATUS_NEWKEYS_ERROR				4
+#define SESSION_SUBSTATUS_DISCONNECTING				128
 
-#define SUBSTATUS_USERAUTH_STARTED			1
-#define SUBSTATUS_USERAUTH_SEND				2
-#define SUBSTATUS_USERAUTH_RECEIVED			4
-#define SUBSTATUS_USERAUTH_OK				8
-#define SUBSTATUS_USERAUTH_FAILURE			16
-#define SUBSTATUS_USERAUTH_ERROR			32
-
-#define SUBSTATUS_COMPLETE_OK				1
-#define SUBSTATUS_COMPLETE_COMMAND			2
-#define SUBSTATUS_COMPLETE_ERROR			8
+#define SESSION_STATUS_DISCONNECT				99
 
 #define CHANNEL_STATUS_INIT				1
 #define CHANNEL_STATUS_UP				2
@@ -329,13 +312,6 @@ struct ssh_hmac_s {
     for now (201608) only dh (static simple diffie-hellman) is supported
 */
 
-#define _DH_STATUS_INIT			1
-#define _DH_STATUS_MINMAXSEND		2
-#define _DH_STATUS_GOTP			3
-#define _DH_STATUS_ESEND		4
-#define _DH_STATUS_FRECEIVED		5
-#define _DH_STATUS_COMPLETE		99
-
 struct ssh_dh_s {
     unsigned char			status;
     struct library_s			library;
@@ -364,9 +340,10 @@ struct ssh_dh_s {
 struct ssh_kexinit_algo;
 
 struct ssh_keyx_s {
+    unsigned char			type_hostkey;
     char 				digestname[32];
-    int					(* start_keyx)(struct ssh_session_s *session, struct ssh_kexinit_algo *algos);
-    void				(* free)(struct ssh_session_s *ssh_session);
+    int					(* start_keyx)(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos);
+    void				(* free)(struct ssh_keyx_s *keyx);
     union {
 	struct ssh_dh_s			dh;
     } method;
@@ -508,8 +485,6 @@ struct session_crypto_s {
     struct ssh_encryption_s 		encryption;
     struct ssh_hmac_s 			hmac;
     struct ssh_compression_s		compression;
-    struct ssh_pubkey_s			pubkey;
-    struct ssh_keyx_s			keyx;
 };
 
 struct key_reexchange_s {
@@ -542,6 +517,7 @@ struct ssh_session_s {
     struct channel_table_s		channel_table;
     struct session_data_s		data;
     struct session_crypto_s		crypto;
+    struct ssh_pubkey_s			pubkey;
     struct key_reexchange_s		*reexchange;
     struct ssh_userauth_s		userauth;
     struct ssh_connection_s		connection;
@@ -552,6 +528,10 @@ struct ssh_session_s {
 };
 
 /* prototypes */
+
+void change_session_status(struct ssh_session_s *session, unsigned int status);
+int check_session_status(struct ssh_session_s *session, unsigned int status, unsigned int substatus);
+int check_change_session_substatus(struct ssh_session_s *session, unsigned int status, unsigned int substatus, unsigned int subnew);
 
 struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *interface, char *address, unsigned int port);
 void remove_full_session(struct ssh_session_s *session);
