@@ -25,7 +25,6 @@ int verify_sigH(struct ssh_session_s *session, struct ssh_key_s *key, struct com
 int create_signature(struct ssh_session_s *session, struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, unsigned int *error);
 
 void init_pubkey(struct ssh_session_s *session);
-int set_pubkey(struct ssh_session_s *session, const char *name, unsigned int *error);
 void free_pubkey(struct ssh_session_s *session);
 
 unsigned int check_add_pubkeyname(const char *name, struct commalist_s *clist);
