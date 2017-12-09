@@ -106,13 +106,13 @@ static int _store_kexinit_common(struct ssh_string_s *kexinit, struct ssh_payloa
 
 int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error)
 {
-    struct ssh_string_s *kexinit=&session->crypto.keydata.kexinit_server;
+    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_server : &session->reexchange->keydata.kexinit_server;
     return _store_kexinit_common(kexinit, payload, error);
 }
 
 int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error)
 {
-    struct ssh_string_s *kexinit=&session->crypto.keydata.kexinit_client;
+    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_client : &session->reexchange->keydata.kexinit_client;
     return _store_kexinit_common(kexinit, payload, error);
 }
 
@@ -130,13 +130,13 @@ static void _free_kexinit_common(struct ssh_string_s *kexinit)
 
 void free_kexinit_server(struct ssh_session_s *session, unsigned char init)
 {
-    struct ssh_string_s *kexinit=&session->crypto.keydata.kexinit_client;
+    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_server : &session->reexchange->keydata.kexinit_server;
     _free_kexinit_common(kexinit);
 }
 
 void free_kexinit_client(struct ssh_session_s *session, unsigned char init)
 {
-    struct ssh_string_s *kexinit=&session->crypto.keydata.kexinit_client;
+    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_client : &session->reexchange->keydata.kexinit_client;
     _free_kexinit_common(kexinit);
 }
 
@@ -175,6 +175,34 @@ int set_session_iv_s2c(struct ssh_session_s *session, char *name_cipher, char *n
     return set_cipher_iv_s2c(session, name_cipher, key);
 }
 
+void init_keydata(struct session_keydata_s *keydata)
+{
+    keydata->status=0;
+    init_ssh_string(&keydata->kexinit_server);
+    init_ssh_string(&keydata->kexinit_client);
+    init_ssh_string(&keydata->iv_s2c);
+    init_ssh_string(&keydata->iv_c2s);
+    init_ssh_string(&keydata->cipher_key_s2c);
+    init_ssh_string(&keydata->cipher_key_c2s);
+    init_ssh_string(&keydata->hmac_key_s2c);
+    init_ssh_string(&keydata->hmac_key_c2s);
+
+    init_ssh_algo(&keydata->algos);
+
+}
+
+void free_keydata(struct session_keydata_s *keydata)
+{
+    free_ssh_string(&keydata->kexinit_server);
+    free_ssh_string(&keydata->kexinit_client);
+    free_ssh_string(&keydata->iv_s2c);
+    free_ssh_string(&keydata->iv_c2s);
+    free_ssh_string(&keydata->cipher_key_s2c);
+    free_ssh_string(&keydata->cipher_key_c2s);
+    free_ssh_string(&keydata->hmac_key_s2c);
+    free_ssh_string(&keydata->hmac_key_c2s);
+}
+
 void init_session_data(struct ssh_session_s *session)
 {
     struct session_data_s *data=&session->data;
@@ -187,15 +215,7 @@ void init_session_data(struct ssh_session_s *session)
     init_ssh_string(&data->sessionid);
     init_ssh_string(&data->greeter_server);
 
-    crypto->keydata.status=0;
-    init_ssh_string(&crypto->keydata.kexinit_server);
-    init_ssh_string(&crypto->keydata.kexinit_client);
-    init_ssh_string(&crypto->keydata.iv_s2c);
-    init_ssh_string(&crypto->keydata.iv_c2s);
-    init_ssh_string(&crypto->keydata.cipher_key_s2c);
-    init_ssh_string(&crypto->keydata.cipher_key_c2s);
-    init_ssh_string(&crypto->keydata.hmac_key_s2c);
-    init_ssh_string(&crypto->keydata.hmac_key_c2s);
+    init_keydata(&crypto->keydata);
 
 }
 
@@ -207,13 +227,6 @@ void free_session_data(struct ssh_session_s *session)
     free_ssh_string(&data->sessionid);
     free_ssh_string(&data->greeter_server);
 
-    free_ssh_string(&crypto->keydata.kexinit_server);
-    free_ssh_string(&crypto->keydata.kexinit_client);
-    free_ssh_string(&crypto->keydata.iv_s2c);
-    free_ssh_string(&crypto->keydata.iv_c2s);
-    free_ssh_string(&crypto->keydata.cipher_key_s2c);
-    free_ssh_string(&crypto->keydata.cipher_key_c2s);
-    free_ssh_string(&crypto->keydata.hmac_key_s2c);
-    free_ssh_string(&crypto->keydata.hmac_key_c2s);
+    free_keydata(&crypto->keydata);
 
 }
