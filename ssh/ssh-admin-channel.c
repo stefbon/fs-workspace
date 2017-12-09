@@ -769,7 +769,7 @@ unsigned int get_ssh_interface_info(struct context_interface_s *interface, const
 	unsigned int status=1;
 	unsigned int *dest=(unsigned int *) buffer;
 
-	status=(session->status.status==SESSION_STATUS_COMPLETE) ? 0 : 1;
+	status=(session->status.status==SESSION_STATUS_CONNECTION || session->status.status==SESSION_STATUS_REEXCHANGE) ? 0 : 1;
 	memcpy(dest, &status, sizeof(unsigned int));
 
 	return (sizeof(unsigned int));
