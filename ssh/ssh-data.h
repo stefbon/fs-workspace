@@ -38,6 +38,9 @@ int set_session_iv_s2c(struct ssh_session_s *session, char *name_cipger, char *n
 
 int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsigned int len);
 
+void init_keydata(struct session_keydata_s *keydata);
+void free_keydata(struct session_keydata_s *keydata);
+
 void init_session_data(struct ssh_session_s *session);
 void free_session_data(struct ssh_session_s *session);
 
