@@ -309,6 +309,8 @@ void switch_process_payload_queue(struct ssh_session_s *session, const char *pha
     struct ssh_receive_s *receive=&session->receive;
     struct payload_queue_s *queue=&receive->payload_queue;
 
+    pthread_mutex_lock(queue->signal.mutex);
+
     if (strcmp(phase, "init")==0 || strcmp(phase, "greeter")==0) {
 
 	queue->process_payload_queue=process_payload_queue_init;
@@ -316,8 +318,11 @@ void switch_process_payload_queue(struct ssh_session_s *session, const char *pha
     } else if (strcmp(phase, "session")==0) {
 
 	queue->process_payload_queue=process_payload_queue_session;
+	(* queue->process_payload_queue)(session);
 
     }
+
+    pthread_mutex_unlock(queue->signal.mutex);
 
 }
 
