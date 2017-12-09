@@ -165,7 +165,7 @@ int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s 
 
     } else {
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 
     }
 

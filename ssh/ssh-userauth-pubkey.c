@@ -231,7 +231,7 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
     } else {
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 
     }
 

@@ -167,7 +167,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
-	    session->status.substatus|=SUBSTATUS_USERAUTH_OK;
+	    session->userauth.status|=SESSION_USERAUTH_STATUS_ACCEPT;
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
@@ -189,7 +189,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     } else {
 
-	session->status.substatus|=SUBSTATUS_USERAUTH_ERROR;
+	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 
     }
 
