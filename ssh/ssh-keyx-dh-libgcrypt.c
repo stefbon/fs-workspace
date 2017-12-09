@@ -207,8 +207,6 @@ int init_dh_libgcrypt(struct ssh_dh_s *dh, unsigned char *p, unsigned int p_len,
 	dh->library.type=_LIBRARY_LIBGCRYPT;
 	dh->library.ptr=(void *) lg;
 
-	dh->status=_DH_STATUS_GOTP; /* static: has already p */
-
 	dh->get_size_modgroup=get_size_modgroup_libgcrypt;
 	dh->free=free_libgcrypt;
 	dh->calc_e=calc_e_libgcrypt;
