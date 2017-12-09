@@ -20,11 +20,11 @@
 #ifndef FS_WORKSPACE_SSH_KEYX_H
 #define FS_WORKSPACE_SSH_KEYX_H
 
-void init_keyx(struct ssh_session_s *session);
-int set_keyx(struct ssh_session_s *session, const char *name, unsigned int *error);
+void init_keyx(struct ssh_keyx_s *keyx);
+int set_keyx(struct ssh_keyx_s *keyx, const char *name, const char *serverkeyname, unsigned int *error);
 
-int start_keyx(struct ssh_session_s *session, struct ssh_kexinit_algo *algos);
-void free_keyx(struct ssh_session_s *session);
+int start_keyx(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos);
+void free_keyx(struct ssh_keyx_s *keyx);
 
 unsigned int ssh_get_keyx_list(struct commalist_s *clist);
 
