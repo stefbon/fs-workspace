@@ -835,6 +835,8 @@ static void read_sftp_features_v06(struct sftp_subsystem_s *sftp)
     struct sftp_supported_s *supported=&sftp->supported;
     unsigned int attribute_mask=supported->version.v06.attribute_mask;
 
+    if (attribute_mask==0) return;
+
     logoutput("read_sftp_features_v06: supported attribute mask %i", attribute_mask);
 
     supported->fuse_attr_supported=FUSE_SFTP_ATTR_TYPE;
