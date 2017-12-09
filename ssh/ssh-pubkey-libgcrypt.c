@@ -577,27 +577,11 @@ static int read_parameters_libgcrypt(struct ssh_key_s *key, unsigned int *error)
 
 }
 
-int set_pubkey_libgcrypt(struct ssh_pubkey_s *pubkey, const char *name, unsigned int *error)
+void init_pubkey_libgcrypt(struct ssh_pubkey_s *pubkey)
 {
-    unsigned char type=get_pubkey_type((unsigned char *) name, strlen(name));
-
-    if (type==_PUBKEY_METHOD_SSH_DSS || type==_PUBKEY_METHOD_SSH_RSA) {
-
-	pubkey->server_hostkey.type=type;
-
-    } else {
-
-	*error=EINVAL;
-	return -1;
-
-    }
-
     pubkey->verify_sigH=verify_sigH_libgcrypt;
     pubkey->read_parameters=read_parameters_libgcrypt;
     pubkey->create_signature=create_signature_libgcrypt;
-
-    return 0;
-
 }
 
 unsigned int ssh_get_pubkey_list_libgcrypt(struct commalist_s *clist)
