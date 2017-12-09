@@ -100,34 +100,6 @@ static void receive_msg_global_request(struct ssh_session_s *session, struct ssh
 
 	    logoutput("receive_msg_global_request: %s", string);
 
-	    if (strcmp(string, "hostkeys-00@openssh.com")==0) {
-
-		pos+=len;
-
-		while (pos<payload->len) {
-
-		    len=get_uint32(&payload->buffer[pos]);
-
-		    if (pos + 4 + len < payload->len) {
-			char hostkey[len + 1];
-
-			pos+=4;
-			memcpy(hostkey, &payload->buffer[pos], len);
-			hostkey[len]='\0';
-			pos+=len;
-
-			logoutput("receive_msg_global_request: request %s hostkey %s", string, hostkey);
-
-		    } else {
-
-			break;
-
-		    }
-
-		}
-
-	    }
-
 	}
 
     }
