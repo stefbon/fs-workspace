@@ -73,6 +73,8 @@
 #include "ssh-queue-payload.h"
 #include "ssh-receive-waitreply.h"
 
+#include "ssh-kexinit.h"
+
 static void init_session_status(struct ssh_session_s *session)
 {
     struct ssh_status_s *status=&session->status;
@@ -94,6 +96,59 @@ static void free_session_status(struct ssh_session_s *session)
     struct ssh_status_s *status=&session->status;
     pthread_mutex_destroy(&status->mutex);
     pthread_cond_destroy(&status->cond);
+}
+
+void change_session_status(struct ssh_session_s *session, unsigned int status)
+{
+    pthread_mutex_lock(&session->status.mutex);
+    session->status.status=status;
+    session->status.substatus=0;
+    pthread_mutex_unlock(&session->status.mutex);
+}
+
+int check_session_status(struct ssh_session_s *session, unsigned int status, unsigned int substatus)
+{
+    int result=-1;
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (substatus>0) {
+
+	result=(session->status.status==status && (session->status.substatus&substatus)) ? 0 : -1;
+
+    } else {
+
+	result=(session->status.status==status) ? 0 : -1;
+
+    }
+
+    pthread_mutex_unlock(&session->status.mutex);
+    return result;
+}
+
+int check_change_session_substatus(struct ssh_session_s *session, unsigned int status, unsigned int substatus, unsigned int subnew)
+{
+    int result=-1;
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (session->status.status==status && (substatus==0 || (session->status.substatus&substatus))) {
+
+	if (session->status.substatus&subnew) {
+
+	    /* already set */
+	    result=1;
+
+	} else {
+
+	    session->status.substatus|=subnew;
+	    result=0;
+
+	}
+
+    }
+
+    pthread_mutex_unlock(&session->status.mutex);
+    return result;
 }
 
 static void free_identity(struct ssh_session_s *session)
@@ -186,7 +241,6 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 	init_mac(ssh_session);
 	init_pubkey(ssh_session);
 	init_send(ssh_session);
-	init_keyx(ssh_session);
 
 	if (init_ssh_identity(ssh_session, uid, error)==-1) {
 
@@ -238,11 +292,9 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
     /* send a greeter and wait for greeter from server */
 
-    if (session->status.status==0) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, 0, SESSION_SUBSTATUS_GREETER)==0) {
 	struct timespec expire;
 	unsigned int error=0;
-
-	session->status.status=SESSION_STATUS_INIT;
 
 	if (add_session_eventloop(session, interface, &session->status.error)==-1) {
 
@@ -282,7 +334,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
     }
 
-    if (session->status.status==SESSION_STATUS_INIT) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_GREETER, SESSION_SUBSTATUS_KEXINIT)==0) {
 	unsigned int sequence_number=0;
 	struct timespec expire;
 	unsigned int error=0;
@@ -290,7 +342,6 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	/* send kexinit and wait for server to reply */
 
-	session->status.status=SESSION_STATUS_KEXINIT;
 	session->crypto.keydata.status=0;
 
 	logoutput("_setup_ssh_session: send kexinit");
@@ -354,32 +405,6 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	if (compare_msg_kexinit(session, 1, algos)==0) {
 
-	    /* set those algo's here cause they are needed in the next step (others later) */
-
-	    if (set_keyx(session, algos->keyexchange, &error)==0) {
-
-		logoutput("_setup_ssh_session: set keyx method to %s", algos->keyexchange);
-
-	    } else {
-
-		logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos->keyexchange, strerror(error));
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		goto outkexinit;
-
-	    }
-
-	    if (set_pubkey(session, algos->hostkey, &error)==0) {
-
-		logoutput("_setup_ssh_session: set pubkey method %s", algos->hostkey);
-
-	    } else {
-
-		logoutput("_setup_ssh_session: error %i setting pubkey method %s (%s)", error, algos->hostkey, strerror(error));
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		goto outkexinit;
-
-	    }
-
 	    /* correct mac names for combined cipher/mac algo's */
 
 	    if (strcmp(algos->encryption_c2s, "chacha20-poly1305@openssh.com")==0) strcpy(algos->hmac_c2s, algos->encryption_c2s);
@@ -410,23 +435,41 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	}
 
-	/* goto next phase: keyexchange  */
-
-	session->status.status=SESSION_STATUS_KEYEXCHANGE;
-
     }
 
-    if (session->status.status==SESSION_STATUS_KEYEXCHANGE) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEXINIT, SESSION_SUBSTATUS_KEYEXCHANGE)==0) {
+	struct ssh_keyx_s keyx;
+	unsigned int error=0;
 
-	/* start key exchange (what method is used is set here before) */
+	init_keyx(&keyx);
+
+	if (set_keyx(&keyx, algos->keyexchange, algos->hostkey, &error)==0) {
+
+	    logoutput("_setup_ssh_session: set keyx method to %s with hostkey type %s", algos->keyexchange, algos->hostkey);
+
+	} else {
+
+	    logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos->keyexchange, strerror(error));
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    goto error;
+
+	}
+
+	/* start key exchange */
 
 	logoutput("_setup_ssh_session: start keyexchange");
 
-	if (start_keyx(session, algos)==-1) goto error;
+	if (start_keyx(session, &keyx, algos)==-1) {
 
-	/* goto next phase: newkeys  */
+	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
 
-	session->status.status=SESSION_STATUS_NEWKEYS;
+	}
+
+	outkex:
+
+	(* keyx.free)(&keyx);
+
+	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) goto error;
 
     }
 
@@ -457,7 +500,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    without too much exceptions
     */
 
-    if (session->status.status==SESSION_STATUS_NEWKEYS) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEYEXCHANGE, SESSION_SUBSTATUS_NEWKEYS)==0) {
 	unsigned int sequence_number=0;
 	struct timespec expire;
 	unsigned int error=0;
@@ -609,11 +652,10 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	}
 
 	session->crypto.keydata.status=0;
-	session->status.status=SESSION_STATUS_REQUEST_USERAUTH;
 
     }
 
-    if (session->status.status==SESSION_STATUS_REQUEST_USERAUTH) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_NEWKEYS, SESSION_SUBSTATUS_REQUEST_USERAUTH)==0) {
 	struct timespec expire;
 	unsigned int error=0;
 	struct ssh_payload_s *payload=NULL;
@@ -703,16 +745,13 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	}
 
-	session->status.status=SESSION_STATUS_USERAUTH;
-
     }
 
-    if (session->status.status==SESSION_STATUS_USERAUTH) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_REQUEST_USERAUTH, SESSION_SUBSTATUS_USERAUTH)==0) {
 
 	if (ssh_authentication(session)==0) {
 
 	    logoutput("_setup_ssh_session: authentication succes");
-	    session->status.status=SESSION_STATUS_COMPLETE;
 	    session->userauth.status=0;
 
 	} else {
@@ -724,12 +763,26 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
     }
 
-    if (session->status.status==SESSION_STATUS_COMPLETE) {
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (session->status.status==SESSION_STATUS_SETUP &&
+	session->status.substatus==(SESSION_SUBSTATUS_GREETER | SESSION_SUBSTATUS_KEXINIT | SESSION_SUBSTATUS_KEYEXCHANGE |
+	SESSION_SUBSTATUS_NEWKEYS | SESSION_SUBSTATUS_REQUEST_USERAUTH | SESSION_SUBSTATUS_USERAUTH)) {
+
+	session->status.status=SESSION_STATUS_CONNECTION;
+	session->status.substatus=0;
+
+	pthread_mutex_unlock(&session->status.mutex);
+
+	/* do not process the messages from queue anymore but start a seperate thread */
 
 	switch_process_payload_queue(session, "session");
+
 	return 0;
 
     }
+
+    pthread_mutex_unlock(&session->status.mutex);
 
     error:
 
@@ -828,13 +881,13 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
 
 	    /* wait for session to be complete */
 
-	    while (! (session->status.status==SESSION_STATUS_COMPLETE)) {
+	    while (! (session->status.status==SESSION_STATUS_CONNECTION)) {
 
 		pthread_cond_wait(&session->status.cond, &session->status.mutex);
 
 	    }
 
-	    if (session->status.status==SESSION_STATUS_COMPLETE) {
+	    if (session->status.status==SESSION_STATUS_CONNECTION) {
 
 		/* only full working sessions which are not "busy" with another channel */
 
@@ -898,6 +951,8 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
 
 	/* setup the session with encryption, hmac, dh, pk etc. */
 
+	change_session_status(session, SESSION_STATUS_SETUP);
+
 	if (_setup_ssh_session(session, interface)==0) {
 
 	    add_ssh_session_group(session);
@@ -932,7 +987,7 @@ void remove_full_session(struct ssh_session_s *session)
 
     if (session->connection.fd>0) {
 
-	if (session->status.status==SESSION_STATUS_COMPLETE) {
+	if (session->status.status==SESSION_STATUS_CONNECTION) {
 
 	    send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
 
@@ -1006,7 +1061,7 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 
 	    remove_session_eventloop(session);
 
-	    if (session->status.status==SESSION_STATUS_COMPLETE && server==0) {
+	    if (session->status.status==SESSION_STATUS_CONNECTION && server==0) {
 
 		send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
 
