@@ -20,7 +20,7 @@
 #ifndef FS_WORKSPACE_SSH_PUBKEY_LIBGCRYPT_H
 #define FS_WORKSPACE_SSH_PUBKEY_LIBGCRYPT_H
 
-int set_pubkey_libgcrypt(struct ssh_pubkey_s *pubkey, const char *name, unsigned int *error);
+void init_pubkey_libgcrypt(struct ssh_pubkey_s *pubkey);
 unsigned int ssh_get_pubkey_list_libgcrypt(struct commalist_s *clist);
 
 #endif
