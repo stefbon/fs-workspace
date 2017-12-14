@@ -126,7 +126,7 @@ static void _reset_decrypt(struct ssh_encryption_s *encryption)
     struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 
     gcry_cipher_reset(cipher->handle);
-    gcry_cipher_setiv(cipher->handle, encryption->decrypt.iv->ptr, encryption->decrypt.iv->len);
+    gcry_cipher_setiv(cipher->handle, encryption->decrypt.iv.ptr, encryption->decrypt.iv.len);
 
 }
 
@@ -147,6 +147,7 @@ static void _free_decrypt(struct ssh_encryption_s *encryption)
 
     }
 
+    free_ssh_string(&encryption->decrypt.iv);
     free_ssh_string(&encryption->decrypt.key);
 
 }
@@ -165,6 +166,7 @@ static int _encrypt_packet(struct ssh_encryption_s *encryption, struct ssh_packe
     } else {
 
 	logoutput("encrypt_packet: error %s/%s", gcry_strsource(result), gcry_strerror(result));
+	packet->error=EIO;
 
     }
 
@@ -177,7 +179,7 @@ static void _reset_encrypt(struct ssh_encryption_s *encryption)
     struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 
     gcry_cipher_reset(cipher->handle);
-    gcry_cipher_setiv(cipher->handle, encryption->encrypt.iv->ptr, encryption->encrypt.iv->len);
+    gcry_cipher_setiv(cipher->handle, encryption->encrypt.iv.ptr, encryption->encrypt.iv.len);
 
 }
 
@@ -198,7 +200,9 @@ static void _free_encrypt(struct ssh_encryption_s *encryption)
 
     }
 
+    free_ssh_string(&encryption->encrypt.iv);
     free_ssh_string(&encryption->encrypt.key);
+
 }
 
 /*
@@ -476,7 +480,7 @@ static int init_encryption_c2s(struct ssh_encryption_s *encryption, const char *
 
     if (_init_encryption_generic(&encryption->encrypt.library, name, error)==0) {
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
-	struct ssh_string_s *key=encryption->encrypt.key;
+	struct ssh_string_s *key=&encryption->encrypt.key;
 
 	encryption->encrypt.encrypt=_encrypt_packet;
 	encryption->encrypt.reset_encrypt=_reset_encrypt;
@@ -513,7 +517,7 @@ static int init_encryption_s2c(struct ssh_encryption_s *encryption, const char *
 
     if (_init_encryption_generic(&encryption->decrypt.library, name, error)==0) {
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
-	struct ssh_string_s *key=encryption->decrypt.key;
+	struct ssh_string_s *key=&encryption->decrypt.key;
 
 	encryption->decrypt.decrypt_length=_decrypt_length;
 	encryption->decrypt.decrypt_packet=_decrypt_packet;

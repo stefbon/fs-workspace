@@ -95,15 +95,11 @@ static unsigned int write_e_libgcrypt(struct ssh_dh_s *dh, char *pos, unsigned i
     struct libgcrypt_dh_s *lg=(struct libgcrypt_dh_s *) dh->library.ptr;
     size_t nwritten=0;
 
-    logoutput("write_e_libgcrypt: size %i", len);
-
     if (lg->e) {
 
 	/* write e in mpint format */
 
 	gcry_mpi_print(GCRYMPI_FMT_SSH, (unsigned char *)pos, len, &nwritten, lg->e);
-
-	logoutput("write_e_libgcrypt: written %i", nwritten);
 
     } else {
 

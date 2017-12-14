@@ -187,7 +187,6 @@ static void _free_decrypt(struct ssh_encryption_s *encryption)
 {
     struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
     if (cipher) _free_cipher(cipher);
-    free_ssh_string(&encryption->decrypt.key);
 }
 
 static int _encrypt_packet(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet)
@@ -242,7 +241,6 @@ static void _free_encrypt(struct ssh_encryption_s *encryption)
 {
     struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
     if (cipher) _free_cipher(cipher);
-    free_ssh_string(&encryption->encrypt.key);
 }
 
 /*
@@ -323,7 +321,7 @@ int init_encryption_c2s_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->encrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
-	struct ssh_string_s *key=encryption->encrypt.key;
+	struct ssh_string_s *key=&encryption->encrypt.key;
 
 	encryption->encrypt.encrypt=_encrypt_packet;
 	encryption->encrypt.reset_encrypt=_reset_encrypt;
@@ -362,7 +360,7 @@ int init_encryption_s2c_chacha20_poly1305(struct ssh_encryption_s *encryption, u
 	struct session_crypto_s *crypto=(struct session_crypto_s *) ( ((char *) encryption) - offsetof(struct session_crypto_s, encryption));
 	struct libgcrypt_cipher_s *cipher=(struct libgcrypt_cipher_s *) encryption->decrypt.library.ptr;
 	struct ssh_hmac_s *hmac=&crypto->hmac;
-	struct ssh_string_s *key=encryption->decrypt.key;
+	struct ssh_string_s *key=&encryption->decrypt.key;
 
 	encryption->decrypt.decrypt_length=_decrypt_length;
 	encryption->decrypt.decrypt_packet=_decrypt_packet;

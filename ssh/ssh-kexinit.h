@@ -20,6 +20,6 @@
 #ifndef FS_WORKSPACE_SSH_KEXINIT_H
 #define FS_WORKSPACE_SSH_KEXINIT_H
 
-int compare_msg_kexinit(struct ssh_session_s *session, unsigned char init, struct ssh_kexinit_algo *algos);
+int compare_msg_kexinit(struct ssh_session_s *session, struct ssh_kexinit_algo *algos);
 
 #endif

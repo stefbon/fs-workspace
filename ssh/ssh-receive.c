@@ -160,6 +160,7 @@ void free_receive(struct ssh_session_s *session)
 static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 {
     struct ssh_receive_s *receive=&session->receive;
+    unsigned int size_firstbytes=get_size_firstbytes(session);
     int lenread=0;
     unsigned int error=0;
 
@@ -201,7 +202,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	    disconnect_ssh_session(session, 0, 0);
 
-	} else if (lenread<8) {
+	} else if (lenread<size_firstbytes) {
 
 	    goto readbuffer;
 
@@ -236,9 +237,7 @@ int read_incoming_data(int fd, void *ptr, uint32_t events)
 
 	logoutput_notice("read_data: other event %i than incoming data available", events);
 
-	/*
-	    ignore futher
-	*/
+	/* ignore futher */
 
     } else {
 

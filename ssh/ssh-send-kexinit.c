@@ -189,8 +189,6 @@ static unsigned int get_lang_server_names(char *pos, unsigned int size)
 
 int send_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    struct session_keydata_s *keydata=(struct session_keydata_s *) ptr;
-    unsigned char init=(keydata==&session->crypto.keydata) ? 1 : 0;
 
     if (payload) {
 	char *pos=payload->buffer;
@@ -368,7 +366,7 @@ int send_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, v
 	    (what if another method for key exchange is used?)
 	*/
 
-	if (store_kexinit_client(session, payload, init, &session->status.error)==0) {
+	if (store_kexinit_client(session, payload, &session->status.error)==0) {
 
 	    logoutput("send_kexinit: stored client kexinit message");
 

@@ -102,9 +102,9 @@ void log_message(unsigned char *buff, unsigned int len, const char *name, unsign
 	and n2>=4
 */
 
-static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr), void *ptr, unsigned int *seq)
+static int _sendproc_complete_message(struct ssh_session_s *session, struct ssh_sendproc_s *sendproc, void *ptr, unsigned int *seq)
 {
-    unsigned int payload_len=fill_raw_message(session, NULL, ptr);
+    unsigned int payload_len=(* sendproc->get_payload)(session, NULL, ptr);
     char buffer[sizeof(struct ssh_payload_s) + payload_len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
     unsigned int error=0;
@@ -112,13 +112,13 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
     unsigned int len=5 + payload_len;
     char raw_message[sizeof(struct ssh_packet_s) + len + 2 * message_blocksize]; /* append enough bytes to do the padding */
-    unsigned char n2=0, len_mod=0;
+    unsigned char n2=0;
     int result=0;
     char *pos=NULL;
     struct ssh_packet_s packet;
     struct ssh_send_s *send=&session->send;
 
-    /* get the payload */
+    /* init the payload */
 
     payload->type=0;
     payload->len=payload_len;
@@ -126,7 +126,7 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     payload->next=NULL;
     payload->prev=NULL;
     memset(payload->buffer, 0, payload_len);
-    payload->len=fill_raw_message(session, payload, ptr);
+    payload->len=(* sendproc->get_payload)(session, payload, ptr);
 
     /* fill the ssh message  */
 
@@ -170,15 +170,16 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
 
 	/* write the mac of the encrypted message (when mac after encryption is used) */
 
-	write_mac_post_encrypt(session, &packet); 
+	write_mac_post_encrypt(session, &packet);
 	result=send_c2s(session, &packet);
 
 	if (result==-1) {
 
-	    session->status.error=packet.error;
+	    (* sendproc->post_send_error)(session, payload, ptr, packet.error);
 
 	} else {
 
+	    (* sendproc->post_send)(session, payload, ptr);
 	    *seq=send->sequence_number;
 	    send->sequence_number++;
 
@@ -187,106 +188,31 @@ static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_
     } else {
 
 	result=-1;
-	session->status.error=EIO;
+	(* sendproc->post_send_error)(session, payload, ptr, packet.error);
 
     }
 
-    /* ????? reset here ???? */
-    // reset_c2s_mac(session);
     return result;
 
 }
 
-/*
-    construct a ssh packet without compression, encryption and mac
-    used in the init phase
-*/
-
-static int _send_init_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr), void *ptr, unsigned int *seq)
+static void post_send(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    unsigned int payload_len=fill_raw_message(session, NULL, ptr); /* get the required size by calling the cb without parameters */
-    char buffer[sizeof(struct ssh_payload_s) + payload_len];
-    struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
-    unsigned int error=0;
-    unsigned int cipher_blocksize=get_cipher_blocksize_c2s(session);
-    unsigned int message_blocksize=(cipher_blocksize<8) ? 8 : cipher_blocksize;
-    unsigned int len=5 + payload_len;
-    char raw_message[len + 2 * message_blocksize]; /* append enough bytes to do the padding */
-    unsigned char n2=0, len_mod=0;
-    int result=0;
-    char *pos=NULL;
-    struct ssh_packet_s packet;
-    struct ssh_send_s *send=&session->send;
+}
 
-    payload->type=0;
-    payload->len=payload_len;
-    payload->sequence=0;
-    payload->next=NULL;
-    payload->prev=NULL;
-    memset(payload->buffer, 0, payload_len);
+static void post_send_error(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr, unsigned int error)
+{
+}
 
-    payload->len=fill_raw_message(session, payload, ptr);
-    memset(&raw_message[0], '\0', len + 2 * message_blocksize);
-    len=payload->len + 5;
+static int _send_complete_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr), void *ptr, unsigned int *seq)
+{
+    struct ssh_sendproc_s sendproc;
 
-    /* determine the number of bytes to pad so that the size is a multiple of max(8, cypherblock) AND the remainder is >= 4 */
+    sendproc.get_payload=fill_raw_message;
+    sendproc.post_send=post_send;
+    sendproc.post_send_error=post_send_error;
 
-    len_mod=len % message_blocksize;
-    n2 =  message_blocksize - len_mod; /* padding */
-
-    if ( n2 < 4) {
-
-	/* the remainder is too less (message_blocksize - len_mod < 4): add an extra block */
-
-	n2+=message_blocksize;
-
-    }
-
-    packet.buffer=&raw_message[0];
-    packet.len = len + n2; /* packet len plus the padding size */
-    packet.padding=n2;
-    packet.error=0;
-    packet.sequence=0;
-
-    /* store the packet len (minus the first field: 4 bytes) */
-
-    pos=packet.buffer;
-    store_uint32(pos, packet.len - 4);
-    pos+=4;
-
-    /* store the number of padding */
-
-    *(pos) = n2;
-    pos++;
-
-    /* the ssh payload */
-
-    memcpy(pos, payload->buffer, payload->len);
-    pos+=payload->len;
-
-    /* fill the padding bytes */
-
-    pos += fill_random(pos, n2);
-    packet.sequence=send->sequence_number;
-
-    // logoutput("_send_init_message: len %i : written %i seq %i", len, (unsigned int) (pos-packet.buffer), packet.sequence);
-
-    result=send_c2s(session, &packet);
-
-    if (result==-1) {
-
-	session->status.error=packet.error;
-	return -1;
-
-    } else {
-
-	*seq=send->sequence_number;
-	send->sequence_number++;
-
-    }
-
-    return 0;
-
+    return _sendproc_complete_message(session, &sendproc, ptr, seq);
 }
 
 /* send a message when initializing: do nothing */
@@ -303,6 +229,18 @@ int send_ssh_message(struct ssh_session_s *session, int (*fill_raw_message)(stru
 
     pthread_mutex_lock(&send->mutex);
     result=(* send->send_message)(session, fill_raw_message, ptr, seq);
+    pthread_mutex_unlock(&send->mutex);
+
+    return result;
+}
+
+int sendproc_ssh_message(struct ssh_session_s *session, struct ssh_sendproc_s *sendproc, void *ptr, unsigned int *seq)
+{
+    struct ssh_send_s *send=&session->send;
+    int result=0;
+
+    pthread_mutex_lock(&send->mutex);
+    result=_sendproc_complete_message(session, sendproc, ptr, seq);
     pthread_mutex_unlock(&send->mutex);
 
     return result;
@@ -332,11 +270,7 @@ void switch_send_process(struct ssh_session_s *session, const char *phase)
 
 	send->send_message=_send_none_message;
 
-    } else if (strcmp(phase, "init")==0) {
-
-	send->send_message=_send_complete_message;
-
-    } else if (strcmp(phase, "session")==0) {
+    } else if (strcmp(phase, "init")==0 || strcmp(phase, "session")==0) {
 
 	send->send_message=_send_complete_message;
 

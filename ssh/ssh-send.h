@@ -27,6 +27,7 @@ int init_send(struct ssh_session_s *session);
 void free_send(struct ssh_session_s *session);
 
 int send_ssh_message(struct ssh_session_s *session, int (*fill_raw_message)(struct ssh_session_s *ssh_session, struct ssh_payload_s *payload, void *ptr), void *ptr, unsigned int *seq);
+int sendproc_ssh_message(struct ssh_session_s *session, struct ssh_sendproc_s *sendproc, void *ptr, unsigned int *seq);
 void switch_send_process(struct ssh_session_s *session, const char *phase);
 
 #endif

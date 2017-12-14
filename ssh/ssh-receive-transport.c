@@ -48,6 +48,10 @@
 
 #include "ssh-receive.h"
 #include "ssh-receive-waitreply.h"
+#include "ssh-data.h"
+#include "ssh-send.h"
+#include "ssh-send-kexinit.h"
+#include "ssh-kex.h"
 
 #include "ssh-utils.h"
 
@@ -240,8 +244,7 @@ static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_
 static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
     unsigned int error=0;
-    struct key_reexchange_s *keyexchange=NULL;
-    unsigned int seq=0;
+    int result=0;
 
     /*
 	start re exchange. See:
@@ -260,8 +263,69 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
 
     /* start */
 
-    free(payload);
-    return;
+    /*
+	- init reexchange
+	- store kexinit server
+	- send kexinit client
+	- compare algo's
+	- start keyexchange with method set here before
+	- get/calculate K and H
+	- determine new keys/iv
+	- send newkeys message and use the new keys/cipher/mac replacing old ones c2s
+	- receive newkeys message and use the new keys/cipher/mac replacing old ones s2c
+
+    */
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (session->status.status!=SESSION_STATUS_CONNECTION) {
+
+	pthread_mutex_unlock(&session->status.mutex);
+	result=-1;
+	goto free;
+
+    } else if (session->status.substatus&SESSION_STATUS_REEXCHANGE) {
+
+	pthread_mutex_unlock(&session->status.mutex);
+	result=-1;
+	goto free;
+
+    }
+
+    session->status.substatus|=SESSION_STATUS_REEXCHANGE;
+    pthread_mutex_unlock(&session->status.mutex);
+
+    if (process_key_exchange(session, payload, 0)==-1) {
+
+	logoutput("receive_msg_kexinit: error key exchange");
+	result=-1;
+
+    }
+
+    free:
+
+    if (payload) {
+
+	free(payload);
+	payload=NULL;
+
+    }
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (result==0) {
+
+	session->status.status=SESSION_STATUS_CONNECTION;
+
+    } else {
+
+	session->status.substatus|=SESSION_SUBSTATUS_DISCONNECTING;
+
+    }
+
+    pthread_mutex_unlock(&session->status.mutex);
+
+    if (result==-1) disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
 
 }
 

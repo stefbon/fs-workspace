@@ -25,11 +25,11 @@ void free_ssh_string(struct ssh_string_s *s);
 
 void init_ssh_algo(struct ssh_kexinit_algo *algo);
 
-int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error);
-int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error);
+int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error);
+int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error);
 
-void free_kexinit_server(struct ssh_session_s *session, unsigned char init);
-void free_kexinit_client(struct ssh_session_s *session, unsigned char init);
+void free_kexinit_server(struct ssh_session_s *session);
+void free_kexinit_client(struct ssh_session_s *session);
 
 unsigned int get_session_ivsize(struct ssh_session_s *session, char *name_cipher, char *name_mac);
 

@@ -87,7 +87,7 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
 
     pthread_mutex_lock(queue->signal.mutex);
 
-    while (queue->first==NULL) {
+    while (queue->list.head==NULL) {
 
 	result=pthread_cond_timedwait(queue->signal.cond, queue->signal.mutex, expire);
 
@@ -97,7 +97,7 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
 	    *error=ETIMEDOUT;
 	    return NULL;
 
-	} else if (sequence && *sequence==queue->signal.sequence_number_error) {
+	} else if (queue->signal.error>0 && sequence && *sequence==queue->signal.sequence_number_error) {
 
 	    pthread_mutex_unlock(queue->signal.mutex);
 	    *error=queue->signal.error;
@@ -112,18 +112,18 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
     }
 
     *error=0;
-    payload=queue->first;
+    payload=queue->list.head;
 
     if (payload->next) {
 
-	queue->first=payload->next;
+	queue->list.head=payload->next;
 	payload->next=NULL;
 	(* queue->process_payload_queue)(session);
 
     } else {
 
-	queue->first=NULL;
-	queue->last=NULL;
+	queue->list.head=NULL;
+	queue->list.tail=NULL;
 
     }
 
@@ -168,7 +168,7 @@ static void process_payload_queue_init(struct ssh_session_s *session)
     /* in the init phase (before the newkeys) there is no compression
 	so it's possible to read the contents */
 
-    payload=queue->first;
+    payload=queue->list.head;
 
     if (payload) {
 
@@ -180,12 +180,12 @@ static void process_payload_queue_init(struct ssh_session_s *session)
 
 	    if (payload->next) {
 
-		queue->first=payload->next;
+		queue->list.head=payload->next;
 
 	    } else {
 
-		queue->first=NULL;
-		queue->last=NULL;
+		queue->list.head=NULL;
+		queue->list.tail=NULL;
 
 	    }
 
@@ -197,14 +197,15 @@ static void process_payload_queue_init(struct ssh_session_s *session)
 
 	} else if (payload->type==SSH_MSG_IGNORE || payload->type==SSH_MSG_DEBUG) {
 
+	    queue->signal.error=0;
 	    if (payload->next) {
 
-		queue->first=payload->next;
+		queue->list.head=payload->next;
 
 	    } else {
 
-		queue->first=NULL;
-		queue->last=NULL;
+		queue->list.head=NULL;
+		queue->list.tail=NULL;
 
 	    }
 
@@ -212,6 +213,7 @@ static void process_payload_queue_init(struct ssh_session_s *session)
 
 	} else {
 
+	    queue->signal.error=0;
 	    pthread_cond_broadcast(queue->signal.cond);
 
 	}
@@ -278,17 +280,17 @@ void queue_ssh_packet(struct ssh_session_s *session, struct ssh_packet_s *packet
 
 	pthread_mutex_lock(queue->signal.mutex);
 
-	if (queue->last) {
+	if (queue->list.tail) {
 
 	    /* put after last */
 
-	    queue->last->next=payload;
-	    queue->last=payload;
+	    queue->list.tail->next=payload;
+	    queue->list.tail=payload;
 
 	} else {
 
-	    queue->last=payload;
-	    queue->first=payload;
+	    queue->list.head=payload;
+	    queue->list.tail=payload;
 
 	    (* queue->process_payload_queue)(session);
 
@@ -331,13 +333,12 @@ int init_receive_payload_queue(struct ssh_session_s *session, pthread_mutex_t *m
     struct ssh_receive_s *receive=&session->receive;
     struct payload_queue_s *queue=&receive->payload_queue;
 
-    queue->first=NULL;
-    queue->last=NULL;
+    queue->list.head=NULL;
+    queue->list.tail=NULL;
     queue->sequence_number=0;
 
     queue->signal.sequence_number_error=0;
     queue->signal.error=0;
-
     queue->signal.signal_allocated=0;
 
     /* if mutex and cond for signalling already defined use these */
@@ -417,14 +418,14 @@ void clean_receive_payload_queue(struct ssh_receive_s *receive)
 {
     struct payload_queue_s *queue=&receive->payload_queue;
 
-    if (queue->first) {
-	struct ssh_payload_s *payload=queue->first;
+    if (queue->list.head) {
+	struct ssh_payload_s *payload=queue->list.head;
 
 	while (payload) {
 
-	    queue->first=payload->next;
+	    queue->list.head=payload->next;
 	    free(payload);
-	    payload=queue->first;
+	    payload=queue->list.head;
 
 	}
 

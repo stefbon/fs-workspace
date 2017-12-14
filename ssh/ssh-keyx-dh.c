@@ -161,13 +161,13 @@ static int create_H(struct ssh_session_s *session, struct ssh_keyx_s *keyx, stru
 
     /* client SSH_MSG_KEXINIT message */
 
-    len=session->crypto.keydata.kexinit_client.len;
+    len=session->keyexchange->keydata.kexinit_client.len;
 
     if (len>0) {
 
 	store_uint32(pos, (uint32_t) len);
 	pos+=4;
-	memcpy(pos, session->crypto.keydata.kexinit_client.ptr, len);
+	memcpy(pos, session->keyexchange->keydata.kexinit_client.ptr, len);
 	pos+=len;
 
     } else {
@@ -179,13 +179,13 @@ static int create_H(struct ssh_session_s *session, struct ssh_keyx_s *keyx, stru
 
     /* server SSH_MSG_KEXINIT message */
 
-    len=session->crypto.keydata.kexinit_server.len;
+    len=session->keyexchange->keydata.kexinit_server.len;
 
     if (len>0) {
 
 	store_uint32(pos, (uint32_t) len);
 	pos+=4;
-	memcpy(pos, session->crypto.keydata.kexinit_server.ptr, len);
+	memcpy(pos, session->keyexchange->keydata.kexinit_server.ptr, len);
 	pos+=len;
 
     } else {
@@ -466,7 +466,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 
     /* iv client to server: c2s */
 
-    keylen=get_session_ivsize(session, algos->encryption_c2s, algos->hmac_c2s);
+    keylen=get_cipher_ivsize(session, algos->encryption_c2s);
 
     if (keylen>0) {
 	char buffer[keylen];
@@ -487,7 +487,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 	key.ptr=buff.ptr;
 	key.len=buff.len;
 
-	if (set_session_iv_c2s(session, algos->encryption_c2s, algos->hmac_c2s, &key)==-1) {
+	if (set_cipher_iv_c2s(session, algos->encryption_c2s, &key)==-1) {
 
 	    session->status.error=ENOMEM;
 	    goto error;
@@ -502,7 +502,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 
     /* iv server to client: s2c */
 
-    keylen=get_session_ivsize(session, algos->encryption_s2c, algos->hmac_s2c);
+    keylen=get_cipher_ivsize(session, algos->encryption_s2c);
 
     if (keylen>0) {
 	char buffer[keylen];
@@ -523,7 +523,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 	key.ptr=buff.ptr;
 	key.len=buff.len;
 
-	if (set_session_iv_s2c(session, algos->encryption_s2c, algos->hmac_s2c, &key)==-1) {
+	if (set_cipher_iv_s2c(session, algos->encryption_s2c, &key)==-1) {
 
 	    session->status.error=ENOMEM;
 	    goto error;
@@ -1018,10 +1018,13 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
     }
 
+    free_ssh_key(&hostkey);
+
     return 0;
 
     error:
 
+    free_ssh_key(&hostkey);
     if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
     logoutput("keyx_read_dh_reply: error reading reply: %i:%s", session->status.error, strerror(session->status.error));
     return -1;
@@ -1063,7 +1066,7 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s
 
     }
 
-    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYX_C2S;
+    session->keyexchange->keydata.status|=KEYEXCHANGE_STATUS_KEYX_C2S;
 
     /* wait for SSH_MSG_KEXDH_REPLY */
 
@@ -1074,7 +1077,7 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s
 
 	if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
 	logoutput("start_keyx_dh_static: error waiting for kexdh_reply");
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	session->keyexchange->keydata.status|=KEYEXCHANGE_STATUS_ERROR;
 	error=EIO;
 	goto error;
 
@@ -1086,20 +1089,20 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s
 
 	    logoutput("start_keyx_dh_static: error reading dh reply");
 	    error=EIO;
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	    session->keyexchange->keydata.status|=KEYEXCHANGE_STATUS_ERROR;
 	    free(payload);
 	    goto error;
 
 	}
 
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYX_S2C;
+	session->keyexchange->keydata.status|=KEYEXCHANGE_STATUS_KEYX_S2C;
 
     } else {
 
 	logoutput("start_keyx_dh_static: error: received a %i message, expecting %i", payload->type, SSH_MSG_KEXDH_REPLY);
 	free(payload);
 	error=EPROTO;
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
+	session->keyexchange->keydata.status|=KEYEXCHANGE_STATUS_ERROR;
 	goto error;
 
     }

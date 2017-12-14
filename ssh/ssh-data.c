@@ -104,16 +104,30 @@ static int _store_kexinit_common(struct ssh_string_s *kexinit, struct ssh_payloa
 
 }
 
-int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error)
+int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error)
 {
-    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_server : &session->reexchange->keydata.kexinit_server;
-    return _store_kexinit_common(kexinit, payload, error);
+    if (session->keyexchange) {
+	struct ssh_string_s *kexinit=&session->keyexchange->keydata.kexinit_server;
+
+	return _store_kexinit_common(kexinit, payload, error);
+
+    }
+
+    *error=EINVAL;
+    return -1;
 }
 
-int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init, unsigned int *error)
+int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error)
 {
-    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_client : &session->reexchange->keydata.kexinit_client;
-    return _store_kexinit_common(kexinit, payload, error);
+    if (session->keyexchange) {
+	struct ssh_string_s *kexinit=&session->keyexchange->keydata.kexinit_client;
+
+        return _store_kexinit_common(kexinit, payload, error);
+
+    }
+
+    *error=EINVAL;
+    return -1;
 }
 
 static void _free_kexinit_common(struct ssh_string_s *kexinit)
@@ -128,16 +142,20 @@ static void _free_kexinit_common(struct ssh_string_s *kexinit)
     kexinit->len=0;
 }
 
-void free_kexinit_server(struct ssh_session_s *session, unsigned char init)
+void free_kexinit_server(struct ssh_session_s *session)
 {
-    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_server : &session->reexchange->keydata.kexinit_server;
-    _free_kexinit_common(kexinit);
+    if (session->keyexchange) {
+	struct ssh_string_s *kexinit=&session->keyexchange->keydata.kexinit_server;
+	_free_kexinit_common(kexinit);
+    }
 }
 
-void free_kexinit_client(struct ssh_session_s *session, unsigned char init)
+void free_kexinit_client(struct ssh_session_s *session)
 {
-    struct ssh_string_s *kexinit=(init==1) ? &session->crypto.keydata.kexinit_client : &session->reexchange->keydata.kexinit_client;
-    _free_kexinit_common(kexinit);
+    if (session->keyexchange) {
+	struct ssh_string_s *kexinit=&session->keyexchange->keydata.kexinit_client;
+	_free_kexinit_common(kexinit);
+    }
 }
 
 int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsigned int len)
@@ -206,7 +224,6 @@ void free_keydata(struct session_keydata_s *keydata)
 void init_session_data(struct ssh_session_s *session)
 {
     struct session_data_s *data=&session->data;
-    struct session_crypto_s *crypto=&session->crypto;
 
     logoutput_info("init_session_data");
 
@@ -215,18 +232,13 @@ void init_session_data(struct ssh_session_s *session)
     init_ssh_string(&data->sessionid);
     init_ssh_string(&data->greeter_server);
 
-    init_keydata(&crypto->keydata);
-
 }
 
 void free_session_data(struct ssh_session_s *session)
 {
     struct session_data_s *data=&session->data;
-    struct session_crypto_s *crypto=&session->crypto;
 
     free_ssh_string(&data->sessionid);
     free_ssh_string(&data->greeter_server);
-
-    free_keydata(&crypto->keydata);
 
 }
