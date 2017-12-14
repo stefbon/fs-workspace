@@ -69,6 +69,11 @@ struct ssh_payload_s {
     char				buffer[];
 };
 
+struct payload_list_s {
+    struct ssh_payload_s		*head;
+    struct ssh_payload_s		*tail;
+};
+
 struct ssh_packet_s {
     unsigned int 			len;
     unsigned char			padding;
@@ -101,11 +106,9 @@ struct server_reply_s {
 #define SESSION_STATUS_SETUP					1
 
 #define SESSION_SUBSTATUS_GREETER				1
-#define SESSION_SUBSTATUS_KEXINIT				2
-#define SESSION_SUBSTATUS_KEYEXCHANGE				4
-#define SESSION_SUBSTATUS_NEWKEYS				8
-#define SESSION_SUBSTATUS_REQUEST_USERAUTH			16
-#define SESSION_SUBSTATUS_USERAUTH				32
+#define SESSION_SUBSTATUS_KEYEXCHANGE				2
+#define SESSION_SUBSTATUS_REQUEST_USERAUTH			4
+#define SESSION_SUBSTATUS_USERAUTH				8
 
 #define SESSION_STATUS_CONNECTION				2
 #define SESSION_STATUS_REEXCHANGE				3
@@ -255,14 +258,16 @@ struct ssh_encrypt_s {
     unsigned int			blocksize;
     int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		*key;
-    struct ssh_string_s 		*iv;
+    struct ssh_string_s 		key;
+    struct ssh_string_s 		iv;
+    /* RFC 4253 defines default padding but some ciphers use their own (like chacha20-poly1305)*/
     unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
 };
 
 struct ssh_decrypt_s {
     struct library_s			library;
     int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    /* decrypt the first block to get the length to determine the whole packet is received */
     int 				(*decrypt_length)(struct rawdata_s *data, unsigned char *buffer, unsigned int len);
     int 				(*decrypt_packet)(struct rawdata_s *data);
     void				(*reset_decrypt)(struct ssh_encryption_s *encryption);
@@ -271,8 +276,8 @@ struct ssh_decrypt_s {
     unsigned int			blocksize;
     int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		*key;
-    struct ssh_string_s 		*iv;
+    struct ssh_string_s 		key;
+    struct ssh_string_s 		iv;
     unsigned int			size_firstbytes;
 };
 
@@ -301,8 +306,8 @@ struct ssh_hmac_s {
     unsigned int 			(*get_mac_keylen)(char *name);
     int					(*setkey_c2s)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
     int					(*setkey_s2c)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    struct ssh_string_s 		*key_s2c;
-    struct ssh_string_s 		*key_c2s;
+    struct ssh_string_s 		key_s2c;
+    struct ssh_string_s 		key_c2s;
     unsigned int 			maclen_c2s;
     unsigned int 			maclen_s2c;
 };
@@ -371,8 +376,7 @@ struct ssh_connection_s {
 };
 
 struct payload_queue_s {
-    struct ssh_payload_s 		*first;
-    struct ssh_payload_s 		*last;
+    struct payload_list_s 		list;
     struct ssh_signal_s			signal;
     unsigned int 			sequence_number;
     void				(* process_payload_queue)(struct ssh_session_s *session);
@@ -396,11 +400,10 @@ struct ssh_receive_s {
 
 /* TODO use */
 
-struct ssh_senddata_s {
-    unsigned int			(* get_payload_len)(struct ssh_session_s *s, void *ptr);
-    unsigned int			(* fill_payload)(struct ssh_session_s *s, void *ptr);
-    int					(* pre_send)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr);
-    int					(* post_send)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr);
+struct ssh_sendproc_s {
+    int					(* get_payload)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr);
+    void				(* post_send)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr);
+    void				(* post_send_error)(struct ssh_session_s *s, struct ssh_payload_s *p, void *ptr, unsigned int error);
 };
 
 struct ssh_send_s {
@@ -456,16 +459,14 @@ struct ssh_kexinit_algo {
     - initialization vectors
 */
 
-#define		SESSION_CRYPTO_STATUS_KEYINIT_C2S		1
-#define		SESSION_CRYPTO_STATUS_KEYINIT_S2C		2
-#define		SESSION_CRYPTO_STATUS_KEYX_C2S			4
-#define		SESSION_CRYPTO_STATUS_KEYX_S2C			8
-#define		SESSION_CRYPTO_STATUS_NEWKEYS_C2S		16
-#define		SESSION_CRYPTO_STATUS_NEWKEYS_S2C		32
-#define		SESSION_CRYPTO_STATUS_READY_C2S			64
-#define		SESSION_CRYPTO_STATUS_READY_S2C			128
+#define		KEYEXCHANGE_STATUS_KEYINIT_C2S			1
+#define		KEYEXCHANGE_STATUS_KEYINIT_S2C			2
+#define		KEYEXCHANGE_STATUS_KEYX_C2S			4
+#define		KEYEXCHANGE_STATUS_KEYX_S2C			8
+#define		KEYEXCHANGE_STATUS_NEWKEYS_C2S			16
+#define		KEYEXCHANGE_STATUS_NEWKEYS_S2C			32
 
-#define		SESSION_CRYPTO_STATUS_ERROR			256
+#define		KEYEXCHANGE_STATUS_ERROR			256
 
 struct session_keydata_s {
     unsigned int			status;
@@ -481,16 +482,14 @@ struct session_keydata_s {
 };
 
 struct session_crypto_s {
-    struct session_keydata_s		keydata;
     struct ssh_encryption_s 		encryption;
     struct ssh_hmac_s 			hmac;
     struct ssh_compression_s		compression;
 };
 
-struct key_reexchange_s {
+struct keyexchange_s {
     struct session_keydata_s		keydata;
-    struct ssh_payload_s 		*first;
-    struct ssh_payload_s 		*last;
+    struct payload_list_s 		list;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
 };
@@ -518,7 +517,7 @@ struct ssh_session_s {
     struct session_data_s		data;
     struct session_crypto_s		crypto;
     struct ssh_pubkey_s			pubkey;
-    struct key_reexchange_s		*reexchange;
+    struct keyexchange_s		*keyexchange;
     struct ssh_userauth_s		userauth;
     struct ssh_connection_s		connection;
     struct ssh_receive_s		receive;
