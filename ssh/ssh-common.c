@@ -52,6 +52,7 @@
 #include "ssh-encryption.h"
 #include "ssh-hostinfo.h"
 #include "ssh-keyx.h"
+#include "ssh-kex.h"
 #include "ssh-mac.h"
 #include "ssh-pubkey.h"
 #include "ssh-receive.h"
@@ -286,9 +287,6 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 
 static int _setup_ssh_session(struct ssh_session_s *session, struct context_interface_s *interface)
 {
-    struct ssh_kexinit_algo *algos=&session->crypto.keydata.algos;
-
-    init_ssh_algo(algos);
 
     /* send a greeter and wait for greeter from server */
 
@@ -334,328 +332,17 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
     }
 
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_GREETER, SESSION_SUBSTATUS_KEXINIT)==0) {
-	unsigned int sequence_number=0;
-	struct timespec expire;
-	unsigned int error=0;
-	struct ssh_payload_s *payload=NULL;
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_GREETER, SESSION_SUBSTATUS_KEYEXCHANGE)==0) {
 
-	/* send kexinit and wait for server to reply */
+	if (process_key_exchange(session, NULL, 1)==-1) {
 
-	session->crypto.keydata.status=0;
-
-	logoutput("_setup_ssh_session: send kexinit");
-
-	if (send_ssh_message(session, send_kexinit, (void *) &session->crypto.keydata, &sequence_number)==-1) {
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    error=(session->status.error==0) ? EIO : session->status.error;
-	    logoutput("_setup_ssh_session: error %i sending packet (%s)", error, strerror(error));
-	    goto outkexinit;
-
-	}
-
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYINIT_C2S;
-	get_session_expire_init(session, &expire);
-
-	/* get/wait for kexinit from server*/
-
-	payload=get_ssh_payload(session, &expire, NULL, &error);
-
-	if (! payload) {
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    if (error==0) error=EIO;
-	    logoutput("_setup_ssh_session: error %i waiting for packet (%s)", error, strerror(error));
-	    goto outkexinit;
-
-	}
-
-	if (payload->type==SSH_MSG_KEXINIT) {
-
-	    logoutput_info("_setup_ssh_session: received server kexinit message");
-
-	    /*	copy the payload for the computation of the H (RFC4253 8.  Diffie-Hellman Key Exchange) */
-
-	    if (store_kexinit_server(session, payload, 1, &error)==0) {
-
-		logoutput("_setup_ssh_session: stored server kexinit message");
-
-	    } else {
-
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		if (error==0) error=EIO;
-		logoutput("_setup_ssh_session: error storing server kexinit message (%i:%s)", error, strerror(error));
-		goto outkexinit;
-
-	    }
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_KEYINIT_S2C;
-
-	} else {
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    logoutput("_setup_ssh_session: received %i message. not expecting it, error", payload->type);
-	    error=(error>0) ? error : EPROTO;
-	    goto outkexinit;
-
-	}
-
-	/* compare the different suggested algo's and select */
-
-	if (compare_msg_kexinit(session, 1, algos)==0) {
-
-	    /* correct mac names for combined cipher/mac algo's */
-
-	    if (strcmp(algos->encryption_c2s, "chacha20-poly1305@openssh.com")==0) strcpy(algos->hmac_c2s, algos->encryption_c2s);
-	    if (strcmp(algos->encryption_s2c, "chacha20-poly1305@openssh.com")==0) strcpy(algos->hmac_s2c, algos->encryption_s2c);
-
-	} else {
-
-	    logoutput("_setup_ssh_session: error finding common methods");
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    error=(session->status.error==0) ? EIO : session->status.error;
-	    goto outkexinit;
-
-	}
-
-	outkexinit:
-
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
-
-	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) {
-
-	    logoutput("_setup_ssh_session: error in kexinit phase (%i:%s)", error, strerror(error));
 	    goto error;
 
 	}
 
     }
 
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEXINIT, SESSION_SUBSTATUS_KEYEXCHANGE)==0) {
-	struct ssh_keyx_s keyx;
-	unsigned int error=0;
-
-	init_keyx(&keyx);
-
-	if (set_keyx(&keyx, algos->keyexchange, algos->hostkey, &error)==0) {
-
-	    logoutput("_setup_ssh_session: set keyx method to %s with hostkey type %s", algos->keyexchange, algos->hostkey);
-
-	} else {
-
-	    logoutput("_setup_ssh_session: error %i setting keyx method %s (%s)", error, algos->keyexchange, strerror(error));
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    goto error;
-
-	}
-
-	/* start key exchange */
-
-	logoutput("_setup_ssh_session: start keyexchange");
-
-	if (start_keyx(session, &keyx, algos)==-1) {
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-
-	}
-
-	outkex:
-
-	(* keyx.free)(&keyx);
-
-	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) goto error;
-
-    }
-
-    /*
-	    The default behaviour is that after the newkeys message the client
-	    and the server use the algo's which are selected:
-	    an algo for encryption c2s, an algo for mac c2s, and an algo for compression c2s
-	    (and vice versa for s2c)
-
-	    Sometimes the name for the cipher is not only a cipher, but also
-	    a mac. then it's a cipher and mac combined.
-	    like:
-
-	    - chacha20-poly1305@openssh.com
-
-	    in these cases the selected mac algo (which may also be "none") is ignored
-
-	    See:
-
-	    https://tools.ietf.org/html/draft-josefsson-ssh-chacha20-poly1305-openssh-00
-
-	    Here the name of the mac algo is ignored according to the draft, and set to the same name
-	    (in this case thus chacha20-poly1305@openssh.com)
-	    to match the very custom/not-default behaviour
-
-	    Although this combined cipher/mac has a different behaviour compared to the default algo's
-	    here is tried to make the processing of messages (incoming and outgoing) simple and
-	    without too much exceptions
-    */
-
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEYEXCHANGE, SESSION_SUBSTATUS_NEWKEYS)==0) {
-	unsigned int sequence_number=0;
-	struct timespec expire;
-	unsigned int error=0;
-	struct ssh_payload_s *payload=NULL;
-
-	/* send newkeys */
-
-	logoutput("_setup_ssh_session: start newkeys");
-
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_C2S;
-
-	if (send_ssh_message(session, send_newkeys, NULL, &sequence_number)==-1) {
-
-	    error=(session->status.error==0) ? EIO : session->status.error;
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    goto outnewkeys;
-
-	}
-
-	/* switch to new algo's for c2s */
-
-	if (set_encryption(session, algos->encryption_c2s, &error)==0) {
-
-	    logoutput("_setup_ssh_session: encryption method c2s set to %s", algos->encryption_c2s);
-
-	} else {
-
-	    logoutput("_setup_ssh_session: error %i setting encryption method c2s to %s (%s)", error, algos->encryption_c2s, strerror(error));
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    goto outnewkeys;
-
-	}
-
-	if (set_hmac_c2s(session, algos->hmac_c2s, &error)==0) {
-
-	    logoutput("_setup_ssh_session: hmac method c2s %s", algos->hmac_c2s);
-
-	} else {
-
-	    logoutput("_setup_ssh_session: error %i setting hmac method c2s to %s (%s)", error, algos->hmac_c2s, strerror(error));
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    goto outnewkeys;
-
-	}
-
-	if (set_compression_c2s(session, algos->compression_c2s, &error)==0) {
-
-	    logoutput("_setup_ssh_session: set compression methods c2s to %s", algos->compression_c2s);
-
-	} else {
-
-	    logoutput("_setup_ssh_session: error %i setting compression methods c2s to %s (%s)", error, algos->compression_c2s, strerror(error));
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    goto outnewkeys;
-
-	}
-
-	session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_READY_C2S;
-	switch_send_process(session, "session");
-
-	get_session_expire_init(session, &expire);
-
-	/* get/wait for a packet from the server */
-
-	payload=get_ssh_payload(session, &expire, &sequence_number, &error);
-
-	if (! payload) {
-
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-	    logoutput("_setup_ssh_session: error %i waiting for SSH_MSG_NEWKEYS (%s)", session->status.error, strerror(session->status.error));
-	    goto outnewkeys;
-
-	}
-
-	if (payload->type == SSH_MSG_NEWKEYS) {
-
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_NEWKEYS_S2C;
-
-	    /* switch to new algo's for s2c */
-
-	    if (set_decryption(session, algos->encryption_s2c, &error)==0) {
-
-		logoutput("_setup_ssh_session: decryption method s2c set to %s", algos->encryption_s2c);
-
-	    } else {
-
-		logoutput("_setup_ssh_session: error %i setting decryption method s2c to %s (%s)", error, algos->encryption_s2c, strerror(error));
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		goto outnewkeys;
-
-	    }
-
-	    if (set_hmac_s2c(session, algos->hmac_s2c, &error)==0) {
-
-		logoutput("_setup_ssh_session: hmac method s2c %s", algos->hmac_s2c);
-
-	    } else {
-
-		logoutput("_setup_ssh_session: error %i setting hmac method s2c to %s (%s)", error, algos->hmac_s2c, strerror(error));
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		goto outnewkeys;
-
-	    }
-
-	    if (set_compression_s2c(session, algos->compression_s2c, &error)==0) {
-
-		logoutput("_setup_ssh_session: set compression methods s2c to %s", algos->compression_s2c);
-
-	    } else {
-
-		logoutput("_setup_ssh_session: error %i setting compression methods s2c to %s (%s)", error, algos->compression_s2c, strerror(error));
-		session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-		goto outnewkeys;
-
-	    }
-
-	    /* here a "replace" from the old decrypt/hmac to the new ones */
-	    switch_process_rawdata_queue(session, "session");
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_READY_S2C;
-
-	} else {
-
-	    logoutput("_setup_ssh_session: received %i message. not expecting it, error", payload->type);
-	    session->crypto.keydata.status|=SESSION_CRYPTO_STATUS_ERROR;
-	    error=(error>0) ? error : EPROTO;
-	    goto outnewkeys;
-
-	}
-
-	outnewkeys:
-
-	/* free data and keys not required anymore */
-
-	free_kexinit_server(session, 1);
-	free_kexinit_client(session, 1);
-
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
-
-	if (session->crypto.keydata.status & SESSION_CRYPTO_STATUS_ERROR) {
-
-	    logoutput("_setup_ssh_session: error in newkeys phase (%i:%s)", error, strerror(error));
-	    goto error;
-
-	}
-
-	session->crypto.keydata.status=0;
-
-    }
-
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_NEWKEYS, SESSION_SUBSTATUS_REQUEST_USERAUTH)==0) {
+    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEYEXCHANGE, SESSION_SUBSTATUS_REQUEST_USERAUTH)==0) {
 	struct timespec expire;
 	unsigned int error=0;
 	struct ssh_payload_s *payload=NULL;
@@ -766,8 +453,7 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
     pthread_mutex_lock(&session->status.mutex);
 
     if (session->status.status==SESSION_STATUS_SETUP &&
-	session->status.substatus==(SESSION_SUBSTATUS_GREETER | SESSION_SUBSTATUS_KEXINIT | SESSION_SUBSTATUS_KEYEXCHANGE |
-	SESSION_SUBSTATUS_NEWKEYS | SESSION_SUBSTATUS_REQUEST_USERAUTH | SESSION_SUBSTATUS_USERAUTH)) {
+	session->status.substatus==(SESSION_SUBSTATUS_GREETER | SESSION_SUBSTATUS_KEYEXCHANGE | SESSION_SUBSTATUS_REQUEST_USERAUTH | SESSION_SUBSTATUS_USERAUTH)) {
 
 	session->status.status=SESSION_STATUS_CONNECTION;
 	session->status.substatus=0;
@@ -816,7 +502,6 @@ void _free_ssh_session(struct ssh_session_s *session)
 
     free_session_status(session);
     free(session);
-
     session=NULL;
 
 }
