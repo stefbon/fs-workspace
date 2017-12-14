@@ -43,7 +43,7 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/ssh-data.c \
 			ssh/ssh-encryption-libgcrypt.c ssh/ssh-encryption.c ssh/ssh-encryption-chacha20-poly1305-libgcrypt.c\
 			ssh/ssh-hostinfo.c \
-			ssh/ssh-kexinit.c \
+			ssh/ssh-kexinit.c ssh/ssh-kex.c \
 			ssh/ssh-keyx-dh-libgcrypt.c ssh/ssh-keyx-dh.c ssh/ssh-keyx.c \
 			ssh/ssh-language.c \
 			ssh/ssh-mac-libgcrypt.c ssh/ssh-mac.c ssh/ssh-mac-chacha20-poly1305-libgcrypt.c \
