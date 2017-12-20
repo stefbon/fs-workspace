@@ -408,8 +408,6 @@ int send_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload, v
 
     if (payload) {
 
-	logoutput("send_newkeys: len %i", payload->len);
-
 	if (payload->len<1) return -1;
 	payload->buffer[0]=(unsigned char) SSH_MSG_NEWKEYS;
 	return 1;

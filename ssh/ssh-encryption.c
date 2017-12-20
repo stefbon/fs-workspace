@@ -98,12 +98,54 @@ static unsigned char get_padding_default(unsigned int len, unsigned int blocksiz
     return padding;
 }
 
+static void wait_newkeys_complete_none(struct ssh_decrypt_s *decrypt)
+{
+}
+
+static void wait_newkeys_complete_keyexchange(struct ssh_decrypt_s *decrypt)
+{
+    pthread_mutex_lock(&decrypt->mutex);
+
+    while(decrypt->status==DECRYPT_NEWKEYS_WAIT) {
+
+	pthread_cond_wait(&decrypt->cond, &decrypt->mutex);
+
+    }
+
+    pthread_mutex_unlock(&decrypt->mutex);
+}
+
+void set_decryption_newkeys_wait(struct ssh_session_s *session)
+{
+    struct ssh_decrypt_s *decrypt=&session->crypto.encryption.decrypt;
+
+    pthread_mutex_lock(&decrypt->mutex);
+    decrypt->status=DECRYPT_NEWKEYS_WAIT;
+    decrypt->wait_newkeys_complete=wait_newkeys_complete_keyexchange;
+    pthread_mutex_unlock(&decrypt->mutex);
+}
+
+void set_decryption_newkeys_nonwait(struct ssh_session_s *session)
+{
+    struct ssh_decrypt_s *decrypt=&session->crypto.encryption.decrypt;
+
+    pthread_mutex_lock(&decrypt->mutex);
+    decrypt->status=0;
+    decrypt->wait_newkeys_complete=wait_newkeys_complete_none;
+    pthread_cond_broadcast(&decrypt->cond);
+    pthread_mutex_unlock(&decrypt->mutex);
+}
+
 static void set_decrypt_none(struct ssh_encryption_s *encryption)
 {
     struct ssh_decrypt_s *decrypt=&encryption->decrypt;
 
     decrypt->library.type=_LIBRARY_NONE;
     decrypt->library.ptr=NULL;
+    pthread_mutex_init(&decrypt->mutex, NULL);
+    pthread_cond_init(&decrypt->cond, NULL);
+    decrypt->status=0;
+    decrypt->wait_newkeys_complete=wait_newkeys_complete_none;
     decrypt->decrypt_length=decrypt_length_none;
     decrypt->decrypt_packet=decrypt_packet_none;
     decrypt->reset_decrypt=reset_none;
@@ -256,6 +298,8 @@ int ssh_decrypt_length(struct rawdata_s *data, unsigned char *buffer, unsigned i
     /* here a wait for the decryption to be complete
 	after the newkeys message from server the client (this application)
 	requires some time to initialize the decryption/mac/keys/iv's */
+
+    (*decrypt->wait_newkeys_complete)(decrypt);
 
     return  (* decrypt->decrypt_length)(data, buffer, len);
 }

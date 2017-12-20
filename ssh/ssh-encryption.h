@@ -56,4 +56,7 @@ int set_cipher_iv_s2c(struct ssh_session_s *session, char *name, struct ssh_stri
 unsigned char get_message_padding(struct ssh_session_s *session, unsigned int len, unsigned int blocksize);
 unsigned int get_size_firstbytes(struct ssh_session_s *session);
 
+void set_decryption_newkeys_wait(struct ssh_session_s *session);
+void set_decryption_newkeys_nonwait(struct ssh_session_s *session);
+
 #endif

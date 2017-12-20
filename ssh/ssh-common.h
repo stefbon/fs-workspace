@@ -264,8 +264,14 @@ struct ssh_encrypt_s {
     unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
 };
 
+#define DECRYPT_NEWKEYS_WAIT		1
+
 struct ssh_decrypt_s {
     struct library_s			library;
+    unsigned char			status;
+    pthread_mutex_t			mutex;
+    pthread_cond_t			cond;
+    void				(* wait_newkeys_complete)(struct ssh_decrypt_s *d);
     int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
     /* decrypt the first block to get the length to determine the whole packet is received */
     int 				(*decrypt_length)(struct rawdata_s *data, unsigned char *buffer, unsigned int len);
@@ -465,6 +471,7 @@ struct ssh_kexinit_algo {
 #define		KEYEXCHANGE_STATUS_KEYX_S2C			8
 #define		KEYEXCHANGE_STATUS_NEWKEYS_C2S			16
 #define		KEYEXCHANGE_STATUS_NEWKEYS_S2C			32
+#define		KEYEXCHANGE_STATUS_FINISH_S2C			64
 
 #define		KEYEXCHANGE_STATUS_ERROR			256
 
@@ -492,6 +499,7 @@ struct keyexchange_s {
     struct payload_list_s 		list;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
+    struct ssh_payload_s 		*(* get_payload_kex)(struct ssh_session_s *s, struct timespec *expire, unsigned int *seq, unsigned int *error);
 };
 
 #define		SESSION_USERAUTH_STATUS_REQUEST			1

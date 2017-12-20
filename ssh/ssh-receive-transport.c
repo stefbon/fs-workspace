@@ -261,20 +261,7 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
 	(https://tools.ietf.org/html/rfc4253#section-7.1)
     */
 
-    /* start */
-
-    /*
-	- init reexchange
-	- store kexinit server
-	- send kexinit client
-	- compare algo's
-	- start keyexchange with method set here before
-	- get/calculate K and H
-	- determine new keys/iv
-	- send newkeys message and use the new keys/cipher/mac replacing old ones c2s
-	- receive newkeys message and use the new keys/cipher/mac replacing old ones s2c
-
-    */
+    /* start keyexchange */
 
     pthread_mutex_lock(&session->status.mutex);
 
@@ -316,6 +303,7 @@ static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payloa
     if (result==0) {
 
 	session->status.status=SESSION_STATUS_CONNECTION;
+	session->status.substatus-=SESSION_STATUS_REEXCHANGE;
 
     } else {
 
@@ -334,6 +322,41 @@ static void receive_msg_newkeys(struct ssh_session_s *session, struct ssh_payloa
     free(payload);
 }
 
+static void receive_msg_kexdh_reply(struct ssh_session_s *session, struct ssh_payload_s *payload)
+{
+    struct keyexchange_s *keyexchange=session->keyexchange;
+    int result=0;
+
+    logoutput("receive_msg_kexdh_reply");
+
+    if (keyexchange) {
+
+	pthread_mutex_lock(&keyexchange->mutex);
+
+	if (keyexchange->list.tail) {
+
+	    keyexchange->list.tail->next=payload;
+	    keyexchange->list.tail=payload;
+
+	} else {
+
+	    keyexchange->list.head=payload;
+	    keyexchange->list.tail=payload;
+
+	}
+
+	pthread_cond_broadcast(&keyexchange->cond);
+	pthread_mutex_unlock(&keyexchange->mutex);
+
+    } else {
+
+	free(payload);
+	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+
+    }
+
+}
+
 void register_transport_cb()
 {
     register_msg_cb(SSH_MSG_DISCONNECT, receive_msg_disconnect);
@@ -345,4 +368,7 @@ void register_transport_cb()
 
     register_msg_cb(SSH_MSG_KEXINIT, receive_msg_kexinit);
     register_msg_cb(SSH_MSG_NEWKEYS, receive_msg_newkeys);
+
+    register_msg_cb(SSH_MSG_KEXDH_REPLY, receive_msg_kexdh_reply);
+
 }

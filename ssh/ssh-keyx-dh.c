@@ -998,13 +998,17 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
     }
 
-    /* store H as session identifier */
+    if (check_session_status(session, SESSION_STATUS_SETUP, 0)==0) {
 
-    if (store_ssh_session_id(session, H.ptr, H.len)==-1) {
+	/* store H as session identifier (only in setup) */
 
-	error=ENOMEM;
-	logoutput_info("keyx_read_dh_reply: failed to store session id");
-	goto error;
+	if (store_ssh_session_id(session, H.ptr, H.len)==-1) {
+
+	    error=ENOMEM;
+	    logoutput_info("keyx_read_dh_reply: failed to store session id");
+	    goto error;
+
+	}
 
     }
 
@@ -1044,6 +1048,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
 static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos)
 {
+    struct keyexchange_s *keyexchange=session->keyexchange;
     struct ssh_dh_s *dh=&keyx->method.dh;
     struct timespec expire;
     unsigned int error=0;
@@ -1071,7 +1076,7 @@ static int start_keyx_dh_static(struct ssh_session_s *session, struct ssh_keyx_s
     /* wait for SSH_MSG_KEXDH_REPLY */
 
     get_session_expire_init(session, &expire);
-    payload=get_ssh_payload(session, &expire, &sequence, &error);
+    payload=(keyexchange->get_payload_kex)(session, &expire, &sequence, &error);
 
     if (! payload) {
 
