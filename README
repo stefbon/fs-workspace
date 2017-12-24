@@ -1,0 +1,74 @@
+INTRODUCTION
+------------
+
+This fuse service provides automatic access to network services like sftp.
+For sftp hosts providing the ssh/sftp service are detected (using avahi) and
+fs-workspace tries to establish a connection using the keys available for the user.
+(found in ~/.ssh).
+
+The mountpoint for network services looks like:
+
+/run/fs-workspace/user/$USER/network
+
+and when ssh/sftp services are found, path's like
+
+/run/fs-workspace/user/$USER/network/SFTP_Network/example.org/server/home
+
+are created to offer access to the user's home directory on server.
+
+SSH supports publickey and hostbased userauth, rsa and dss key formats,
+key exchange methods diffie-hellman-group1-sha1 and diffie-hellman-group14-sha1,
+ciphers chacha20-poly1305@openssh.com, aes128-cbc and aes128-ctr, aes256-cbc and aes256-ctr,
+hmac hmac-sha1, hmac-sha256 and hmac-md5.
+
+SFTP supports versions 3-6.
+
+
+REQUIREMENTS
+------------
+
+For crypto libgcrypt is used.
+For userlogins systemd is used.
+For detection of networkservices avahi is used.
+Note libfuse is not required, fuse support in the kernel of course.
+
+
+BUILD
+-----
+
+Create directory to get the sources.
+
+git clone git@github.com:stefbon/fs-workspace.git
+
+git clone git@github.com:stefbon/common-utils.git
+
+cd fs-workspace
+
+Create a symbolic link to the shared utilities:
+
+ln -sf ../common-utils common-utils
+
+Run the autogen.sh script to create the different buildfiles:
+
+./autogen.sh
+
+Run the configure script, and make:
+
+./configure
+make
+
+This will build the fs-workspace executable.
+
+As root:
+
+mkdir -p /etc/fs-workspace/base
+cp base/network.workspace /etc/fs-workspace/base
+
+Adjust this file to you needs. The group users I want services to start for do belong to the group "users".
+Rename that to your situation.
+
+Start the executable
+
+./fs-workspace
+
+
