@@ -279,8 +279,6 @@ static void process_rawdata_session(struct rawdata_s *data)
 			(crypto->state??? for example)
 		    */
 
-		    logoutput("process_rawdata_session: received %i", (unsigned char) packet.buffer[5]);
-
 		    if ((unsigned char) packet.buffer[5] == SSH_MSG_NEWKEYS) {
 			struct keyexchange_s *keyexchange=session->keyexchange;
 
@@ -301,8 +299,6 @@ static void process_rawdata_session(struct rawdata_s *data)
 			}
 
 			set_decryption_newkeys_wait(session);
-
-			logoutput("process_rawdata_session: continue");
 
 		    } else {
 

@@ -178,10 +178,11 @@ void init_encryption(struct ssh_session_s *session)
 
     /* initialization vectors and keys are stored on a central location */
 
-    init_ssh_string(&encryption->decrypt.iv);
-    init_ssh_string(&encryption->encrypt.iv);
-    init_ssh_string(&encryption->encrypt.key);
-    init_ssh_string(&encryption->decrypt.key);
+    init_ssh_string(&encryption->decrypt.iv_cipher);
+    init_ssh_string(&encryption->decrypt.key_cipher);
+
+    init_ssh_string(&encryption->encrypt.iv_cipher);
+    init_ssh_string(&encryption->encrypt.key_cipher);
 
     init_encryption_libgcrypt(encryption);
 
@@ -271,14 +272,14 @@ int set_cipher_key_c2s(struct ssh_session_s *session, char *name, struct ssh_str
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_encrypt_s *encrypt=&encryption->encrypt;
-    return (* encrypt->setkey)(&encrypt->key, name, key);
+    return (* encrypt->setkey_cipher)(&encrypt->key_cipher, name, key);
 }
 
 int set_cipher_iv_c2s(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_encrypt_s *encrypt=&encryption->encrypt;
-    return (* encrypt->setiv)(&encrypt->iv, name, iv);
+    return (* encrypt->setiv_cipher)(&encrypt->iv_cipher, name, iv);
 }
 
 unsigned char get_message_padding(struct ssh_session_s *session, unsigned int len, unsigned int blocksize)
@@ -343,14 +344,14 @@ int set_cipher_key_s2c(struct ssh_session_s *session, char *name, struct ssh_str
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_decrypt_s *decrypt=&encryption->decrypt;
-    return (* decrypt->setkey)(&decrypt->key, name, key);
+    return (* decrypt->setkey_cipher)(&decrypt->key_cipher, name, key);
 }
 
 int set_cipher_iv_s2c(struct ssh_session_s *session, char *name, struct ssh_string_s *iv)
 {
     struct ssh_encryption_s *encryption=&session->crypto.encryption;
     struct ssh_decrypt_s *decrypt=&encryption->decrypt;
-    return (* decrypt->setiv)(&decrypt->iv, name, iv);
+    return (* decrypt->setiv_cipher)(&decrypt->iv_cipher, name, iv);
 }
 
 unsigned int get_size_firstbytes(struct ssh_session_s *session)

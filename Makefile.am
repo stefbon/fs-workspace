@@ -1,7 +1,7 @@
 sbin_PROGRAMS = fs-workspace
 
-fs_workspace_CFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label
-fs_workspace_CPPFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label
+fs_workspace_CFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wunused-function
+fs_workspace_CPPFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wunused-function
 fs_workspace_LDADD = $(GLIB_LIBS) $(LIBGCRYPT_LIBS) $(SYSTEMD_LIBS) $(AVAHI_CORE_LIBS) $(AVAHI_CLIENT_LIBS) $(LDFLAGS)
 
 fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-management.c common-utils/entry-utils.c common-utils/path-caching.c \

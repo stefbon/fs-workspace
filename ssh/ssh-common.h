@@ -250,16 +250,16 @@ struct ssh_encryption_s;
 
 struct ssh_encrypt_s {
     struct library_s			library;
-    int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    int					(*init)(struct ssh_encryption_s *encryption, char *name, unsigned int *error);
     int 				(*encrypt)(struct ssh_encryption_s *encryption, struct ssh_packet_s *packet);
     void				(*reset_encrypt)(struct ssh_encryption_s *encryption);
     void				(*close_encrypt)(struct ssh_encryption_s *encryption);
     void				(*free_encrypt)(struct ssh_encryption_s *encryption);
     unsigned int			blocksize;
-    int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		key;
-    struct ssh_string_s 		iv;
+    int					(*setkey_cipher)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
+    int					(*setiv_cipher)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
+    struct ssh_string_s 		key_cipher;
+    struct ssh_string_s 		iv_cipher;
     /* RFC 4253 defines default padding but some ciphers use their own (like chacha20-poly1305)*/
     unsigned char			(*get_message_padding)(unsigned int len, unsigned int blocksize);
 };
@@ -272,7 +272,7 @@ struct ssh_decrypt_s {
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
     void				(* wait_newkeys_complete)(struct ssh_decrypt_s *d);
-    int					(*init)(struct ssh_encryption_s *encryption, const char *name, unsigned int *error);
+    int					(*init)(struct ssh_encryption_s *encryption, char *name_cipher, unsigned int *error);
     /* decrypt the first block to get the length to determine the whole packet is received */
     int 				(*decrypt_length)(struct rawdata_s *data, unsigned char *buffer, unsigned int len);
     int 				(*decrypt_packet)(struct rawdata_s *data);
@@ -280,10 +280,10 @@ struct ssh_decrypt_s {
     void				(*close_decrypt)(struct ssh_encryption_s *encryption);
     void				(*free_decrypt)(struct ssh_encryption_s *encryption);
     unsigned int			blocksize;
-    int					(*setkey)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
-    int					(*setiv)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
-    struct ssh_string_s 		key;
-    struct ssh_string_s 		iv;
+    int					(*setkey_cipher)(struct ssh_string_s *old, char *name, struct ssh_string_s *key);
+    int					(*setiv_cipher)(struct ssh_string_s *old, char *name, struct ssh_string_s *iv);
+    struct ssh_string_s 		key_cipher;
+    struct ssh_string_s 		iv_cipher;
     unsigned int			size_firstbytes;
 };
 

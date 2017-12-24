@@ -464,7 +464,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
     unsigned int keylen=0;
     unsigned int error=0;
 
-    /* iv client to server: c2s */
+    /* iv cipher client to server: c2s */
 
     keylen=get_cipher_ivsize(session, algos->encryption_c2s);
 
@@ -473,7 +473,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
-	logoutput("create_keyx_hashes: iv size %i for cipher %s and mac %s", keylen, algos->encryption_c2s, algos->hmac_c2s);
+	logoutput("create_keyx_hashes: iv size %i for cipher %s", keylen, algos->encryption_c2s);
 
 	memset(&buffer[0], '\0', keylen);
 
@@ -496,11 +496,11 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 
     } else {
 
-	logoutput("create_keyx_hashes: iv size zero for cipher %s and mac %s", algos->encryption_c2s, algos->hmac_s2c);
+	logoutput("create_keyx_hashes: iv size zero for cipher %s", algos->encryption_c2s);
 
     }
 
-    /* iv server to client: s2c */
+    /* iv cipher server to client: s2c */
 
     keylen=get_cipher_ivsize(session, algos->encryption_s2c);
 
@@ -509,7 +509,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 	struct ssh_string_s key;
 	struct common_buffer_s buff;
 
-	logoutput("create_keyx_hashes: iv size %i for cipher %s and mac %s", keylen, algos->encryption_s2c, algos->hmac_s2c);
+	logoutput("create_keyx_hashes: iv size %i for cipher %s", keylen, algos->encryption_s2c);
 
 	memset(&buffer[0], '\0', keylen);
 
@@ -532,7 +532,7 @@ static int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *
 
     } else {
 
-	logoutput("create_keyx_hashes: iv size zero for cipher %s and mac %s", algos->encryption_s2c, algos->hmac_s2c);
+	logoutput("create_keyx_hashes: iv size zero for cipher %s", algos->encryption_s2c);
 
     }
 
