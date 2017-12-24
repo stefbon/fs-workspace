@@ -1,0 +1,4 @@
+Mountpoint=/run/fs-workspace/user/$USER/network
+UserInGroup=users
+InGroupPolicy=sufficient
+
