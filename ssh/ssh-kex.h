@@ -1,5 +1,5 @@
 /*
-  2010, 2011 Stef Bon <stefbon@gmail.com>
+  2010, 2011, 2012, 2013, 2014, 2015, 2016 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -17,20 +17,9 @@
 
 */
 
-#ifndef _GLOBAL_DEFINES_H
-#define _GLOBAL_DEFINES_H
+#ifndef FS_WORKSPACE_SSH_KEX_H
+#define FS_WORKSPACE_SSH_KEX_H
 
-#define FUSE_USE_VERSION 30
-//#define _REENTRANT
-#define _GNU_SOURCE
-#define _XOPEN_SOURCE 500
-
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#else
-#define PACKAGE_VERSION "1.0"
-#endif
-
-//#define LOGGING
+int process_key_exchange(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned char init);
 
 #endif
