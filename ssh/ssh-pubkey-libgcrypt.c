@@ -197,6 +197,58 @@ static int verify_sigH_dss_libgcrypt(struct ssh_key_s *key, struct common_buffer
     return verified;
 }
 
+static int verify_sigH_ed25519_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *data, struct common_buffer_s *sigH, const char *hashname)
+{
+    struct _ecc_public_key_s *ecc=(struct _ecc_public_key_s *) key->ptr;
+    gcry_sexp_t s_hash=NULL;
+    int verified=-1;
+
+    /* build s-expression for data (here the sign algo does the hashing self)*/
+
+    if (gcry_sexp_build(&s_hash, NULL, "(data (flags eddsa) (hash-algo %s) (value %b))", hashname, data->size, data->ptr)==GPG_ERR_NO_ERROR) {
+	gcry_sexp_t s_pkey=NULL;
+
+	/* build s-expression for public key */
+
+	if (gcry_sexp_build(&s_pkey, NULL, "(public-key (ecc (curve Ed25519) (flags eddsa) (q%m)))", ecc->q)==GPG_ERR_NO_ERROR) {
+	    gcry_mpi_t m_sig_r=NULL;
+	    gcry_mpi_t m_sig_s=NULL;
+	    size_t len=0;
+
+	    /*
+		build s-expression for signature of H for ed25519
+
+		(sig-val (eddsa(r)(s)))
+	    */
+
+	    if (gcry_mpi_scan(&m_sig_r, GCRYMPI_FMT_SSH, sigH->ptr, sigH->len, &len)==GPG_ERR_NO_ERROR && 
+		gcry_mpi_scan(&m_sig_s, GCRYMPI_FMT_SSH, sigH->ptr + len, sigH->len - len, &len)==GPG_ERR_NO_ERROR) {
+		gcry_sexp_t s_sig=NULL;
+
+		if (gcry_sexp_build(&s_sig, NULL, "(sig-val(eddsa(r%m)(s%m)))", m_sig_r, m_sig_s)==GPG_ERR_NO_ERROR) {
+
+		    if (gcry_pk_verify(s_sig, s_hash, s_pkey)==GPG_ERR_NO_ERROR) verified=0;
+
+		}
+
+		if (s_sig) gcry_sexp_release(s_sig);
+
+	    }
+
+	    if (m_sig_r) gcry_mpi_release(m_sig_r);
+	    if (m_sig_s) gcry_mpi_release(m_sig_s);
+
+	}
+
+	if (s_pkey) gcry_sexp_release(s_pkey);
+
+    }
+
+    if (s_hash) gcry_sexp_release(s_hash);
+
+    return verified;
+}
+
 static int create_signature_rsa_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, const char *hashname, unsigned int *error)
 {
     int success=-1;
@@ -331,7 +383,7 @@ static int create_signature_rsa_libgcrypt(struct ssh_key_s *key, struct common_b
 
 static int create_signature_dss_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, const char *hashname, unsigned int *error)
 {
-    gcry_mpi_t m_data;
+    gcry_mpi_t m_data=NULL;
     int success=-1;
     int algo=gcry_md_map_name(hashname);
     unsigned int hash_len=gcry_md_get_algo_dlen(algo);
@@ -499,6 +551,162 @@ static int create_signature_dss_libgcrypt(struct ssh_key_s *key, struct common_b
 
 }
 
+static int create_signature_ed25519_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, const char *hashname, unsigned int *error)
+{
+    int success=-1;
+    gcry_sexp_t s_data=NULL;
+
+    if (read_parameters_private_key(key, error)==-1) {
+
+	logoutput("create_signature_ed25519_libgcrypt: failed to read the dss parameters");
+	return -1;
+
+    }
+
+    *error=0;
+
+    if (gcry_sexp_build(&s_data, NULL, "(data (flags eddsa) (hash-algo sha512) (value %b))", hashname, data->size, data->ptr)==GPG_ERR_NO_ERROR) {
+	struct _ecc_private_key_s *ecc=(struct _ecc_private_key_s *) key->ptr;
+	gcry_sexp_t s_private=NULL;
+
+	if (gcry_sexp_build(&s_private, NULL, "(private-key(ecc (curve \"Ed25519\")(flags eddsa)(d%m)))", ecc->d)==GPG_ERR_NO_ERROR) {
+	    gcry_sexp_t s_sig;
+	    gcry_error_t result=0;
+	    unsigned int len_s=0;
+	    unsigned int len_r=0;
+
+	    result=gcry_pk_sign(&s_sig, s_data, s_private);
+
+	    if (result==GPG_ERR_NO_ERROR) {
+		size_t size=0;
+		gcry_mpi_t m_sig_r=NULL;
+		gcry_mpi_t m_sig_s=NULL;
+
+		/* find the 'r' and the's' in the s-expr for the signature
+		    convert both to a mpi, and write them as buffer used in ssh*/
+
+		gcry_sexp_t list;
+		list=gcry_sexp_find_token(s_sig, "r", 0);
+
+		if (list) {
+
+		    m_sig_r=gcry_sexp_nth_mpi(list, 1, 0);
+
+		    /* write mpi as buffer */
+
+		    len_r=gcry_mpi_get_nbits(m_sig_r);
+
+		    if (len_r % 8 == 0) {
+
+			len_r=len_r/8;
+
+		    } else {
+
+			len_r=len_r/8 + 1;
+
+		    }
+
+		    size+=len_r;
+		    gcry_sexp_release(list);
+
+		}
+
+		list=gcry_sexp_find_token(s_sig, "s", 0);
+
+		if (list) {
+
+		    m_sig_s=gcry_sexp_nth_mpi(list, 1, 0);
+		    len_s=gcry_mpi_get_nbits(m_sig_s);
+
+		    if (len_s % 8 == 0) {
+
+			len_s=len_s/8;
+
+		    } else {
+
+			len_s=len_s/8 + 1;
+
+		    }
+
+		    size+=len_s;
+		    gcry_sexp_release(list);
+
+		}
+
+		signature->ptr=malloc(size);
+
+		if (signature->ptr) {
+		    size_t written=0;
+		    char *pos=signature->ptr;
+
+		    result=gcry_mpi_print(GCRYMPI_FMT_STD, (unsigned char *)pos, size, &written, m_sig_r);
+
+		    if (result!=GPG_ERR_NO_ERROR) {
+
+			logoutput("create_signature_ed25519_libgcrypt: error %s/%s writing signature", gcry_strsource(result), gcry_strerror(result));
+			free(signature->ptr);
+			signature->ptr=NULL;
+
+		    } else {
+
+			pos+=written;
+			result=gcry_mpi_print(GCRYMPI_FMT_STD, (unsigned char *)pos, size - written, &written, m_sig_s);
+
+			if (result!=GPG_ERR_NO_ERROR) {
+
+			    logoutput("create_signature_ed25519_libgcrypt: error %s/%s writing signature", gcry_strsource(result), gcry_strerror(result));
+			    free(signature->ptr);
+			    signature->ptr=NULL;
+
+			}
+
+			pos+=written;
+			success=0;
+			signature->len=(unsigned int) (pos - signature->ptr);
+			logoutput("create_signature_ed25519_libgcrypt: signature len %i", signature->len);
+
+		    }
+
+		} else {
+
+		    logoutput("create_signature_ed25519_libgcrypt: error %i allocating signature (%s)", ENOMEM, strerror(ENOMEM));
+
+		}
+
+		gcry_mpi_release(m_sig_r);
+		gcry_mpi_release(m_sig_s);
+
+	    } else {
+
+		logoutput("create_signature_ed25519_libgcrypt: error %s/%s", gcry_strsource(result), gcry_strerror(result));
+		*error=EIO;
+
+	    }
+
+	    if (s_private) gcry_sexp_release(s_private);
+
+	} else {
+
+	    logoutput("create_signature_ed25519_libgcrypt: error building sexp");
+	    *error=EIO;
+
+	}
+
+	if (s_data) gcry_sexp_release(s_data);
+
+    } else {
+
+	logoutput("create_signature_ed25519_libgcrypt: error reading data");
+	*error=EIO;
+
+    }
+
+    free_dss_private_key(key);
+
+    return success;
+
+}
+
 static int create_signature_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, const char *hashname, unsigned int *error)
 {
 
@@ -509,6 +717,10 @@ static int create_signature_libgcrypt(struct ssh_key_s *key, struct common_buffe
     } else if (key->type & _PUBKEY_METHOD_SSH_DSS) {
 
 	return create_signature_dss_libgcrypt(key, data, signature, hashname, error);
+
+    } else if (key->type & _PUBKEY_METHOD_SSH_ED25519) {
+
+	return create_signature_ed25519_libgcrypt(key, data, signature, hashname, error);
 
     }
 
