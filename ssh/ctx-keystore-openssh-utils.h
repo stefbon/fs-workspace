@@ -24,6 +24,8 @@
 
 /* prototypes */
 
+int _match_pattern_host(char *host, char *hostpattern, unsigned int level);
+
 unsigned int get_path_openssh_user(struct passwd *pwd, char *path, char *buffer, unsigned int len);
 unsigned int get_path_openssh_system(char *path, char *buffer, unsigned int len);
 
