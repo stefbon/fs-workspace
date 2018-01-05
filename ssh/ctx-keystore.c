@@ -82,12 +82,12 @@ void finish_identity_records(void *ptr)
     finish_identity_records_openssh(ptr);
 }
 
-void *init_known_hosts(struct passwd *pwd, unsigned int *error)
+void *init_known_hosts(struct passwd *pwd, unsigned int filter, unsigned int *error)
 {
-    return init_known_hosts_openssh(pwd, error);
+    return init_known_hosts_openssh(pwd, filter, error);
 }
 
-struct known_host *get_next_known_host(void *ptr, unsigned int *error)
+int get_next_known_host(void *ptr, unsigned int *error)
 {
     return get_next_known_host_openssh(ptr, error);
 }
@@ -95,4 +95,19 @@ struct known_host *get_next_known_host(void *ptr, unsigned int *error)
 void finish_known_hosts(void *ptr)
 {
     finish_known_hosts_openssh(ptr);
+}
+
+int compare_host_known_host(void *prt, char *host)
+{
+    return compare_host_known_host_openssh(prt, host);
+}
+
+char *get_algo_known_host(void *ptr)
+{
+    return get_algo_known_host_openssh(ptr);
+}
+
+int match_key_known_host(void *ptr, char *key, unsigned int len)
+{
+    return match_key_known_host_openssh(ptr, key, len);
 }
