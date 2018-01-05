@@ -740,6 +740,10 @@ static int verify_sigH_libgcrypt(struct ssh_key_s *key, struct common_buffer_s *
 
 	return verify_sigH_dss_libgcrypt(key, data, sigH, hashname);
 
+    } else if (key->type & _PUBKEY_METHOD_SSH_ED25519) {
+
+	return verify_sigH_ed25519_libgcrypt(key, data, sigH, hashname);
+
     }
 
     return -1;
@@ -783,7 +787,7 @@ static int read_parameters_libgcrypt(struct ssh_key_s *key, unsigned int *error)
 
     }
 
-    logoutput("read_parameters_pubkey_libgcrypt: type not reckognized");
+    logoutput("read_parameters_libgcrypt: type not reckognized");
     *error=EINVAL;
     return -1;
 
