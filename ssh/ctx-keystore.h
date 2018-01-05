@@ -32,6 +32,9 @@
 #define _KNOWN_HOST_FLAG_HOSTCOMMASEPERATED			1
 #define _KNOWN_HOST_FLAG_KEYBASE64ENCODED			2
 
+#define _KNOWN_HOST_FILTER_KEYS					1
+#define _KNOWN_HOST_FILTER_CA					2
+
 #define _HOSTADDRESS_TYPE_IPV4					1
 #define _HOSTADDRESS_TYPE_IPV6					2
 
@@ -49,13 +52,6 @@ struct common_identity_s {
     struct list_element_s		list;
 };
 
-struct known_host_s {
-    unsigned int			flags;
-    char				*host;
-    char				*type;
-    char				*key;
-};
-
 void *init_identity_records(struct passwd *pwd, struct hostaddress_s *hostaddress, const char *what, unsigned int *error);
 struct common_identity_s *get_next_identity_record(void *ptr);
 int get_public_key(struct common_identity_s *i, char *b, unsigned int l);
@@ -63,8 +59,12 @@ int get_private_key(struct common_identity_s *i, char *b, unsigned int l);
 void free_identity_record(struct common_identity_s *i);
 void finish_identity_records(void *ptr);
 
-void *init_known_hosts(struct passwd *pwd, unsigned int *error);
-struct known_host *get_next_known_host(void *ptr, unsigned int *error);
+void *init_known_hosts(struct passwd *pwd, unsigned int filter, unsigned int *error);
+int get_next_known_host(void *ptr, unsigned int *error);
 void finish_known_hosts(void *ptr);
+
+int compare_host_known_host(void *prt, char *host);
+char *get_algo_known_host(void *ptr);
+int match_key_known_host(void *ptr, char *key, unsigned int len);
 
 #endif
