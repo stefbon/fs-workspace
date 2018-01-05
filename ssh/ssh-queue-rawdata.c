@@ -590,7 +590,7 @@ static void start_queue_thread(struct ssh_session_s *session)
 /* queue data read from the fd in the "raw data queue" and start a thread to process it (when it's the first)
 */
 
-void queue_ssh_data(struct ssh_session_s *session, unsigned char *buffer, unsigned int len)
+void queue_ssh_data(struct ssh_session_s *session, char *buffer, unsigned int len)
 {
     struct rawdata_s *data=NULL;
 
@@ -646,7 +646,7 @@ void queue_ssh_data(struct ssh_session_s *session, unsigned char *buffer, unsign
 
 }
 
-static void ignore_ssh_data(struct ssh_session_s *session, unsigned char *buffer, unsigned int len)
+static void ignore_ssh_data(struct ssh_session_s *session, char *buffer, unsigned int len)
 {
 }
 
