@@ -31,6 +31,6 @@
 #define PACKAGE_VERSION "1.0"
 #endif
 
-//#define LOGGING
+#define LOGGING
 
 #endif
