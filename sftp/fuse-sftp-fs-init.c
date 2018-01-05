@@ -91,6 +91,7 @@ static struct service_fs_s sftp_fs = {
     .mknod			= _fs_sftp_mknod,
     .symlink			= _fs_sftp_symlink,
     .symlink_validate		= _fs_sftp_symlink_validate,
+    .readlink			= _fs_sftp_readlink,
 
     .unlink			= _fs_sftp_unlink,
     .rmdir			= _fs_sftp_rmdir,
