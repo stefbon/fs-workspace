@@ -90,7 +90,7 @@ struct rawdata_s {
     unsigned int			maclen;
     unsigned int			decrypted;
     unsigned int			sequence;
-    unsigned char 			buffer[];
+    char 				buffer[];
 };
 
 struct server_reply_s {
@@ -393,7 +393,7 @@ struct rawdata_queue_s {
     struct rawdata_s			*last;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
-    void				(* queue_ssh_data)(struct ssh_session_s *session, unsigned char *buffer, unsigned int len);
+    void				(* queue_ssh_data)(struct ssh_session_s *session, char *buffer, unsigned int len);
     void 				(* process_rawdata)(struct rawdata_s *data);
 };
 
