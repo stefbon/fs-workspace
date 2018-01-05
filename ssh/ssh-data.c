@@ -176,23 +176,6 @@ int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsig
 
 }
 
-/* for iv's the cipher counts */
-
-unsigned int get_session_ivsize(struct ssh_session_s *session, char *name_cipher, char *name_mac)
-{
-    return get_cipher_ivsize(session, name_cipher);
-}
-
-int set_session_iv_c2s(struct ssh_session_s *session, char *name_cipher, char *name_mac, struct ssh_string_s *key)
-{
-    return set_cipher_iv_c2s(session, name_cipher, key);
-}
-
-int set_session_iv_s2c(struct ssh_session_s *session, char *name_cipher, char *name_mac, struct ssh_string_s *key)
-{
-    return set_cipher_iv_s2c(session, name_cipher, key);
-}
-
 void init_keydata(struct session_keydata_s *keydata)
 {
     keydata->status=0;
