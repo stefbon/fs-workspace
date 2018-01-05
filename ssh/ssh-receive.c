@@ -59,6 +59,7 @@
 
 #include "ssh-queue-rawdata.h"
 #include "ssh-queue-payload.h"
+#include "ssh-encryption.h"
 
 #include "ssh-utils.h"
 
