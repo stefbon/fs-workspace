@@ -24,8 +24,12 @@
 
 /* prototypes */
 
-void *init_known_hosts_openssh(struct passwd *pwd, unsigned int *error);
-struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error);
+void *init_known_hosts_openssh(struct passwd *pwd, unsigned int filter, unsigned int *error);
+int get_next_known_host_openssh(void *ptr, unsigned int *error);
 void *finish_known_hosts_openssh(void *ptr);
+
+int compare_host_known_host_openssh(void *prt, char *host);
+char *get_algo_known_host_openssh(void *ptr);
+int match_key_known_host_openssh(void *ptr, char *key, unsigned int len);
 
 #endif
