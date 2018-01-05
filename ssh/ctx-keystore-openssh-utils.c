@@ -58,6 +58,154 @@
 #include "ctx-keystore.h"
 #include "ctx-keystore-openssh.h"
 
+int _match_pattern_host(char *host, char *hostpattern, unsigned int level)
+{
+    char *start=hostpattern;
+    unsigned int len_h=strlen(hostpattern);
+    char *pos_q=NULL;
+    char *pos_s=NULL;
+    char *pos=host;
+    unsigned int len=strlen(host);
+
+    if (level>20) return -1; /* not too deep recursion */
+
+    pos_q=strchr(start, '?');
+    pos_s=strchr(start, '*');
+
+    while ((pos_q || pos_s) && pos < host + len) {
+
+	if (pos_q && (pos_s==NULL || (pos_s && pos_s>pos_q))) {
+
+	    /* questionmark */
+
+	    if (pos_q>start) {
+		unsigned int bytes=(unsigned int) (pos_q - start);
+
+		/* do the in between bytes match? */
+
+		if (strncmp(pos, start, bytes)!=0) return -1;
+		pos+=bytes;
+
+	    }
+
+	    pos++;
+	    start=pos_q+1;
+
+	    if (start==hostpattern+len_h) {
+
+		if (pos==host+len) return 0;
+		return -1;
+
+	    }
+
+	    pos_q=strchr(start, '?');
+	    pos_s=strchr(start, '*');
+	    continue;
+
+	}
+
+	if (pos_s && (pos_q==NULL || (pos_q && pos_q>pos_s))) {
+	    char *help=NULL;
+
+	    /* asterix */
+
+	    if (pos_s>start) {
+		unsigned int bytes=(unsigned int) (pos_s - start);
+
+		/* do the in between bytes match? */
+
+		if (strncmp(pos, start, bytes)!=0) return -1;
+		pos+=bytes;
+
+	    }
+
+	    start=pos_s+1;
+
+	    nextstring:
+
+	    /* when nothing more in pattern then ready */
+
+	    if (start>=hostpattern+len_h) return 0;
+
+	    pos_q=strchr(start, '?');
+	    pos_s=strchr(start, '*');
+	    help=NULL;
+
+	    /* look for the following string after the "*" : it must be in host
+		a pattern like a*bcd matches aabcd but also aabcbcd
+	    */
+
+	    if (pos_s && (pos_q==NULL || (pos_q && pos_q>pos_s))) {
+
+		help=pos_s;
+
+	    } else if (pos_q && (pos_s==NULL || (pos_s && pos_s>pos_q))) {
+
+		help=pos_q;
+
+	    }
+
+	    if (help==start) {
+
+		start++;
+		goto nextstring;
+
+	    }
+
+	    if (help) {
+		unsigned int tmp=(unsigned int) (help-start);
+		char string[tmp+1];
+		char *sep=NULL;
+
+		/* the string between "*" and next pattern character must be present in host */
+
+		memcpy(string, start, tmp);
+		string[tmp]='\0';
+
+		/* this string may be more than once in host and the "*" can expand to anything so try every occurence */
+
+		findstring:
+
+		sep=strstr(pos, string);
+		if (sep==NULL) return -1;
+
+		pos=sep+tmp;
+		start=help;
+
+		if (_match_pattern_host(pos, start, level+1)==0) return 0;
+		goto findstring;
+
+	    } else {
+		unsigned int tmp=strlen(start);
+
+		/* no more patterns in the rest, this rest must be the last part of host */
+
+		if (strlen(pos)>=tmp && strcmp(host+len-tmp, start)==0) {
+
+		    return 0;
+
+		} else {
+
+		    return -1;
+
+		}
+
+	    }
+
+	}
+
+    }
+
+    if ((pos < host + len) && (start < hostpattern + len_h)) {
+
+	if (strcmp(pos, start)==0) return 0;
+
+    }
+
+    return -1;
+
+}
+
 unsigned int get_path_openssh_user(struct passwd *pwd, char *path, char *buffer, unsigned int len)
 {
 
