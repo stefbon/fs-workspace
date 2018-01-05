@@ -20,7 +20,7 @@
 #ifndef FS_WORKSPACE_SSH_QUEUE_RAWDATA_H
 #define FS_WORKSPACE_SSH_QUEUE_RAWDATA_H
 
-void queue_ssh_data(struct ssh_session_s *session, unsigned char *buffer, unsigned int len);
+void queue_ssh_data(struct ssh_session_s *session, char *buffer, unsigned int len);
 
 void stop_receive_data(struct ssh_session_s *session);
 void init_receive_rawdata_queue(struct ssh_session_s *session);
