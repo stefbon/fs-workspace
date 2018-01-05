@@ -51,6 +51,7 @@
 #include "ssh-common.h"
 #include "ssh-connection.h"
 #include "ssh-utils.h"
+#include "ssh-pubkey-utils.h"
 
 #define _SSH_BEVENTLOOP_NAME			"SSH"
 
@@ -311,54 +312,21 @@ char *get_ssh_hostname(struct ssh_session_s *session, unsigned char what, unsign
 
 }
 
-static int compare_ssh_knownhost_host(char *host, char *remotehostname, char *remoteipv4)
-{
-    char *sep=NULL;
-    char *start=host;
-    int match=-1;
-
-    findhost:
-
-    sep=strchr(start, ',');
-    if (sep) *sep='\0';
-
-    if (isvalid_ipv4(start)==1) {
-
-	if (strcmp(start, remoteipv4)==0) match=0;
-
-    } else {
-
-	if (strcmp(start, remotehostname)==0) match=0;
-
-    }
-
-    if (sep) {
-
-	*sep=',';
-	if (match==0) goto out;
-	start=sep+1;
-	goto findhost;
-
-    }
-
-    out:
-
-    return match;
-
-}
-
-static int compare_ssh_knownhost_key(char *key, struct common_buffer_s *data)
-{
-    return compare_encoded_base64(key, data);
-}
-
-/* check the server hostkey against the personal known_hosts file*/
+/* check the server hostkey against the personal known_hosts file
+    TODO:
+    - when hostkey is a certificate look for a cert authority for this host (this host is part of the domain)
+	- verify the signature using the ca's public key
+	- for
+	    - ssh-rsa-cert-v01: check the values e and n of the ca pubkey
+	    - ssh-dss-cert-v01: check the values p, q, g, y of the ca pubkey
+	    - ssh-sha2-nist*-cert-v01: check the curve identifier and "q" of the ca pubkey
+	    - ssh-ed25519-cert-v01: check the pk which is the encoded ca's pubkey
+*/
 
 int check_serverkey(struct ssh_session_s *session, struct ssh_key_s *hostkey)
 {
     void *ptr=NULL;
     unsigned int error=0;
-    struct known_host_s *known_host=NULL;
     char *remotehostname=NULL;
     char *remoteipv4=NULL;
     int result=-1;
@@ -389,32 +357,33 @@ int check_serverkey(struct ssh_session_s *session, struct ssh_key_s *hostkey)
 
     }
 
-    ptr=init_known_hosts(&session->identity.pwd, &error);
+    ptr=init_known_hosts(&session->identity.pwd, _KNOWN_HOST_FILTER_KEYS, &error);
     if (ptr==NULL) goto out;
 
-    known_host=get_next_known_host(ptr, &error);
+    while (get_next_known_host(ptr, &error)==0) {
+	char *algo=NULL;
 
-    while (known_host) {
+	/* compare host (remote hostname and remote ipv4) */
 
-	/* start with host */
+	if (compare_host_known_host(ptr, remotehostname)==-1) {
 
-	if (compare_ssh_knownhost_host(known_host->host, remotehostname, remoteipv4)==-1) goto next;
+	    if (compare_host_known_host(ptr, remoteipv4)==-1) continue;
+
+	}
 
 	/* compare method (ssh-rsa, ssh-dss, ...)*/
 
-	if (get_pubkey_type(known_host->type, strlen(known_host->type))!=hostkey->type) goto next;
+	algo=get_algo_known_host(ptr);
+	logoutput("check_serverkey: check algo %s", algo);
+	if (get_pubkey_type(algo, strlen(algo))!=hostkey->type) continue;
 
 	/* compare the key material */
-
-	if (compare_ssh_knownhost_key(known_host->key, &hostkey->data)==0) {
+	if (match_key_known_host(ptr, hostkey->data.ptr, hostkey->data.len)==0) {
 
 	    result=0;
 	    break;
 
 	}
-
-	next:
-	known_host=get_next_known_host(ptr, &error);
 
     }
 
