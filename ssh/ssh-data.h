@@ -31,11 +31,6 @@ int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *pa
 void free_kexinit_server(struct ssh_session_s *session);
 void free_kexinit_client(struct ssh_session_s *session);
 
-unsigned int get_session_ivsize(struct ssh_session_s *session, char *name_cipher, char *name_mac);
-
-int set_session_iv_c2s(struct ssh_session_s *session, char *name_cipher, char *name_mac, struct ssh_string_s *key);
-int set_session_iv_s2c(struct ssh_session_s *session, char *name_cipger, char *name_mac, struct ssh_string_s *key);
-
 int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsigned int len);
 
 void init_keydata(struct session_keydata_s *keydata);
