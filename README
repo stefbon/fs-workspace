@@ -14,7 +14,8 @@ and when ssh/sftp services are found, path's like
 
 /run/fs-workspace/user/$USER/network/SFTP_Network/example.org/server/home
 
-are created to offer access to the user's home directory on server.
+are created to offer access to the user's home directory on server when
+the server server.example.org is detected on the network as a host providing ssh/sftp.
 
 SSH supports publickey and hostbased userauth, rsa and dss key formats,
 key exchange methods diffie-hellman-group1-sha1 and diffie-hellman-group14-sha1,
@@ -31,6 +32,19 @@ For crypto libgcrypt is used.
 For userlogins systemd is used.
 For detection of networkservices avahi is used.
 Note libfuse is not required, fuse support in the kernel of course.
+
+
+FEATURES
+--------
+
+- Automatic detection of services on the local network
+
+- Flexible handling of different signals/situations.
+    After sending data to the ssh/sftp server the thread will wait for a certain period to get a response.
+    This response is read and converted to a fuse format and will result in completion of the fuse request.
+    It's possible that the thread has to wait too long. A timeout is used to handle this situation.
+    Also it's possible that the remote process (with ssh/sftp it's the channel/subprocess) closes.
+    Also it's possible that the original fuse request is cancelled. Also this signal is taken care of.
 
 
 BUILD
