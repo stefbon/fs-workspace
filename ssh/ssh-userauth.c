@@ -106,7 +106,7 @@ int ssh_authentication(struct ssh_session_s *session)
     hostaddress.ip=remoteipv4;
     hostaddress.hostname=remotehostname;
 
-    logoutput("ssh_authentication: found remote host %s", remotehostname);
+    logoutput("ssh_authentication: found remote host %s / %s", remotehostname, remoteipv4);
 
     ptr=init_identity_records(&session->identity.pwd, &hostaddress, "user", &error);
 
