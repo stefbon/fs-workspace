@@ -107,8 +107,8 @@ int read_server_greeter(struct rawdata_s *data)
 {
     struct ssh_session_s *session=data->session;
     struct ssh_receive_s *receive=&session->receive;
-    unsigned char *line=data->buffer;
-    unsigned char *sep=NULL;
+    char *line=data->buffer;
+    char *sep=NULL;
     unsigned int pos=0;
     unsigned char found=0;
 
