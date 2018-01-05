@@ -82,16 +82,25 @@ static FILE *get_openssh_known_hosts_file(struct passwd *pwd, unsigned int *erro
 }
 
 struct known_hosts_s {
-    FILE			*fp;
-    char			*line;
-    struct known_host_s		known_host;
+    FILE				*fp;
+    char				*line;
+    unsigned int			filter;
+    char				*host;
+    char				*type;
+    char				*key;
 };
 
-void *init_known_hosts_openssh(struct passwd *pwd, unsigned int *error)
+void *init_known_hosts_openssh(struct passwd *pwd, unsigned int filter, unsigned int *error)
 {
     struct known_hosts_s *known_hosts=NULL;
-    struct known_host_s *known_host=NULL;
     FILE *fp=NULL;
+
+    if ((filter & _KNOWN_HOST_FILTER_CA) && (filter & _KNOWN_HOST_FILTER_KEYS)) {
+
+	*error=EINVAL;
+	return NULL;
+
+    }
 
     known_hosts=malloc(sizeof(struct known_hosts_s));
 
@@ -113,27 +122,23 @@ void *init_known_hosts_openssh(struct passwd *pwd, unsigned int *error)
 
     known_hosts->fp=fp;
     known_hosts->line=NULL;
-
-    known_host=&known_hosts->known_host;
-    known_host->flags=(_KNOWN_HOST_FLAG_HOSTCOMMASEPERATED | _KNOWN_HOST_FLAG_KEYBASE64ENCODED);
-    known_host->host=NULL;
-    known_host->type=NULL;
-    known_host->key=NULL;
+    known_hosts->filter=filter;
+    known_hosts->host=NULL;
+    known_hosts->type=NULL;
+    known_hosts->key=NULL;
 
     return (void *) known_hosts;
 }
 
-struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
+int get_next_known_host_openssh(void *ptr, unsigned int *error)
 {
     struct known_hosts_s *known_hosts=NULL;
-    struct known_host_s *known_host=NULL;
     ssize_t size=0;
     size_t len=0;
 
-    if (! ptr) return NULL;
+    if (! ptr) return -1;
 
     known_hosts=(struct known_hosts_s *) ptr;
-    known_host=&known_hosts->known_host;
 
     nextline:
 
@@ -144,9 +149,9 @@ struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
 
     }
 
-    known_host->host=NULL;
-    known_host->type=NULL;
-    known_host->key=NULL;
+    known_hosts->host=NULL;
+    known_hosts->type=NULL;
+    known_hosts->key=NULL;
 
     size=getline(&known_hosts->line, &len, known_hosts->fp);
 
@@ -160,7 +165,7 @@ struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
 
 	}
 
-	return NULL;
+	return -1;
 
     } else {
 	char *sep=NULL;
@@ -178,13 +183,42 @@ struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
 	len=strlen(start);
 	if (len==0) goto nextline;
 
-	/* skip lines starting with a # (=comment) and a @ (=revoked or cert authority) */
+	/* skip lines starting with a # (=comment) */
 
-	if (strncmp(start, "#", 1)==0 || strncmp(start, "@", 1)==0) goto nextline;
+	if (strncmp(start, "#", 1)==0) goto nextline;
+
+	/* skip lines starting with a | (=hashed hostnames) */
+
+	if (strncmp(start, "|", 1)==0) goto nextline;
+
+	if (strncmp(start, "@", 1)==0) {
+
+	    if (len > 15 && strncmp(start, "@revoked ", 9)==0) goto nextline;
+
+	    if (len > 20 && strncmp(start, "@cert-authority ", 16)==0) {
+
+		if (!(known_hosts->filter & _KNOWN_HOST_FILTER_CA)) goto nextline;
+
+		start+=strlen("@cert-authority");
+		while (start < known_hosts->line + len && isspace(*start)) start++;
+		len=strlen(start);
+		if (len==0) goto nextline;
+
+	    } else {
+
+		goto nextline;
+
+	    }
+
+	} else {
+
+	    if (!(known_hosts->filter & _KNOWN_HOST_FILTER_KEYS)) goto nextline;
+
+	}
 
 	/* the line starts with the host(s) */
 
-	known_host->host=start;
+	known_hosts->host=start;
 	sep=strchr(start, ' ');
 	if (sep==NULL) goto nextline;
 	*sep='\0';
@@ -195,7 +229,7 @@ struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
 	while (start < known_hosts->line + len && isspace(*start)) start++;
 	len=strlen(start);
 	if (len==0) goto nextline;
-	known_host->type=start;
+	known_hosts->type=start;
 	sep=strchr(start, ' ');
 	if (sep==NULL) goto nextline;
 	*sep='\0';
@@ -206,15 +240,15 @@ struct known_host *get_next_known_host_openssh(void *ptr, unsigned int *error)
 	while (start < known_hosts->line + len && isspace(*start)) start++;
 	len=strlen(start);
 	if (len==0) goto nextline;
-	known_host->key=start;
+	known_hosts->key=start;
 	sep=strchr(start, ' ');
 	if (sep) *sep='\0';
 
-	return known_host;
+	return 0;
 
     }
 
-    return NULL;
+    return -1;
 
 }
 
@@ -231,4 +265,71 @@ void *finish_known_hosts_openssh(void *ptr)
 
     }
 
+}
+
+static int is_host_pattern(char *host)
+{
+    return (strchr(host, '?') || strchr(host, '*'));
+}
+
+int compare_host_known_host_openssh(void *ptr, char *host)
+{
+    struct known_hosts_s *known_hosts=(struct known_hosts_s *) ptr;
+    char *sep=NULL;
+    char *start=NULL;
+    int match=-1;
+
+    if (! known_hosts) return -1;
+    start=known_hosts->host;
+
+    findhost:
+
+    sep=strchr(start, ',');
+    if (sep) *sep='\0';
+
+    if (is_host_pattern(start)) {
+
+	match=_match_pattern_host(host, start, 0);
+
+    } else {
+
+	if (strcmp(start, host)==0) match=0;
+
+    }
+
+    if (sep) {
+
+	*sep=',';
+	if (match==0) goto out;
+	start=sep+1;
+	goto findhost;
+
+    }
+
+    out:
+
+    return match;
+
+}
+
+char *get_algo_known_host_openssh(void *ptr)
+{
+    struct known_hosts_s *known_hosts=(struct known_hosts_s *) ptr;
+    return known_hosts->type;
+}
+
+int match_key_known_host_openssh(void *ptr, char *key, unsigned int len)
+{
+    struct known_hosts_s *known_hosts=(struct known_hosts_s *) ptr;
+    gsize size=0;
+
+    if (known_hosts==NULL || known_hosts->key==NULL) return -1;
+
+    if (g_base64_decode_inplace((gchar *)known_hosts->key, &size)) {
+
+	if (size==len && strcmp(key, (char *) known_hosts->key)==0) return 0;
+
+    }
+
+    return -1;
 }
