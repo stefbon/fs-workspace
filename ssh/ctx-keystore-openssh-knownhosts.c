@@ -193,16 +193,24 @@ int get_next_known_host_openssh(void *ptr, unsigned int *error)
 
 	if (strncmp(start, "@", 1)==0) {
 
-	    if (len > 15 && strncmp(start, "@revoked ", 9)==0) goto nextline;
+	    if (len > 15) {
 
-	    if (len > 20 && strncmp(start, "@cert-authority ", 16)==0) {
+		if (strncmp(start, "@revoked ", 9)==0) goto nextline;
 
-		if (!(known_hosts->filter & _KNOWN_HOST_FILTER_CA)) goto nextline;
+		if (strncmp(start, "@cert-authority ", 16)==0) {
 
-		start+=strlen("@cert-authority");
-		while (start < known_hosts->line + len && isspace(*start)) start++;
-		len=strlen(start);
-		if (len==0) goto nextline;
+		    if (!(known_hosts->filter & _KNOWN_HOST_FILTER_CA)) goto nextline;
+
+		    start+=strlen("@cert-authority");
+		    while ((start < known_hosts->line + len) && isspace(*start)) start++;
+		    len=strlen(start);
+		    if (len==0) goto nextline;
+
+		} else {
+
+		    goto nextline;
+
+		}
 
 	    } else {
 
@@ -216,7 +224,7 @@ int get_next_known_host_openssh(void *ptr, unsigned int *error)
 
 	}
 
-	/* the line starts with the host(s) */
+	/* first field is host(s) */
 
 	known_hosts->host=start;
 	sep=strchr(start, ' ');
