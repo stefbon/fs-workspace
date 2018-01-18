@@ -74,7 +74,7 @@ struct entry_s *create_network_map_entry(struct workspace_mount_s *workspace, st
     st.st_dev=0;
     st.st_nlink=2;
     st.st_rdev=0;
-    st.st_size=0;
+    st.st_size=_INODE_DIRECTORY_SIZE;
     st.st_blksize=0;
     st.st_blocks=0;
 
