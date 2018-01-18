@@ -485,6 +485,8 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 
 	    }
 
+	    create_desktopentry_file("/etc/fs-workspace/desktopentry.netgroup", parent, workspace);
+
 	}
 
 	unlock_directory_excl(directory->inode);
