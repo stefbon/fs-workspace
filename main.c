@@ -923,7 +923,6 @@ int main(int argc, char *argv[])
     end_sshlibrary();
 
     remove_pid_file(&fs_options.socket, getpid());
-    remove_special_files();
 
     options:
 
