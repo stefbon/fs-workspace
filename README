@@ -81,8 +81,12 @@ cp base/network.workspace /etc/fs-workspace/base
 Adjust this file to you needs. The group users I want services to start for do belong to the group "users".
 Rename that to your situation.
 
+Copy the desktopfiles in config to /etc/fs-workspace:
+
+cp desktopentry.* /etc/fs-workspace
+This is not required, but gives nice icons for the domain and the server.
+I'm using the network-workgroup and network-server icons from Adwaita icons collection.
+
 Start the executable
 
 ./fs-workspace
-
-
