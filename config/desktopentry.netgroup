@@ -1,0 +1,9 @@
+[Desktop Entry]
+Icon=/usr/share/icons/Adwaita/256x256/places/network-workgroup.png
+Actions=AddKey;
+Type=Service
+
+[Desktop Action AddKey]
+Icon=gcr-key-pair
+Name=Add Identity
+Exec=test
