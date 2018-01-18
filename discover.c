@@ -396,6 +396,8 @@ static unsigned int add_net_service_unlocked(unsigned int method, char *hostname
     struct service_found_s *service=NULL;
     unsigned int result=0;
 
+    logoutput("add_net_service_unlocked: add %s/service %i", hostname, code);
+
     /* add a service
 	- lookup the hostname and create host if not found
 	- lookup the service and create it of not found
@@ -566,7 +568,7 @@ void get_net_services(struct timespec *since, process_new_service cb, void *ptr)
 
 	    service=get_container_service(slist);
 
-	    if (service->found.tv_sec > since->tv_sec || (service->found.tv_sec == since->tv_sec && service->found.tv_nsec >= since->tv_nsec)) {
+	    if (service->found.tv_sec > since->tv_sec || (service->found.tv_sec == since->tv_sec && service->found.tv_nsec > since->tv_nsec)) {
 
 		(* cb)(service->service, &service->address, &service->found, host->id, service->id, ptr);
 
@@ -592,6 +594,8 @@ void get_net_services(struct timespec *since, process_new_service cb, void *ptr)
     since->tv_nsec=maxfound.tv_nsec;
 
     /* test the queue */
+
+    logoutput("get_net_services: test queue");
 
     added=0;
     queue=get_next_queued_service_found();
