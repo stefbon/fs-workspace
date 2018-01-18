@@ -125,8 +125,6 @@ int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct 
     unsigned char data[17 + sftp_r->call.lstat.len];
     unsigned int pos=0;
 
-    logoutput("send_sftp_lstat_v04_generic: flags %i", flags);
-
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
 
     store_uint32(&data[pos], 13 + sftp_r->call.lstat.len);
@@ -165,8 +163,6 @@ int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct 
 {
     unsigned char data[17 + sftp_r->call.fstat.len];
     unsigned int pos=0;
-
-    logoutput("send_sftp_fstat_v04_generic: flags %i", flags);
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
 

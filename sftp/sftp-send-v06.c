@@ -101,14 +101,12 @@ static unsigned int get_sftp_lockflags_flock(unsigned int type)
 static int send_sftp_stat_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
     unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    logoutput("send_sftp_stat_v06: mask %i stat %i", flags, SSH_FILEXFER_STAT_VALUE);
     return send_sftp_stat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 static int send_sftp_lstat_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
     unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    logoutput("send_sftp_lstat_v06: mask %i stat %i", flags, SSH_FILEXFER_STAT_VALUE);
     return send_sftp_lstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 

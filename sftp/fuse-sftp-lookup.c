@@ -192,8 +192,6 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 		    struct entry_s *entry=NULL;
 		    struct _sftp_lookup_s _sftp_lookup;
 
-		    logoutput("_fs_sftp_lookup_new: attrs");
-
 		    memset(&fuse_attr, 0, sizeof(struct fuse_sftp_attr_s));
 		    read_attributes_ctx(context->interface.ptr, sftp_r.response.attr.buff, sftp_r.response.attr.size, &fuse_attr);
 
@@ -203,16 +201,12 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 		    _sftp_lookup.pathinfo=pathinfo;
 		    _sftp_lookup.error=0;
 
-		    logoutput("_fs_sftp_lookup_new: parent %s", inode->alias->name.name);
-
 		    entry=create_entry_extended(inode->alias, xname, _sftp_lookup_cb_created, _sftp_lookup_cb_found, _sftp_lookup_cb_error, (void *) &_sftp_lookup);
 
 		    free(sftp_r.response.attr.buff);
 		    return;
 
 		} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    logoutput("_fs_sftp_lookup_new: attrs");
 
 		    error=sftp_r.response.status.linux_error;
 

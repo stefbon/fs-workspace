@@ -89,9 +89,7 @@ void _fs_sftp_getattr(struct service_context_s *context, struct fuse_request_s *
     sftp_r.call.lstat.len=pathinfo->len;
     sftp_r.fusedata_flags=&f_request->flags;
 
-    /*
-	send lstat cause not interested in target when dealing with symlink
-    */
+    /* send lstat cause not interested in target when dealing with symlink */
 
     if (send_sftp_lstat_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -169,9 +167,7 @@ void _fs_sftp_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
     sftp_r.call.fstat.len=openfile->handle.name.len;
     sftp_r.fusedata_flags=&f_request->flags;
 
-    /*
-	send fstat cause a handle is available
-    */
+    /* send fstat cause a handle is available */
 
     if (send_sftp_fstat_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
