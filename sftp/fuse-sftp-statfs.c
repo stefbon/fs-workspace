@@ -62,6 +62,8 @@
 
 #include "fuse-sftp-common.h"
 
+#define UINT32_T_MAX		0xFFFFFFFF
+
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
 extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
@@ -85,7 +87,8 @@ static void _fs_sftp_statfs_unsupp(struct service_context_s *context, struct fus
     statfs_out.st.frsize=fallback_statfs.f_bsize;
 
     statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
-    statfs_out.st.ffree=(uint64_t) (UINT64_MAX - statfs_out.st.files);
+    // statfs_out.st.ffree=(uint64_t) (UINT64_MAX - statfs_out.st.files);
+    statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
 
     statfs_out.st.namelen=255;
     statfs_out.st.padding=0;
@@ -181,7 +184,8 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 		    statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
 		    pos+=8;
 
-		    statfs_out.st.ffree=(uint64_t) ((uint64_t) -1) - statfs_out.st.files;
+		    // statfs_out.st.ffree=(uint64_t) ((uint64_t) -1) - statfs_out.st.files;
+		    statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
 		    pos+=8;
 
 		    /* ignore favail */
