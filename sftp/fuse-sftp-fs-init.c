@@ -69,11 +69,9 @@
 #include "fuse-sftp-symlink.h"
 #include "fuse-sftp-statfs.h"
 
-
 extern unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int size, unsigned int *error);
 extern void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
 extern int start_sftp_common(struct context_interface_s *interface, void *data);
-
 
 static unsigned char done=0;
 

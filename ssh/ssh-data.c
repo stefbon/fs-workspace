@@ -48,24 +48,6 @@
 #include "ssh-common.h"
 #include "ssh-utils.h"
 
-void init_ssh_string(struct ssh_string_s *s)
-{
-    s->ptr=NULL;
-    s->len=0;
-}
-
-void free_ssh_string(struct ssh_string_s *s)
-{
-    if (s->ptr) {
-
-	free(s->ptr);
-	s->ptr=NULL;
-
-    }
-
-    s->len=0;
-}
-
 void init_ssh_algo(struct ssh_kexinit_algo *algo)
 {
     memset(algo, 0, sizeof(struct ssh_kexinit_algo));
@@ -167,6 +149,7 @@ int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsig
 
 	memcpy(session->data.sessionid.ptr, id, len);
 	session->data.sessionid.len=len;
+	session->data.sessionid.flags|=SSH_STRING_FLAG_ALLOCATE;
 	return 0;
 
     }

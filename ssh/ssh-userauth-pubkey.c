@@ -83,30 +83,25 @@
 
 */
 
-static signed char create_pk_signature(struct ssh_session_s *session, struct ssh_string_s *remote_user, const char *service, struct ssh_key_s *public_key, struct ssh_key_s *private_key, struct ssh_string_s *signature)
+static signed char create_pk_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *public_key, struct ssh_key_s *private_key, struct ssh_string_s *signature)
 {
-    unsigned int len=write_userauth_pubkey_request(NULL, 0, remote_user, service, public_key) + 4 + session->data.sessionid.len;
+    struct common_buffer_s data=INIT_COMMON_BUFFER;
+    unsigned int len=write_userauth_pubkey_request(&data, r_user, service, public_key) + 4 + session->data.sessionid.len;
     char buffer[len];
-    unsigned int pos=0;
-    struct common_buffer_s data;
     unsigned int error=0;
 
-    logoutput("create_pk_signature");
+    data.ptr=&buffer[0];
+    data.pos=data.ptr;
+    data.size=len;
+    data.len=0;
 
     /* session id */
 
-    store_uint32(&buffer[pos], session->data.sessionid.len);
-    pos+=4;
-    memcpy(&buffer[pos], (char *) session->data.sessionid.ptr, session->data.sessionid.len);
-    pos+=session->data.sessionid.len;
+    data.len+=copy_ssh_string_to_buffer(&data, &session->data.sessionid);
 
     /* write the userauth pubkey message */
 
-    pos+=write_userauth_pubkey_request(&buffer[pos], (len - pos), remote_user, service, public_key);
-
-    init_common_buffer(&data);
-    data.ptr=&buffer[0];
-    data.size=pos;
+    data.len+=write_userauth_pubkey_request(&data, r_user, service, public_key);
 
     /* create a signature of this data using the private key belonging to the public key */
 
@@ -170,8 +165,7 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
     logoutput("ssh_send_pk_signature");
 
-    signature.len=0;
-    signature.ptr=NULL;
+    init_ssh_string(&signature);
 
     if (create_pk_signature(session, remote_user, "ssh-connection", public_key, private_key, &signature)==-1) {
 
@@ -237,14 +231,7 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
     out:
 
-    if (signature.ptr) {
-
-	free(signature.ptr);
-	signature.ptr=NULL;
-
-    }
-
-    signature.len=0;
+    free_ssh_string(&signature);
 
     return result;
 

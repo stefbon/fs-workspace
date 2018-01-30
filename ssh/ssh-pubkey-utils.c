@@ -141,6 +141,64 @@ unsigned int read_ssh_type_pubkey_buffer(struct common_buffer_s *message, unsign
 
 }
 
+unsigned int copy_ssh_pk_algo_to_buffer(struct common_buffer_s *s, unsigned char type)
+{
+    const char *algo = get_pubkey_name(type);
+    unsigned int len = strlen((char *) algo);
+
+    if (len > 0) {
+
+	if (s && s->ptr) {
+
+	    store_uint32(s->pos, len);
+	    s->pos+=4;
+	    memcpy(s->pos, (char *) algo, len);
+	    s->pos+=len;
+
+	}
+
+	return (4 + len);
+
+    }
+
+    return 0;
+
+}
+
+unsigned int copy_ssh_pk_signature_to_buffer(struct common_buffer_s *s, unsigned char type, struct ssh_string_s *sig)
+{
+    const char *algo = get_pubkey_name(type);
+    unsigned int len = strlen((char *) algo);
+
+    if (len > 0) {
+
+	if (s && s->ptr) {
+
+	    /* length algo + sig */
+	    store_uint32(s->pos, 4 + len + 4 + sig->len);
+	    s->pos+=4;
+	    /* algo */
+	    store_uint32(s->pos, len);
+	    s->pos+=4;
+	    memcpy(s->pos, (char *) algo, len);
+	    s->pos+=len;
+	    /* sig */
+	    store_uint32(s->pos, sig->len);
+	    s->pos+=4;
+	    memcpy(s->pos, sig->ptr, sig->len);
+	    s->pos+=sig->len;
+
+	}
+
+	return (4 + 4 + len + 4 + sig->len);
+
+    }
+
+    return 0;
+
+}
+
+
 static void free_ptr_dummy(struct ssh_key_s *key)
 {
     /* does nothing */

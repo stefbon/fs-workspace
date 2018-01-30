@@ -24,6 +24,9 @@ unsigned char get_pubkey_type(unsigned char *algo, unsigned int len);
 const unsigned char *get_pubkey_name(unsigned char type);
 
 unsigned int read_ssh_type_pubkey_buffer(struct common_buffer_s *message, unsigned char *type, unsigned int *error);
+unsigned int copy_ssh_pk_algo_to_buffer(struct common_buffer_s *s, unsigned char type);
+unsigned int copy_ssh_pk_signature_to_buffer(struct common_buffer_s *s, unsigned char type, struct ssh_string_s *sig);
+
 void init_ssh_key(struct ssh_key_s *key);
 void free_ssh_key(struct ssh_key_s *key);
 

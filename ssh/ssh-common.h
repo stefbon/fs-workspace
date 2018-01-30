@@ -40,6 +40,7 @@
 #define _PUBKEY_FORMAT_DER		3
 
 struct ssh_string_s {
+    unsigned int			flags;
     unsigned int			len;
     char				*ptr;
 };
@@ -214,6 +215,12 @@ struct ssh_channel_s {
 	    unsigned int		protocol;
 	} tcpip;
     } target;
+};
+
+struct ssh_pkalgo_s {
+    unsigned int			type;
+    const char				*name;
+    unsigned int			len;
 };
 
 struct ssh_key_s {

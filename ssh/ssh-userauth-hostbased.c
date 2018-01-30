@@ -76,34 +76,31 @@
 	- string		"hostbased"
 	- string 		algo
 	- string		pubkey of this host
-	- string		hostname (here as found in the public key file)
+	- string		client hostname
 	- string		username on this host
 
 	using the private key
     */
 
-static signed char create_hb_signature(struct ssh_session_s *session, struct ssh_string_s *remote_user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *local_user, struct ssh_key_s *private_key, struct ssh_string_s *signature)
+static signed char create_hb_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *l_user, struct ssh_key_s *private_key, struct ssh_string_s *signature)
 {
-    unsigned int len=write_userauth_hostbased_request(NULL, 0, remote_user, service, public_key, hostname, local_user) + 4 + session->data.sessionid.len;
+    struct common_buffer_s data=INIT_COMMON_BUFFER;
+    unsigned int len=write_userauth_hostbased_request(&data, r_user, service, public_key, hostname, l_user) + 4 + session->data.sessionid.len;
     char buffer[len];
-    unsigned int pos=0;
-    struct common_buffer_s data;
     unsigned int error=0;
+
+    data.ptr=&buffer[0];
+    data.pos=data.ptr;
+    data.size=len;
+    data.len=0;
 
     /* session id */
 
-    store_uint32(&buffer[pos], session->data.sessionid.len);
-    pos+=4;
-    memcpy(&buffer[pos], (char *) session->data.sessionid.ptr, session->data.sessionid.len);
-    pos+=session->data.sessionid.len;
+    data.len+=copy_ssh_string_to_buffer(&data, &session->data.sessionid);
 
     /* write the userauth hostbased message */
 
-    pos+=write_userauth_hostbased_request(&buffer[pos], (len - pos), remote_user, service, public_key, hostname, local_user);
-
-    init_common_buffer(&data);
-    data.ptr=&buffer[0];
-    data.size=pos;
+    data.len+=write_userauth_hostbased_request(&data, r_user, service, public_key, hostname, l_user);
 
     /* create a signature of this data using the private key belonging to the host key */
 
@@ -121,16 +118,15 @@ static signed char create_hb_signature(struct ssh_session_s *session, struct ssh
 
 }
 
-static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ssh_string_s *remote_user, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *local_user, struct ssh_key_s *private_key, unsigned int *methods)
+static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *l_user, struct ssh_key_s *private_key, unsigned int *methods)
 {
     struct ssh_string_s signature;
     int result=-1;
     unsigned int seq=0;
 
-    signature.len=0;
-    signature.ptr=NULL;
+    init_ssh_string(&signature);
 
-    if (create_hb_signature(session, remote_user, "ssh-connection", public_key, hostname, local_user, private_key, &signature)==-1) {
+    if (create_hb_signature(session, r_user, "ssh-connection", public_key, hostname, l_user, private_key, &signature)==-1) {
 
 	logoutput("ssh_send_hostbased_signature: creating public hostkey signature failed");
 	goto out;
@@ -139,7 +135,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     /* send userauth hostbased request to server with signature */
 
-    if (send_userauth_hostbased_message(session, remote_user, "ssh-connection", public_key, hostname, local_user, &signature, &seq)==0) {
+    if (send_userauth_hostbased_message(session, r_user, "ssh-connection", public_key, hostname, l_user, &signature, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
@@ -195,12 +191,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     out:
 
-    if (signature.ptr) {
-
-	free(signature.ptr);
-	signature.ptr=NULL;
-
-    }
+    free_ssh_string(&signature);
 
     return result;
 
@@ -266,7 +257,6 @@ int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remot
 	free_identity_record(identity);
 
 	if (result==0) break;
-
 	identity=get_next_identity_record(ptr);
 
     }

@@ -55,7 +55,7 @@
 #include "sftp-request-hash.h"
 #include "sftp-protocol-v03.h"
 
-static struct ssh_string_s ext_fsnotify={strlen(SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL), SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL};
+static struct ssh_string_s ext_fsnotify={0, strlen(SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL), SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL};
 
 /*
     SFTP callbacks

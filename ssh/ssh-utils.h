@@ -20,6 +20,9 @@
 #ifndef FS_WORKSPACE_SSH_UTILS_H
 #define FS_WORKSPACE_SSH_UTILS_H
 
+#define SSH_STRING_FLAG_ALLOCATE				1
+#define SSH_STRING_FLAG_NULLTERMINATE				2
+
 /* prototypes */
 
 unsigned int add_name_to_commalist(const char *name, struct commalist_s *clist, unsigned int *error);
@@ -51,5 +54,16 @@ void replace_newline_char(char *ptr, unsigned int *size);
 
 char *decode_base64(struct common_buffer_s *buffer, unsigned int *len);
 int compare_encoded_base64(char *encoded, struct common_buffer_s *buffer);
+
+void init_ssh_string(struct ssh_string_s *s);
+void free_ssh_string(struct ssh_string_s *s);
+unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len);
+
+unsigned int copy_byte_to_buffer(struct common_buffer_s *b, unsigned char s);
+unsigned int copy_ssh_string_to_buffer(struct common_buffer_s *b, struct ssh_string_s *s);
+unsigned int copy_buffer_to_buffer(struct common_buffer_s *b, struct common_buffer_s *s);
+unsigned int copy_char_to_buffer(struct common_buffer_s *b, char *s, unsigned int len);
+
+int get_ssh_string_from_buffer(struct common_buffer_s *b, struct ssh_string_s *s, unsigned int flags);
 
 #endif

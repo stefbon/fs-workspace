@@ -336,6 +336,7 @@ static int create_signature_rsa_libgcrypt(struct ssh_key_s *key, struct common_b
 
 			    success=0;
 			    signature->len=(unsigned int) written;
+			    signature->flags|=SSH_STRING_FLAG_ALLOCATE;
 
 			} else {
 
@@ -506,6 +507,7 @@ static int create_signature_dss_libgcrypt(struct ssh_key_s *key, struct common_b
 			pos+=written;
 			success=0;
 			signature->len=(unsigned int) (pos - signature->ptr);
+			signature->flags|=SSH_STRING_FLAG_ALLOCATE;
 			logoutput("create_signature_dss_libgcrypt: signature len %i", signature->len);
 
 		    }
@@ -663,6 +665,7 @@ static int create_signature_ed25519_libgcrypt(struct ssh_key_s *key, struct comm
 			pos+=written;
 			success=0;
 			signature->len=(unsigned int) (pos - signature->ptr);
+			signature->flags|=SSH_STRING_FLAG_ALLOCATE;
 			logoutput("create_signature_ed25519_libgcrypt: signature len %i", signature->len);
 
 		    }

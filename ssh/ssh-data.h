@@ -20,9 +20,6 @@
 #ifndef FS_WORKSPACE_SSH_DATA_H
 #define FS_WORKSPACE_SSH_DATA_H
 
-void init_ssh_string(struct ssh_string_s *s);
-void free_ssh_string(struct ssh_string_s *s);
-
 void init_ssh_algo(struct ssh_kexinit_algo *algo);
 
 int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error);
