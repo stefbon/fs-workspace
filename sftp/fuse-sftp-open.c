@@ -87,7 +87,7 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.open.path=(unsigned char *) pathinfo->path;
@@ -115,6 +115,8 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
 		    openfile->handle.name.name=(char *) sftp_r.response.handle.name;
 		    openfile->handle.name.len=sftp_r.response.handle.len;
+		    sftp_r.response.handle.name=NULL;
+		    sftp_r.response.handle.len=0;
 
 		    open_out.fh=(uint64_t) openfile;
 
@@ -129,8 +131,7 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
 			/* if there is a local cache it's uptodate */
 
-			// open_out.open_flags=FOPEN_KEEP_CACHE;
-			open_out.open_flags=0;
+			open_out.open_flags=FOPEN_KEEP_CACHE;
 
 		    }
 
@@ -188,7 +189,7 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
     logoutput("_fs_sftp_create: path %s len %i", pathinfo->path, pathinfo->len);
 
     size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.create.path=(unsigned char *) pathinfo->path;
@@ -216,13 +217,14 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
 
 		    openfile->handle.name.name=(char *) sftp_r.response.handle.name;
 		    openfile->handle.name.len=sftp_r.response.handle.len;
+		    sftp_r.response.handle.name=NULL;
+		    sftp_r.response.handle.len=0;
 		    fill_inode_attr_sftp(context->interface.ptr, openfile->inode, &fuse_attr);
 		    add_inode_context(context, openfile->inode);
 
 		    /* note: how the entry is created on the remote server does not have to be the same .... */
 
 		    _fs_common_cached_create(context, f_request, openfile);
-
 		    return;
 
 		} else if (sftp_r.type==SSH_FXP_STATUS) {
@@ -267,7 +269,7 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.read.handle=(unsigned char *) openfile->handle.name.name;
@@ -296,7 +298,6 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 		    logoutput("_fs_sftp_read: received %i bytes", sftp_r.response.data.size);
 
 		    reply_VFS_data(f_request, sftp_r.response.data.data, sftp_r.response.data.size);
-
 		    free(sftp_r.response.data.data);
 		    sftp_r.response.data.data=NULL;
 		    return;
@@ -347,7 +348,7 @@ void _fs_sftp_write(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.write.handle=(unsigned char *) openfile->handle.name.name;
@@ -426,7 +427,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.fsync.handle=(unsigned char *) openfile->handle.name.name;
@@ -447,9 +448,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
-		    /*
-			send ok reply to VFS no matter what the ssh server reports
-		    */
+		    /* send ok reply to VFS no matter what the sftp server reports */
 
 		    reply_VFS_error(f_request, 0);
 
@@ -513,7 +512,7 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.close.handle=(unsigned char *) openfile->handle.name.name;
@@ -541,9 +540,7 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
 		if (sftp_r.type==SSH_FXP_STATUS) {
 		    struct entry_s *entry=openfile->inode->alias;
 
-		    /*
-			send ok reply to VFS no matter what the ssh server reports
-		    */
+		    /* send ok reply to VFS no matter what the sftp server reports */
 
 		    reply_VFS_error(f_request, 0);
 

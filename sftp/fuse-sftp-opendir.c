@@ -182,6 +182,7 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
     if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	reply_VFS_error(f_request, EINTR);
+	opendir->mode |= _FUSE_READDIR_MODE_INCOMPLETE;
 	return;
 
     }
@@ -210,7 +211,7 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 
     logoutput("_fs_sftp_opendir_common: send opendir %i %s", pathinfo->len, pathinfo->path);
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.opendir.path=(unsigned char *) pathinfo->path;
@@ -232,15 +233,17 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 		if (sftp_r.type==SSH_FXP_HANDLE) {
 		    struct fuse_open_out open_out;
 
+		    /* take over handle */
 		    opendir->handle.name.name=sftp_r.response.handle.name;
 		    opendir->handle.name.len=sftp_r.response.handle.len;
+		    sftp_r.response.handle.name=NULL;
+		    sftp_r.response.handle.len=0;
 
 		    open_out.fh=(uint64_t) opendir;
 		    open_out.open_flags=0;
 		    open_out.padding=0;
 
 		    reply_VFS_data(f_request, (char *) &open_out, sizeof(open_out));
-
 		    return;
 
 		} else if (sftp_r.type==SSH_FXP_STATUS) {
@@ -273,6 +276,7 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
     }
 
     opendir->error=error;
+    if (error==EINTR || error==ETIMEDOUT) opendir->mode |= _FUSE_READDIR_MODE_INCOMPLETE;
     reply_VFS_error(f_request, error);
 
 }
@@ -285,7 +289,7 @@ static int _sftp_get_readdir_names(struct fuse_opendir_s *opendir, struct fuse_r
     struct sftp_request_s sftp_r;
     int result=-1;
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.readdir.handle=(unsigned char *) opendir->handle.name.name;
@@ -395,6 +399,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 	if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	    reply_VFS_error(f_request, EINTR);
+	    opendir->mode |= _FUSE_READDIR_MODE_INCOMPLETE;
 	    return;
 
 	}
@@ -458,6 +463,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 			    /* some error */
 
 			    reply_VFS_error(f_request, error);
+			    if (error==EINTR || error==ETIMEDOUT) opendir->mode |= _FUSE_READDIR_MODE_INCOMPLETE;
 			    goto unlock;
 
 			} else if (result==0) {
@@ -478,9 +484,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 			char *name=NULL;
 			struct fuse_sftp_attr_s fuse_attr;
 
-			/*
-			    extract name and attributes from names
-			*/
+			/* extract name and attributes from names */
 
 			memset(&fuse_attr, 0, sizeof(struct fuse_sftp_attr_s));
 			read_name_response_ctx(context->interface.ptr, response, &name, &len, &fuse_attr);
@@ -606,7 +610,7 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.close.handle=(unsigned char *) opendir->handle.name.name;
@@ -676,7 +680,7 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
     }
 
-    if (entry->flags & _ENTRY_FLAG_REMOTECHANGED) entry->flags-=_ENTRY_FLAG_REMOTECHANGED;
+    if ((entry->flags & _ENTRY_FLAG_REMOTECHANGED) && ! (opendir->mode & _FUSE_READDIR_MODE_INCOMPLETE)) entry->flags-=_ENTRY_FLAG_REMOTECHANGED;
 
     /* remove local entries not found on server */
 
