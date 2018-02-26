@@ -20,14 +20,14 @@
 #ifndef FS_WORKSPACE_SFTP_RECV_V03_H
 #define FS_WORKSPACE_SFTP_RECV_V03_H
 
-void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
-void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
-void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
-void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
-void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
+void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
+void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
+void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
+void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
+void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
 
-void receive_sftp_extension_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
-void receive_sftp_extension_reply_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer);
+void receive_sftp_extension_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
+void receive_sftp_extension_reply_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer);
 
 void use_sftp_recv_v03(struct sftp_subsystem_s *sftp_subsystem);
 
