@@ -112,7 +112,6 @@ int read_server_greeter(struct rawdata_s *data)
     unsigned int pos=0;
     unsigned char found=0;
 
-
     logoutput("read_server_greeter");
 
     processline:
