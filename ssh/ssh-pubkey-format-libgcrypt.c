@@ -185,7 +185,7 @@ int read_parameters_public_dss_ssh_libgcrypt(struct ssh_key_s *key, unsigned int
 
     if (len==0 || !(type==_PUBKEY_METHOD_SSH_DSS)) {
 
-	logoutput_warning("read_parameters_public_rsa_ssh_libgcrypt: found wrong format");
+	logoutput_warning("read_parameters_public_dss_ssh_libgcrypt: found wrong format");
 	*error=EINVAL;
 	return -1;
 
@@ -426,7 +426,6 @@ int read_parameters_public_ed25519_ssh_libgcrypt(struct ssh_key_s *key, unsigned
     return 0;
 
 }
-
 
 static size_t asn_read_length(char *pos, unsigned int *integer, unsigned int left)
 {
