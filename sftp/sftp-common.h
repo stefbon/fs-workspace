@@ -72,13 +72,13 @@ struct sftp_attr_ops_s {
 };
 
 struct sftp_recv_ops_s {
-    void				(* status)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* handle)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* data)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* name)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* attr)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* extension)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
-    void				(* extension_reply)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, unsigned char *buffer);
+    void				(* status)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* handle)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* data)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* name)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* attr)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* extension)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* extension_reply)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
 };
 
 struct sftp_supported_s {
