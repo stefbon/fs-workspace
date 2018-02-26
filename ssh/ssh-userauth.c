@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2103, 2014, 2015, 2016 Stef Bon <stefbon@gmail.com>
+  2016, 2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -57,9 +57,11 @@
 #include "ssh-connection.h"
 
 #include "ssh-utils.h"
-#include "ssh-userauth-pubkey.h"
-#include "ssh-userauth-hostbased.h"
-#include "ssh-userauth-utils.h"
+
+#include "userauth/pubkey.h"
+#include "userauth/hostbased.h"
+#include "userauth/utils.h"
+#include "userauth/none.h"
 
 int ssh_authentication(struct ssh_session_s *session)
 {
@@ -78,12 +80,6 @@ int ssh_authentication(struct ssh_session_s *session)
     local_user.ptr=session->identity.pwd.pw_name;
     local_user.len=strlen(local_user.ptr);
 
-    /* find the user and identity to connect with
-	with openssh there are different config file's
-	where (user and/or system wide) the remote user and/or
-	the identity is defined
-    */
-
     remotehostname=get_ssh_hostname(session, 1, &error);
 
     if (remotehostname==NULL) {
@@ -97,7 +93,7 @@ int ssh_authentication(struct ssh_session_s *session)
 
     if (remoteipv4==NULL) {
 
-	logoutput("ssh_authentication: failed to get remote ipv number (error %i:%s)", error, strerror(error));
+	logoutput("ssh_authentication: failed to get remote ipv4 (error %i:%s)", error, strerror(error));
 	goto finish;
 
     }
@@ -123,72 +119,7 @@ int ssh_authentication(struct ssh_session_s *session)
 
     logoutput("ssh_authentication: send none userauth request");
 
-    if (send_userauth_none_message(session, &local_user, "ssh-connection", &sequence)==0) {
-	struct ssh_payload_s *payload=NULL;
-	struct timespec expire;
-
-	get_session_expire_init(session, &expire);
-
-	getresponse:
-
-	payload=get_ssh_payload(session, &expire, &sequence, &error);
-
-	if (! payload) {
-
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    if (error==0) error=EIO;
-	    logoutput("ssh_authentication: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
-	    goto finish;
-
-	}
-
-	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
-
-	    /* huhh?? which server allows this weak security? */
-
-	    logoutput("ssh_authentication: server accepted none.....");
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
-	    required_methods=SSH_USERAUTH_NONE;
-	    result=0;
-
-	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
-	    unsigned int methods=0;
-
-	    /* failure gives the required methods */
-
-	    logoutput("ssh_authentication: handle failure/get methods");
-
-	    result=handle_userauth_failure(session, payload, &methods);
-	    if (methods>0) required_methods=methods;
-
-	} else if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER) {
-
-	    process_ssh_message(session, payload);
-	    payload=NULL;
-	    goto getresponse;
-
-	} else {
-
-	    logoutput("ssh_authentication: got unexpected reply %i", payload->type);
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    error=EPROTO;
-
-	}
-
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
-
-    } else {
-
-	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	error=(session->status.error==0) ? session->status.error : EIO;
-	logoutput("ssh_authentication: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
-
-    }
+    result=send_userauth_none(session, &local_user, &required_methods);
 
     if ((session->userauth.status&SESSION_USERAUTH_STATUS_ERROR) ||
 	required_methods==SSH_USERAUTH_NONE ||
@@ -238,6 +169,8 @@ int ssh_authentication(struct ssh_session_s *session)
 	}
 
     }
+
+    /* is hostbased auth required? */
 
     if (required_methods & SSH_USERAUTH_HOSTBASED) {
 	unsigned int methods=0;
