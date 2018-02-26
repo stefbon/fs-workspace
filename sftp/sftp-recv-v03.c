@@ -123,7 +123,7 @@ static unsigned int map_sftp_error(unsigned int ssh_fx_error)
     the rest is in buffer
 */
 
-void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -148,7 +148,7 @@ void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
 }
 
-void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -163,7 +163,9 @@ void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
 	sftp_r->response.handle.len=get_uint32(&buffer[pos]);
 	pos+=4;
 
-	if (sftp_r->response.handle.len < 256 ) {
+	/* TODO: check the length is not bigger than buffer */
+
+	if (sftp_r->response.handle.len < 256) {
 
 	    sftp_r->response.handle.name=malloc(sftp_r->response.handle.len);
 
