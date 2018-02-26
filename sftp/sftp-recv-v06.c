@@ -220,47 +220,49 @@ void receive_sftp_data_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     void *req=NULL;
 
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
+    if (req==NULL) return;
 
-    if (req) {
+    sftp_r->type=sftp_header->type;
+    sftp_r->response.data.size=get_uint32(&buffer[pos]);
+    pos+=4;
 
-	sftp_r->type=sftp_header->type;
-	sftp_r->response.data.size=get_uint32(&buffer[pos]);
-	sftp_r->response.data.data=malloc(sftp_r->response.data.size);
-	pos+=4;
+    logoutput("receive_sftp_data: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
 
-	logoutput("receive_sftp_data: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
+    sftp_r->response.data.data=malloc(sftp_r->response.data.size);
 
-	if (sftp_r->response.data.data) {
+    if (sftp_r->response.data.data==NULL) {
 
-	    /* let the processing of this into names, attr to the receiving (FUSE) thread */
-	    memcpy(sftp_r->response.data.data, &buffer[pos], sftp_r->response.data.size);
-	    pos+=sftp_r->response.data.size;
+	sftp_r->error=ENOMEM;
 
-	    if (pos + 1 == sftp_header->len) {
+	if (signal_sftp_received_id(sftp_subsystem, req)==-1) {
 
-		/* there is an extra byte for eol */
-
-		sftp_r->response.data.eof=(unsigned char) buffer[pos];
-
-		logoutput("receive_sftp_data: eof %i", sftp_r->response.data.eof);
-
-	    } else {
-
-		sftp_r->response.data.eof=-1;
-
-	    }
-
-	} else {
-
-	    sftp_r->error=ENOMEM;
+	    free(sftp_r->response.data.data);
 
 	}
 
-	signal_sftp_received_id(sftp_subsystem, req);
+	return;
+
+    }
+
+    /* let the processing of this into names, attr to the receiving (FUSE) thread */
+    memcpy(sftp_r->response.data.data, &buffer[pos], sftp_r->response.data.size);
+    pos+=sftp_r->response.data.size;
+
+    if (pos + 1 == sftp_header->len) {
+
+	/* there is an extra byte for eol */
+
+	sftp_r->response.data.eof=(unsigned char) buffer[pos];
 
     } else {
 
-	logoutput("receive_sftp_data: error %i storing data (%s)", error, strerror(error));
+	sftp_r->response.data.eof=-1;
+
+    }
+
+    if (signal_sftp_received_id(sftp_subsystem, req)==-1) {
+
+	free(sftp_r->response.data.data);
 
     }
 
