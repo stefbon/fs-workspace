@@ -127,7 +127,6 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
     if (13 + len != payload->len) {
 
 	logoutput("receive_sftp_reply: sftp size %i not equal to length payload %i", 13 + len, payload->len);
-
 	process_sftp_error(sftp_subsystem, payload, EPROTO);
 	free(payload);
 	return;
