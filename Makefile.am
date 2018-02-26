@@ -63,6 +63,6 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/ssh-send-transport.c \
 			ssh/ssh-send-userauth.c \
 			ssh/ssh-send.c \
-			ssh/ssh-userauth.c ssh/ssh-userauth-pubkey.c ssh/ssh-userauth-hostbased.c ssh/ssh-userauth-utils.c \
+			ssh/ssh-userauth.c ssh/userauth/pubkey.c ssh/userauth/utils.c ssh/userauth/hostbased.c ssh/userauth/none.c \
 			ssh/ssh-utils-libgcrypt.c ssh/ssh-utils.c
 
