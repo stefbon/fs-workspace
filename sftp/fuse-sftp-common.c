@@ -347,3 +347,9 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
     return write_attributes_ctx(ptr, NULL, 0, fuse_attr);
 
 }
+
+void init_sftp_request(struct sftp_request_s *r)
+{
+    memset(r, 0, sizeof(struct sftp_request_s));
+}
+

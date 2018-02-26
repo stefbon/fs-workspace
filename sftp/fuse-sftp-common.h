@@ -27,4 +27,6 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int set, 
 
 int symlink_generic_validate(struct service_context_s *context, char *target);
 
+void init_sftp_request(struct sftp_request_s *r);
+
 #endif
