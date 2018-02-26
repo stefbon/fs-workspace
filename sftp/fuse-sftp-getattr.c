@@ -81,8 +81,7 @@ void _fs_sftp_getattr(struct service_context_s *context, struct fuse_request_s *
     logoutput("_fs_sftp_getattr: %li %s", inode->ino, pathinfo->path);
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
@@ -160,7 +159,7 @@ void _fs_sftp_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.fstat.handle=(unsigned char *) openfile->handle.name.name;

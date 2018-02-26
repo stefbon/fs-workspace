@@ -76,7 +76,7 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
 
@@ -146,7 +146,7 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
 

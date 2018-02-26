@@ -87,7 +87,7 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
     size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.mkdir.path=(unsigned char *) pathinfo->path;

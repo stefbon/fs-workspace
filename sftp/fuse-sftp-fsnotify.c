@@ -83,7 +83,7 @@ void _fs_sftp_fsnotify(struct service_context_s *context, struct fuse_request_s 
     if (get_support_sftp_ctx(context->interface.ptr, "fsnotify@bononline.nl")==-1) return;
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.fsnotify.path=(unsigned char *) pathinfo->path;

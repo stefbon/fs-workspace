@@ -165,7 +165,7 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 
     logoutput("_fs_sftp_lookup_new: %i %s", pathinfo->len, pathinfo->path);
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
@@ -251,7 +251,7 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 
     logoutput("_fs_sftp_lookup_existing: %i %s", pathinfo->len, pathinfo->path);
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
     sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
