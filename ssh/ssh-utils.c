@@ -460,7 +460,7 @@ unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len)
 unsigned int copy_ssh_string_to_buffer(struct common_buffer_s *b, struct ssh_string_s *s)
 {
 
-    if (b && b->ptr) {
+    if (b && b->pos) {
 
 	store_uint32(b->pos, s->len);
 	b->pos+=4;
@@ -469,13 +469,13 @@ unsigned int copy_ssh_string_to_buffer(struct common_buffer_s *b, struct ssh_str
 
     }
 
-    return (4 + s->len);
+    return (unsigned int) (4 + s->len);
 }
 
 unsigned int copy_buffer_to_buffer(struct common_buffer_s *b, struct common_buffer_s *s)
 {
 
-    if (b && b->ptr) {
+    if (b && b->pos) {
 
 	store_uint32(b->pos, s->len);
 	b->pos+=4;
@@ -490,7 +490,7 @@ unsigned int copy_buffer_to_buffer(struct common_buffer_s *b, struct common_buff
 unsigned int copy_char_to_buffer(struct common_buffer_s *b, char *s, unsigned int len)
 {
 
-    if (b && b->ptr) {
+    if (b && b->pos) {
 
 	store_uint32(b->pos, len);
 	b->pos+=4;
@@ -505,7 +505,7 @@ unsigned int copy_char_to_buffer(struct common_buffer_s *b, char *s, unsigned in
 unsigned int copy_byte_to_buffer(struct common_buffer_s *b, unsigned char s)
 {
 
-    if (b && b->ptr) {
+    if (b && b->pos) {
 
 	*(b->pos)=s;
 	b->pos++;

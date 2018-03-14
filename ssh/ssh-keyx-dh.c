@@ -59,7 +59,7 @@
 #include "ssh-mac.h"
 #include "ssh-pubkey.h"
 #include "ssh-pubkey-utils.h"
-#include "ssh-connection.h"
+#include "pk/openssh-localdb.h"
 
 #include "ctx-keystore.h"
 
@@ -833,7 +833,7 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
     /* check the received public hostkey (against a "known hosts file" etcetera) */
 
-    if (check_serverkey(session, &hostkey)==0) {
+    if (check_serverkey_openssh(session->connection.fd, &session->identity.pwd, &hostkey)==0) {
 
 	logoutput_info("keyx_read_dh_reply: check public key server success");
 

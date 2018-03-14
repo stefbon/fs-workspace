@@ -55,24 +55,8 @@
 
 #include "ctx-keystore.h"
 #include "ctx-keystore-openssh.h"
-#include "ctx-keystore-openssh-utils.h"
 
-static unsigned int get_directory_openssh_common(struct passwd *pwd, const char *what, char *buffer, unsigned int len)
-{
-
-    if (strcmp(what, "user")==0) {
-
-	return get_path_openssh_user(pwd, NULL, buffer, len);
-
-    } else if (strcmp(what, "host")==0) {
-
-	return get_path_openssh_system(NULL, buffer, len);
-
-    }
-
-    return 0;
-
-}
+#include "pk/openssh-utils.h"
 
 /* look for files ending with ".pub"
     for user look in $HOME/.ssh/

@@ -17,46 +17,26 @@
 
 */
 
-#include "global-defines.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <errno.h>
-#include <err.h>
 #include <sys/time.h>
 #include <time.h>
-#include <pthread.h>
 #include <ctype.h>
 #include <inttypes.h>
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/fsuid.h>
 
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+#include <logging.h>
+#include <utils.h>
 
-#include <glib.h>
-
-#include "logging.h"
-#include "main.h"
-#include "pathinfo.h"
-#include "simple-list.h"
-
-#include "utils.h"
-#include "options.h"
-
-#include "ctx-keystore.h"
-#include "ctx-keystore-openssh.h"
+/* test the host is matched by hostpattern
+    hostpattern can contain a '?' and a '*' */
 
 int _match_pattern_host(char *host, char *hostpattern, unsigned int level)
 {
@@ -206,6 +186,8 @@ int _match_pattern_host(char *host, char *hostpattern, unsigned int level)
 
 }
 
+/*	get the path of user related openssh files on standard locations */
+
 unsigned int get_path_openssh_user(struct passwd *pwd, char *path, char *buffer, unsigned int len)
 {
 
@@ -279,6 +261,8 @@ unsigned int get_path_openssh_user(struct passwd *pwd, char *path, char *buffer,
 
 }
 
+/* get the path of system related openssh files on standard locations */
+
 unsigned int get_path_openssh_system(char *path, char *buffer, unsigned int len)
 {
 
@@ -313,6 +297,23 @@ unsigned int get_path_openssh_system(char *path, char *buffer, unsigned int len)
 	    return strlen("/etc/ssh/") + strlen(path) + 1;
 
 	}
+
+    }
+
+    return 0;
+
+}
+
+unsigned int get_directory_openssh_common(struct passwd *pwd, const char *what, char *buffer, unsigned int len)
+{
+
+    if (strcmp(what, "user")==0) {
+
+	return get_path_openssh_user(pwd, NULL, buffer, len);
+
+    } else if (strcmp(what, "system")==0) {
+
+	return get_path_openssh_system(NULL, buffer, len);
 
     }
 
@@ -460,62 +461,6 @@ unsigned int open_file_ssh_system(struct passwd *pwd, char *path, struct stat *s
 
     // uid_keep=setfsuid(uid_keep);
     // gid_keep=setfsgid(gid_keep);
-    return (unsigned int) fd;
-
-}
-
-unsigned int openat_file_ssh(struct passwd *pwd, unsigned int dfd, char *name, unsigned char user, struct stat *st, unsigned int *error)
-{
-    struct stat test;
-    uid_t uid_keep=0;
-    gid_t gid_keep=0;
-    int fd=0;
-
-    if (user>0) {
-	uid_keep=setfsuid(pwd->pw_uid);
-	gid_keep=setfsgid(pwd->pw_gid);
-    }
-
-    if (fstatat(dfd, name, &test, 0)==-1) {
-
-	*error=errno;
-	goto out;
-
-    }
-
-    if (st) memcpy(st, &test, sizeof(struct stat));
-
-    if (! S_ISREG(test.st_mode)) {
-
-	*error=EINVAL;
-	goto out;
-
-    }
-
-    if (faccessat(dfd, name, F_OK | R_OK, 0)==-1) {
-
-	*error=errno;
-	goto out;
-
-    }
-
-    fd=openat(dfd, name, O_RDONLY);
-
-    if (fd==-1) {
-
-	*error=errno;
-	fd=0;
-
-    }
-
-    out:
-
-    if (user>0) {
-	uid_keep=setfsuid(uid_keep);
-	gid_keep=setfsgid(gid_keep);
-
-    }
-
     return (unsigned int) fd;
 
 }

@@ -52,36 +52,21 @@
 
 extern struct fs_options_struct fs_options;
 
-static void print_usage(const char *progname)
-{
-	fprintf(stdout, "Usage: \n"
-			"%s [opts]\n"
-			"\n"
-	                "          --configfile=PATH\n" , progname);
-
-
-}
-
 static void print_help(const char *progname) {
 
     fprintf(stdout, "General options:\n");
-    fprintf(stdout, "    --opt                      options\n");
-    fprintf(stdout, "    -h   --help                print help\n");
-    fprintf(stdout, "    -V   --version             print version\n");
-    fprintf(stdout, "\n");
-    fprintf(stdout, "%s options:\n", progname);
+    fprintf(stdout, "    --help                print help\n");
+    fprintf(stdout, "    --version             print version\n");
+    fprintf(stdout, "    --configfile=PATH     (default: %s)\n" , FS_WORKSPACE_CONFIGFILE);
 
+    fprintf(stdout, "\n");
     fprintf(stdout, "\n");
 
 }
 
 static void print_version()
 {
-
     printf("fs-workspace version %s\n", PACKAGE_VERSION);
-    //printf("Fuse version %s\n", fuse_version());
-    /* here kernel module version... */
-
 }
 
 static int read_config(char *path)
@@ -324,15 +309,11 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
     while(1) {
 
-	res=getopt_long(argc, argv, "", long_options, &long_options_index);
+	res = getopt_long(argc, argv, "", long_options, &long_options_index);
 
-	if ( res==-1 ) {
+	if (res==-1) break;
 
-	    break;
-
-	}
-
-	switch(res) {
+	switch (res) {
 
 	    case 0:
 
@@ -340,9 +321,8 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
 		if ( strcmp(long_options[long_options_index].name, "help")==0 ) {
 
-		    print_usage(argv[0]);
 		    print_help(argv[0]);
-		    result=-1;
+		    result=1;
 		    *error=0;
 		    goto finish;
 
@@ -350,7 +330,7 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 		} else if ( strcmp(long_options[long_options_index].name, "version")==0 ) {
 
 		    print_version(argv[0]);
-		    result=-1;
+		    result=1;
 		    *error=0;
 		    goto finish;
 
@@ -388,7 +368,10 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
 	    case '?':
 
-		break;
+		fprintf(stderr, "Error: option %s not reckognized.\n", optarg);
+		result=-1;
+		*error=EINVAL;
+		goto finish;
 
 	    default:
 
@@ -437,4 +420,7 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 void free_options()
 {
     free_path_pathinfo(&fs_options.configfile);
+    free_path_pathinfo(&fs_options.basemap);
+    free_path_pathinfo(&fs_options.discovermap);
+    free_path_pathinfo(&fs_options.socket);
 }

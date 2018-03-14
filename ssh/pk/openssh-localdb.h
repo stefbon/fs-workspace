@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017 Stef Bon <stefbon@gmail.com>
+  2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -17,19 +17,11 @@
 
 */
 
-#ifndef CTX_KEYSTORE_OPENSSH_KNOWNHOSTS_H
-#define CTX_KEYSTORE_OPENSSH_KNOWNHOSTS_H
-
-#include <pwd.h>
+#ifndef FS_WORKSPACE_SSH_PK_OPENSSH_LOCALDB_H
+#define FS_WORKSPACE_SSH_PK_OPENSSH_LOCALDB_H
 
 /* prototypes */
 
-void *init_known_hosts_openssh(struct passwd *pwd, unsigned int filter, unsigned int *error);
-int get_next_known_host_openssh(void *ptr, unsigned int *error);
-void *finish_known_hosts_openssh(void *ptr);
-
-int compare_host_known_host_openssh(void *prt, char *host);
-char *get_algo_known_host_openssh(void *ptr);
-int match_key_known_host_openssh(void *ptr, char *key, unsigned int len);
+int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_s *hostkey);
 
 #endif

@@ -29,9 +29,4 @@ void disconnect_ssh_server(struct ssh_session_s *session);
 int add_session_eventloop(struct ssh_session_s *session, struct context_interface_s *interface, unsigned int *error);
 void remove_session_eventloop(struct ssh_session_s *session);
 
-char *get_ssh_ipv4(struct ssh_session_s *session, unsigned char what, unsigned int *error);
-char *get_ssh_hostname(struct ssh_session_s *session, unsigned char what, unsigned int *error);
-
-int check_serverkey(struct ssh_session_s *session, struct ssh_key_s *hostkey);
-
 #endif

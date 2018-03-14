@@ -51,7 +51,8 @@
 
 #include "ctx-keystore.h"
 #include "ctx-keystore-openssh.h"
-#include "ctx-keystore-openssh-utils.h"
+
+#include "pk/openssh-utils.h"
 
 static void str_tolower(char *string, unsigned int len)
 {

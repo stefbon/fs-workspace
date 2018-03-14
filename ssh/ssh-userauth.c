@@ -43,6 +43,7 @@
 #include "logging.h"
 
 #include "utils.h"
+#include "network-utils.h"
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
@@ -80,7 +81,7 @@ int ssh_authentication(struct ssh_session_s *session)
     local_user.ptr=session->identity.pwd.pw_name;
     local_user.len=strlen(local_user.ptr);
 
-    remotehostname=get_ssh_hostname(session, 1, &error);
+    remotehostname=get_connection_hostname(session->connection.fd, 1, &error);
 
     if (remotehostname==NULL) {
 
@@ -89,7 +90,7 @@ int ssh_authentication(struct ssh_session_s *session)
 
     }
 
-    remoteipv4=get_ssh_ipv4(session, 1, &error);
+    remoteipv4=get_connection_ipv4(session->connection.fd, 1, &error);
 
     if (remoteipv4==NULL) {
 
@@ -177,7 +178,7 @@ int ssh_authentication(struct ssh_session_s *session)
 	struct ssh_string_s remote_user;
 	struct ssh_string_s hostname;
 
-	localhostname=get_ssh_hostname(session, 0, &error);
+	localhostname=get_connection_hostname(session->connection.fd, 0, &error);
 
 	if (localhostname==NULL) {
 

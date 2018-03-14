@@ -711,6 +711,22 @@ int main(int argc, char *argv[])
     struct bevent_xdata_s *xdata=NULL;
     struct fs_connection_s socket;
 
+    /* parse commandline options and initialize the fuse options */
+
+    res=parse_arguments(argc, argv, &error);
+
+    if (res==-1 || res==1) {
+
+	if (res==-1 && error>0) {
+
+	    if (error>0) logoutput_error("MAIN: error, cannot parse arguments, error: %i (%s).", error, strerror(error));
+
+	}
+
+	goto options;
+
+    }
+
     /* daemonize */
 
     res=custom_fork();
@@ -724,18 +740,6 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "MAIN: created a service with pid %i.\n", res);
 	return 0;
-
-    }
-
-    umask(0);
-    program_name=argv[0];
-
-    /* parse commandline options and initialize the fuse options */
-
-    if (parse_arguments(argc, argv, &error)==-1) {
-
-	if (error>0) logoutput_error("MAIN: error, cannot parse arguments, error: %i (%s).", error, strerror(error));
-	goto options;
 
     }
 

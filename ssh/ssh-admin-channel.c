@@ -732,11 +732,11 @@ unsigned int get_ssh_interface_info(struct context_interface_s *interface, const
 	/* when server does not give a (custom) hostname (as output from script on server) get the name of the system */
 
 	if (result==0) {
-	    char *remotename=get_ssh_hostname(session, 1, error);
+	    char *remotename=get_connection_hostname(session->connection.fd, 1, error);
 
 	    /* fallback to ip address when no hostname is found */
 
-	    if (remotename==NULL) remotename=get_ssh_ipv4(session, 1, error);
+	    if (remotename==NULL) remotename=get_connection_ipv4(session->connection.fd, 1, error);
 
 	    if (remotename) {
 		unsigned int len=strlen(remotename);

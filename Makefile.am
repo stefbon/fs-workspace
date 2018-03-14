@@ -16,7 +16,7 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			common-utils/localsocket.c \
 			discover.c discover/discover-avahi.c \
 			common-utils/workspaces.c common-utils/workspace-utils.c common-utils/workspace-session.c common-utils/workspace-context.c \
-			common-utils/utils.c common-utils/pathinfo.c \
+			common-utils/utils.c common-utils/network-utils.c common-utils/pathinfo.c \
 			common-utils/workerthreads.c \
 			common-utils/simple-hash.c common-utils/simple-list.c \
 			common-utils/skiplist.c common-utils/skiplist-delete.c common-utils/skiplist-find.c common-utils/skiplist-insert.c common-utils/skiplist-seek.c \

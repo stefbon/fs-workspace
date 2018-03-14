@@ -92,6 +92,7 @@ static unsigned int _write_userauth_pubkey_message(struct common_buffer_s *tmp, 
 {
     struct userauth_pubkey_s *userauth=(struct userauth_pubkey_s *) ptr;
     unsigned int len=0;
+    char *pos=(tmp) ? tmp->pos : NULL;
 
     len+=copy_byte_to_buffer(tmp, SSH_MSG_USERAUTH_REQUEST);
 

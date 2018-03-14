@@ -59,7 +59,8 @@
 #include "ctx-keystore-openssh.h"
 #include "ctx-keystore-openssh-generic.h"
 #include "ctx-keystore-openssh-config.h"
-#include "ctx-keystore-openssh-utils.h"
+
+#include "pk/openssh-utils.h"
 
 extern unsigned int get_uint32(unsigned char *buff);
 

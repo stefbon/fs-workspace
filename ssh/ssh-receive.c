@@ -234,6 +234,8 @@ int read_incoming_data(int fd, void *ptr, uint32_t events)
 
 	/* disconnect also this side */
 
+	disconnect_ssh_session(session, 1, 0);
+
     } else if ( ! (events & EPOLLIN) ) {
 
 	logoutput_notice("read_data: other event %i than incoming data available", events);
