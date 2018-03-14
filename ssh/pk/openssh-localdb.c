@@ -43,6 +43,7 @@
 #include "utils.h"
 #include "network-utils.h"
 
+#include "ssh-datatypes.h"
 #include "ssh-utils.h"
 #include "ssh-pubkey-utils.h"
 #include "openssh-utils.h"
@@ -93,6 +94,8 @@ static FILE *get_openssh_known_hosts_file(struct passwd *pwd, const char *what, 
     if (get_openssh_known_hosts_path(path, len, pwd, what)>0) {
 	uid_t uid_keep=setfsuid(pwd->pw_uid);
 	gid_t gid_keep=setfsgid(pwd->pw_gid);
+
+	logoutput("get_openssh_known_hosts_file: %s", path);
 
 	fp=fopen(path, "r");
 	if (! fp) *error=errno;
@@ -205,6 +208,7 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 	    /* host (pattern) */
 
 	    *sep='\0';
+	    logoutput("_check_serverkey_pk: host %s", start);
 
 	    if (compare_host_openssh(start, remoteipv4, remotehost)==-1) {
 
@@ -232,6 +236,7 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 	    /* algo */
 
 	    *sep='\0';
+	    logoutput("_check_serverkey_pk: algo %s", start);
 
 	    type=get_pubkey_type(start, strlen(start));
 
@@ -256,8 +261,8 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 
 	sep=memchr(start, ' ', len);
 	if (sep) *sep='\0';
-	start=sep;
 	len=(unsigned int) strlen(start);
+	logoutput("_check_serverkey_pk: key %x", start[0]);
 
 	if (len>0) {
 
@@ -291,12 +296,14 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
     char *remoteipv4=NULL;
     int result=-1;
 
+    logoutput("check_serverkey");
+
     remotehost=get_connection_hostname(fd, 1, &error);
 
     if (remotehost==NULL) {
 
 	logoutput("check_serverkey: error %i getting remote hostname (%s)", error, strerror(error));
-	goto out;
+	goto finish;
 
     }
 
@@ -305,7 +312,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
     if (remoteipv4==NULL) {
 
 	logoutput("check_serverkey: error %i getting remote ipv4 (%s)", error, strerror(error));
-	goto out;
+	goto finish;
 
     }
 
@@ -315,7 +322,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
 
     if (fp) {
 
-	result=_check_serverkey_pk(fp, remotehost, remoteipv4, hostkey, compare_key, &error);
+	result=_check_serverkey_pk(fp, remotehost, remoteipv4, hostkey, &error);
 	fclose(fp);
 	if (result==0) goto finish;
 

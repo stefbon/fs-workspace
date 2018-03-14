@@ -30,7 +30,10 @@
 
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/fsuid.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <fcntl.h>
 
 #include <logging.h>
 #include <utils.h>

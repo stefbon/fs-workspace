@@ -59,6 +59,7 @@
 
 #include "ssh-utils.h"
 
+#include "ctx-keystore.h"
 #include "userauth/pubkey.h"
 #include "userauth/hostbased.h"
 #include "userauth/utils.h"

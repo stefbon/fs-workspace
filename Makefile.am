@@ -34,8 +34,8 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			sftp/sftp-send-common.c sftp/sftp-send-v03.c sftp/sftp-send-v04.c sftp/sftp-send-v05.c sftp/sftp-send-v06.c \
 			sftp/sftp-user-v03.c sftp/sftp-user-v04.c sftp/sftp-usermapping.c \
 			ssh/fuse-ssh-fs-init.c \
-			ssh/ctx-keystore-openssh.c ssh/ctx-keystore-openssh-generic.c ssh/ctx-keystore-openssh-config.c ssh/ctx-keystore-openssh-utils.c ssh/ctx-keystore.c \
-			ssh/ctx-keystore-openssh-knownhosts.c ssh/ctx-options.c \
+			ssh/ctx-keystore-openssh.c ssh/ctx-keystore-openssh-generic.c ssh/ctx-keystore-openssh-config.c ssh/ctx-keystore.c \
+			ssh/ctx-options.c \
 			ssh/ssh-channel.c ssh/ssh-admin-channel.c ssh/ssh-channel-table.c ssh/ssh-channel-utils.c\
 			ssh/ssh-common-protocol.c ssh/ssh-common.c ssh/ssh-common-list.c \
 			ssh/ssh-compression.c \
@@ -64,5 +64,6 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/ssh-send-userauth.c \
 			ssh/ssh-send.c \
 			ssh/ssh-userauth.c ssh/userauth/pubkey.c ssh/userauth/utils.c ssh/userauth/hostbased.c ssh/userauth/none.c \
+			ssh/pk/openssh-localdb.c ssh/pk/openssh-utils.c \
 			ssh/ssh-utils-libgcrypt.c ssh/ssh-utils.c
 

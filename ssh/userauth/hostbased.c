@@ -59,6 +59,7 @@
 #include "ssh-hostinfo.h"
 
 #include "ssh-utils.h"
+#include "ctx-keystore.h"
 #include "userauth/utils.h"
 
 /*
@@ -214,7 +215,7 @@ int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remot
 
     logoutput("ssh_auth_hostbased");
 
-    ptr=init_identity_records(&session->identity.pwd, NULL, "host", &error);
+    ptr=init_identity_records(&session->identity.pwd, NULL, "system", &error);
     if (ptr==NULL) return -1;
 
     identity=get_next_identity_record(ptr);

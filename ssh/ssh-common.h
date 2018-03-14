@@ -23,33 +23,11 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <arpa/inet.h>
+#include <pwd.h>
 
 #include "workspace-interface.h"
-#include "ctx-keystore.h"
 #include "simple-list.h"
-
-#define _PUBKEY_METHOD_NONE		0
-#define _PUBKEY_METHOD_PRIVATE		1
-#define _PUBKEY_METHOD_SSH_DSS		2
-#define _PUBKEY_METHOD_SSH_RSA		4
-#define _PUBKEY_METHOD_SSH_ED25519	8
-
-#define _PUBKEY_FORMAT_NONE		0
-#define _PUBKEY_FORMAT_OPENSSH_KEY	1
-#define _PUBKEY_FORMAT_SSH		2
-#define _PUBKEY_FORMAT_DER		3
-
-struct ssh_string_s {
-    unsigned int			flags;
-    unsigned int			len;
-    char				*ptr;
-};
-
-struct commalist_s {
-    char 				*list;
-    unsigned int 			len;
-    unsigned int 			size;
-};
+#include "ssh-datatypes.h"
 
 #define _LIBRARY_NONE			0
 #define _LIBRARY_ZLIB			1
@@ -215,20 +193,6 @@ struct ssh_channel_s {
 	    unsigned int		protocol;
 	} tcpip;
     } target;
-};
-
-struct ssh_pkalgo_s {
-    unsigned int			type;
-    const char				*name;
-    unsigned int			len;
-};
-
-struct ssh_key_s {
-    unsigned int			type;
-    unsigned int			format;
-    struct common_buffer_s		data;
-    void				*ptr;
-    void				(* free_ptr)(struct ssh_key_s *key);
 };
 
 struct ssh_pubkey_s {

@@ -20,6 +20,8 @@
 #ifndef FS_WORKSPACE_SSH_PK_OPENSSH_UTILS_H
 #define FS_WORKSPACE_SSH_PK_OPENSSH_UTILS_H
 
+#include <pwd.h>
+
 /* prototypes */
 
 int _match_pattern_host(char *host, char *hostpattern, unsigned int level);
