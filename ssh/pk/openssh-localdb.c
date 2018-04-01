@@ -45,7 +45,11 @@
 
 #include "ssh-datatypes.h"
 #include "ssh-utils.h"
-#include "ssh-pubkey-utils.h"
+
+#include "pk-types.h"
+#include "pk-keys.h"
+#include "pk-utils.h"
+
 #include "openssh-utils.h"
 
 static int get_openssh_known_hosts_path(char *path, size_t size, struct passwd *pwd, const char *what)
@@ -208,7 +212,6 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 	    /* host (pattern) */
 
 	    *sep='\0';
-	    logoutput("_check_serverkey_pk: host %s", start);
 
 	    if (compare_host_openssh(start, remoteipv4, remotehost)==-1) {
 
@@ -231,16 +234,20 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 	sep=memchr(start, ' ', len);
 
 	if (sep) {
-	    unsigned char type=0;
+	    struct ssh_pkalgo_s *algo=NULL;
 
 	    /* algo */
 
 	    *sep='\0';
-	    logoutput("_check_serverkey_pk: algo %s", start);
 
-	    type=get_pubkey_type(start, strlen(start));
+	    algo=get_pkalgo(start, strlen(start));
 
-	    if (type != key->type) {
+	    if (algo == NULL) {
+
+		*sep=' ';
+		continue;
+
+	    } else if (algo != key->algo) {
 
 		*sep=' ';
 		continue;
@@ -262,18 +269,27 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 	sep=memchr(start, ' ', len);
 	if (sep) *sep='\0';
 	len=(unsigned int) strlen(start);
-	logoutput("_check_serverkey_pk: key %x", start[0]);
 
 	if (len>0) {
+	    struct ssh_string_s decoded;
 
-	    /* TODO: different, build a compare_key function which can compare the key with data in different formats */
+	    init_ssh_string(&decoded);
 
-	    if (compare_encoded_base64(start, &key->data)==0) {
+	    /* key field is base64 encoded */
 
-		result=0; /* success */
-		break;
+	    len=decode_buffer_base64(start, len, &decoded);
+
+	    if (decoded.len > 0) {
+
+		/* decoded data is in SSH format */
+
+		result=(* key->compare_key_data)(key, decoded.ptr, decoded.len, PK_DATA_FORMAT_SSH);
+		free_ssh_string(&decoded);
+		if (result==0) break;
 
 	    }
+
+	    free_ssh_string(&decoded);
 
 	}
 
@@ -295,8 +311,6 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
     char *remotehost=NULL;
     char *remoteipv4=NULL;
     int result=-1;
-
-    logoutput("check_serverkey");
 
     remotehost=get_connection_hostname(fd, 1, &error);
 

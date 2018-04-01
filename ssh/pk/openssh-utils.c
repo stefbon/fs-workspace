@@ -314,7 +314,7 @@ unsigned int get_directory_openssh_common(struct passwd *pwd, const char *what, 
 
 	return get_path_openssh_user(pwd, NULL, buffer, len);
 
-    } else if (strcmp(what, "system")==0) {
+    } else if (strcmp(what, "system")==0 || strcmp(what, "host")==0) {
 
 	return get_path_openssh_system(NULL, buffer, len);
 
