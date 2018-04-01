@@ -52,7 +52,6 @@
 #include "ssh-common.h"
 #include "ssh-connection.h"
 #include "ssh-utils.h"
-#include "ssh-pubkey-utils.h"
 
 #define _SSH_BEVENTLOOP_NAME			"SSH"
 

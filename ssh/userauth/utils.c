@@ -57,14 +57,13 @@
 #include "ssh-hostinfo.h"
 
 #include "ssh-utils.h"
-#include "ssh-pubkey-layout.h"
 
 /*
     generic function to read the comma seperated name list of names of authentications that can continue
     used when processing the MSG_USERAUTH_FAILURE response
 */
 
-unsigned int get_required_auth_methods(char *namelist, unsigned int len)
+static unsigned int get_required_auth_methods(char *namelist, unsigned int len)
 {
     unsigned int methods=0;
     char list[len+1];
@@ -83,19 +82,19 @@ unsigned int get_required_auth_methods(char *namelist, unsigned int len)
 
     if (strcmp(pos, "publickey")==0) {
 
-	methods|=SSH_USERAUTH_PUBLICKEY;
+	methods|=SSH_USERAUTH_METHOD_PUBLICKEY;
 
     } else if (strcmp(pos, "password")==0) {
 
-	methods|=SSH_USERAUTH_PASSWORD;
+	methods|=SSH_USERAUTH_METHOD_PASSWORD;
 
     } else if (strcmp(pos, "hostbased")==0) {
 
-	methods|=SSH_USERAUTH_HOSTBASED;
+	methods|=SSH_USERAUTH_METHOD_HOSTBASED;
 
     } else {
 
-	methods|=SSH_USERAUTH_UNKNOWN;
+	methods|=SSH_USERAUTH_METHOD_UNKNOWN;
 
     }
 
@@ -119,9 +118,11 @@ unsigned int get_required_auth_methods(char *namelist, unsigned int len)
     - name-list			authentications that can continue
     - boolean			partial success
 
+    NOTE:
+    if partial success is false then the userauth method offered has failed
 */
 
-int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *methods)
+int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_userauth_s *userauth)
 {
     unsigned int result=-1;
     unsigned int len=0;
@@ -130,130 +131,18 @@ int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s 
 
     len=get_uint32(&payload->buffer[1]);
 
-    if (payload->len==6+len) {
+    if (len>0 && payload->len==6+len) {
 	unsigned char partial_success=(unsigned char) payload->buffer[5+len];
 
-	/* there is a byte for partial success */
-
-	if (partial_success>0) {
-
-	    /* success */
-
-	    if (len>0) {
-
-		*methods=get_required_auth_methods(&payload->buffer[5], len);
-		result=0;
-
-	    } else {
-
-		/* partial success and no additional methods is an error
-		    there should be send a MSG_USERAUTH_SUCCESS in stead of an MSG_USERAUTH_FAILURE */
-
-		result=-1;
-
-	    }
-
-	} else {
-
-	    /* failed */
-
-	    if (len>0) *methods=get_required_auth_methods(&payload->buffer[5], len);
-	    result=-1;
-
-	}
+	userauth->required_methods=get_required_auth_methods(&payload->buffer[5], len);
+	result=(partial_success>0) ? 0 : -1;
 
     } else {
 
-	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	userauth->error=EPROTO;
 
     }
 
     return result;
-
-}
-
-int read_public_key_helper(struct common_identity_s *identity, struct ssh_key_s *key)
-{
-    unsigned int error=0;
-    unsigned int len=get_public_key(identity, NULL, 0);
-    char buffer[len];
-    struct common_buffer_s data;
-
-    if (len==0) {
-
-	logoutput("read_public_key_helper: error %i reading public key (%s)", error, strerror(error));
-	return -1;
-
-    }
-
-    /* use a buffer to read and process the raw key material */
-
-    init_common_buffer(&data);
-    data.ptr=buffer;
-    data.size=len;
-    data.len=len;
-    data.pos=data.ptr;
-
-    if (get_public_key(identity, buffer, len)==0) {
-
-	logoutput("read_public_key_helper: error %i reading public key (%s)", error, strerror(error));
-	return -1;
-
-    }
-
-    /* read the raw data and get the ssh key
-	TODO: add more layouts */
-
-    if (_read_public_key_openssh(&data, key)==-1) {
-
-	logoutput("read_public_key_helper: error reading public key");
-	return -1;
-
-    }
-
-    return 0;
-
-}
-
-int read_private_key_helper(struct common_identity_s *identity, struct ssh_key_s *key)
-{
-    unsigned int error=0;
-    unsigned int len=get_private_key(identity, NULL, 0);
-    char buffer[len];
-    struct common_buffer_s data;
-
-    if (len==0) {
-
-	logoutput("read_private_key_helper: error %i reading public key (%s)", error, strerror(error));
-	return -1;
-
-    }
-
-    /* use a buffer to read and process the raw key material */
-
-    init_common_buffer(&data);
-    data.ptr=buffer;
-    data.size=len;
-    data.len=len;
-    data.pos=data.ptr;
-
-    if (get_private_key(identity, buffer, len)==0) {
-
-	logoutput("read_private_key_helper: error %i reading public key (%s)", error, strerror(error));
-	return -1;
-
-    }
-
-    /* read the raw data and get the ssh key
-	TODO: add more layouts */
-
-    if (_read_private_key_openssh(&data, key)==-1) {
-
-	logoutput("read_public_key_helper: error reading public key");
-	return -1;
-
-    }
-
-    return 0;
 
 }

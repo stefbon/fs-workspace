@@ -22,10 +22,6 @@
 
 /* prototypes */
 
-unsigned int get_required_auth_methods(unsigned char *namelist, unsigned int len);
-int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *methods);
-
-int read_public_key_helper(struct common_identity_s *identity, struct ssh_key_s *key);
-int read_private_key_helper(struct common_identity_s *identity, struct ssh_key_s *key);
+int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_userauth_s *userauth);
 
 #endif

@@ -20,19 +20,11 @@
 #ifndef FS_WORKSPACE_SSH_DATATYPES_H
 #define FS_WORKSPACE_SSH_DATATYPES_H
 
-#define _PUBKEY_METHOD_NONE		0
-#define _PUBKEY_METHOD_PRIVATE		1
-#define _PUBKEY_METHOD_SSH_DSS		2
-#define _PUBKEY_METHOD_SSH_RSA		4
-#define _PUBKEY_METHOD_SSH_ED25519	8
-
-#define _PUBKEY_FORMAT_NONE		0
-#define _PUBKEY_FORMAT_OPENSSH_KEY	1
-#define _PUBKEY_FORMAT_SSH		2
-#define _PUBKEY_FORMAT_DER		3
+#if HAVE_LIBGCRYPT
+#include <gcrypt.h>
+#endif
 
 struct ssh_string_s {
-    unsigned int			flags;
     unsigned int			len;
     char				*ptr;
 };
@@ -44,19 +36,32 @@ struct commalist_s {
 };
 
 struct ssh_pkalgo_s {
-    unsigned int			type;
+    unsigned int			id;
     const char				*name;
     unsigned int			len;
 };
 
-struct ssh_key_s {
-    unsigned int			type;
-    unsigned int			format;
-    struct common_buffer_s		data;
-    void				*ptr;
-    void				(* free_ptr)(struct ssh_key_s *key);
+struct ssh_mpint_s {
+    union {
+#if HAVE_LIBGCRYPT
+	gcry_mpi_t			mpi;
+#endif
+	void				*ptr;
+    } lib;
 };
 
 /* prototypes */
+
+void init_ssh_string(struct ssh_string_s *s);
+void free_ssh_string(struct ssh_string_s *s);
+unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len);
+int get_ssh_string_from_buffer(char **b, unsigned int size, struct ssh_string_s *s);
+unsigned int write_ssh_string(char *buffer, unsigned int size, const unsigned char type, void *ptr);
+
+int read_pk_mpint(struct ssh_mpint_s *mp, char *buffer, unsigned int size, unsigned int *error);
+int write_pk_mpint(struct ssh_mpint_s *mp, char *buffer, unsigned int size, unsigned int *error);
+
+void free_pk_mpint(struct ssh_mpint_s *mp);
+void init_pk_mpint(struct ssh_mpint_s *mp);
 
 #endif

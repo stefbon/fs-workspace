@@ -28,6 +28,7 @@
 #include "workspace-interface.h"
 #include "simple-list.h"
 #include "ssh-datatypes.h"
+#include "pk/pk-keys.h"
 
 #define _LIBRARY_NONE			0
 #define _LIBRARY_ZLIB			1
@@ -115,12 +116,7 @@ struct server_reply_s {
 
 #define CHANNELS_TABLE_SIZE				8
 
-#define SSH_USERAUTH_NONE				1
-#define SSH_USERAUTH_PUBLICKEY				2
-#define SSH_USERAUTH_PASSWORD				4
-#define SSH_USERAUTH_HOSTBASED				8
-#define SSH_USERAUTH_UNKNOWN				16
-#define SSH_USERAUTH_SUCCESS				32
+
 
 struct ssh_status_s {
     uint64_t				unique;
@@ -322,7 +318,7 @@ struct ssh_dh_s {
 struct ssh_kexinit_algo;
 
 struct ssh_keyx_s {
-    unsigned char			type_hostkey;
+    struct ssh_pkalgo_s			*algo;
     char 				digestname[32];
     int					(* start_keyx)(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_kexinit_algo *algos);
     void				(* free)(struct ssh_keyx_s *keyx);
@@ -473,13 +469,26 @@ struct keyexchange_s {
     struct ssh_payload_s 		*(* get_payload_kex)(struct ssh_session_s *s, struct timespec *expire, unsigned int *seq, unsigned int *error);
 };
 
-#define		SESSION_USERAUTH_STATUS_REQUEST			1
-#define		SESSION_USERAUTH_STATUS_ACCEPT			2
-#define		SESSION_USERAUTH_STATUS_SUCCESS			32
-#define		SESSION_USERAUTH_STATUS_ERROR			64
+#define SSH_USERAUTH_METHOD_NONE				1
+#define SSH_USERAUTH_METHOD_PUBLICKEY				2
+#define SSH_USERAUTH_METHOD_PASSWORD				4
+#define SSH_USERAUTH_METHOD_HOSTBASED				8
+#define SSH_USERAUTH_METHOD_UNKNOWN				16
+
+#define SSH_USERAUTH_STATUS_SUCCESS				0
+#define	SSH_USERAUTH_STATUS_FAILURE				1
+#define	SSH_USERAUTH_STATUS_DISCONNECT				2
+#define	SSH_USERAUTH_STATUS_ERROR				4
 
 struct ssh_userauth_s {
     unsigned int			status;
+    unsigned int			error;
+    unsigned int			required_methods;
+    unsigned int			methods_done;
+    char				*l_hostname;
+    char				*l_ipv4;
+    char				*r_hostname;
+    char				*r_ipv4;
 };
 
 struct session_list_s {
@@ -497,7 +506,6 @@ struct ssh_session_s {
     struct session_crypto_s		crypto;
     struct ssh_pubkey_s			pubkey;
     struct keyexchange_s		*keyexchange;
-    struct ssh_userauth_s		userauth;
     struct ssh_connection_s		connection;
     struct ssh_receive_s		receive;
     struct ssh_send_s			send;
@@ -523,5 +531,7 @@ void get_session_expire_init(struct ssh_session_s *session, struct timespec *exp
 void get_session_expire_session(struct ssh_session_s *session, struct timespec *expire);
 
 void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server, unsigned int reason);
+
+void init_ssh_payload(struct ssh_payload_s *payload);
 
 #endif

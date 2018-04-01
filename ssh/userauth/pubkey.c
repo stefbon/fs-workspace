@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -48,8 +46,9 @@
 #include "ssh-common-protocol.h"
 
 #include "ssh-pubkey.h"
-#include "ssh-pubkey-utils.h"
-#include "ssh-pubkey-layout.h"
+#include "pk/pk-types.h"
+#include "pk/pk-keys.h"
+#include "pk/pk-keystore.h"
 
 #include "ssh-receive.h"
 #include "ssh-queue-payload.h"
@@ -59,8 +58,7 @@
 #include "ssh-hostinfo.h"
 
 #include "ssh-utils.h"
-#include "ssh/userauth/utils.h"
-#include "ctx-keystore.h"
+#include "userauth/utils.h"
 
 /*
     functions to handle authentication based on public key
@@ -78,34 +76,35 @@
     - string			service
     - string			"publickey"
     - boolean			TRUE
-    - string 			algo
+    - string 			algo used to sign (defaults to the algo of pubkey)
     - string			pubkey
 
 */
 
-static signed char create_pk_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *public_key, struct ssh_key_s *private_key, struct ssh_string_s *signature)
+static signed char create_pk_signature(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_string_s *signature)
 {
-    struct common_buffer_s data=INIT_COMMON_BUFFER;
-    unsigned int len=write_userauth_pubkey_request(&data, r_user, service, public_key) + 4 + session->data.sessionid.len;
+    unsigned int len = write_userauth_pubkey_request(NULL, 0, r_user, service, pkey) + write_ssh_string(NULL, 0, 's', (void *) &session->data.sessionid);
+    unsigned int left = len;
     char buffer[len];
     unsigned int error=0;
-
-    data.ptr=&buffer[0];
-    data.pos=data.ptr;
-    data.size=len;
-    data.len=0;
+    int result=0;
+    char *pos=buffer;
 
     /* session id */
 
-    data.len+=copy_ssh_string_to_buffer(&data, &session->data.sessionid);
+    result = write_ssh_string(pos, left, 's', (void *) &session->data.sessionid);
+    pos += result;
+    left -= result;
 
     /* write the userauth pubkey message */
 
-    data.len+=write_userauth_pubkey_request(&data, r_user, service, public_key);
+    result = write_userauth_pubkey_request(pos, left, r_user, service, pkey);
+    pos += result;
+    left -= result;
 
     /* create a signature of this data using the private key belonging to the public key */
 
-    if (create_signature(session, private_key, &data, signature, &error)>=0) {
+    if ((* skey->sign)(skey, buffer, (unsigned int)(pos - buffer), signature, NULL, &error)>=0) {
 
 	return 0;
 
@@ -126,38 +125,26 @@ static signed char create_pk_signature(struct ssh_session_s *session, struct ssh
     - string 			public key blob from request
 */
 
-static int check_received_pubkey_pk(char *payload, unsigned int len, struct ssh_key_s *public_key)
+static int check_received_pubkey_pk(char *buffer, unsigned int size, struct ssh_key_s *pkey)
 {
-    const unsigned char *algo_name=get_pubkey_name(public_key->type);
-    unsigned int algo_len=strlen((char *) algo_name);
-    int result=-1;
+    unsigned int error=0;
+    unsigned int len = 32 + write_pkalgo(NULL, pkey->algo) + (* pkey->write_key)(pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
+    char data[len];
+    unsigned int pos=0;
 
-    if (9 + algo_len + public_key->data.size==len) {
-	char data[len];
-	unsigned int pos=0;
+    data[pos]=SSH_MSG_USERAUTH_PK_OK;
+    pos++;
 
-	data[pos]=SSH_MSG_USERAUTH_PK_OK;
-	pos++;
+    pos+=write_pkalgo(&data[pos], pkey->algo);
+    pos+=(* pkey->write_key)(pkey, &data[pos], len - pos, PK_DATA_FORMAT_SSH_STRING, &error);
 
-	store_uint32(&data[pos], algo_len);
-	pos+=4;
-	memcpy(&data[pos], algo_name, algo_len);
-	pos+=algo_len;
+    if ( pos == size && memcmp((char *)buffer, data, size) == 0) return 0;
 
-	store_uint32(&data[pos], public_key->data.size);
-	pos+=4;
-	memcpy(&data[pos], public_key->data.ptr, public_key->data.size);
-	pos+=public_key->data.size;
-
-	if (memcmp(payload, data, len)==0) result=0;
-
-    }
-
-    return result;
+    return -1;
 
 }
 
-static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_string_s *remote_user, struct ssh_key_s *public_key, struct ssh_key_s *private_key, unsigned int *methods)
+static int ssh_send_pk_signature(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_userauth_s *userauth)
 {
     struct ssh_string_s signature;
     int result=-1;
@@ -167,16 +154,17 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
     init_ssh_string(&signature);
 
-    if (create_pk_signature(session, remote_user, "ssh-connection", public_key, private_key, &signature)==-1) {
+    if (create_pk_signature(session, r_user, "ssh-connection", pkey, skey, &signature)==-1) {
 
 	logoutput("ssh_send_pk_signature: creating public key signature failed");
+	userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 	goto out;
 
     }
 
     /* send userauth publickey request to server with signature */
 
-    if (send_userauth_pubkey_message(session, remote_user, "ssh-connection", public_key, &signature, &seq)==0) {
+    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, &signature, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
@@ -189,8 +177,10 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
 	if (! payload) {
 
-	    if (session->status.error==0) session->status.error=EIO;
-	    logoutput("ssh_send_pk_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	    if (error==0) error=EIO;
+	    logoutput("ssh_send_pk_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
+	    userauth->error=error;
+	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 	    goto out;
 
 	}
@@ -203,16 +193,16 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
 	} else if (payload->type==SSH_MSG_USERAUTH_SUCCESS) {
 
-	    *methods=0;
+	    userauth->required_methods=0;
 	    result=0;
 
 	} else if (payload->type==SSH_MSG_USERAUTH_FAILURE) {
 
-	    result=handle_userauth_failure(session, payload, methods);
+	    result=handle_userauth_failure(session, payload, userauth);
 
 	} else {
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 
 	}
 
@@ -225,7 +215,7 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
     } else {
 
-	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 
     }
 
@@ -236,23 +226,48 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, struct ssh_strin
 
 }
 
-static int send_userauth_pubkey(struct ssh_session_s *session, struct ssh_string_s *remote_user, struct ssh_key_s *public_key)
+/* test pk algo and public key are accepted */
+
+static int send_userauth_pubkey(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_userauth_s *userauth)
 {
-    unsigned int sequence=0;
+    unsigned int seq=0;
     int result=-1;
 
-    if (send_userauth_pubkey_message(session, remote_user, "ssh-connection", public_key, NULL, &sequence)==0) {
+    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, NULL, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
 
 	get_session_expire_init(session, &expire);
-	payload=get_ssh_payload(session, &expire, &sequence, &error);
+	payload=get_ssh_payload(session, &expire, &seq, &error);
 
 	if (! payload) {
 
-	    if (session->status.error==0) session->status.error=(error==0) ? EIO : error;
-	    logoutput("send_userauth_pubkey: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	    /* why not receiving payload ? */
+
+	    if (error==EOPNOTSUPP) {
+
+		/* not supported ??
+		    protocol error */
+
+		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+
+	    } else if (error==ETIMEDOUT) {
+
+		/* why timedout ?
+		    here analyse why */
+
+		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+
+	    } else {
+
+		if (error == 0) error=EIO;
+		userauth->status|=SSH_USERAUTH_STATUS_FAILURE;
+
+	    }
+
+	    userauth->error=error;
+	    logoutput("send_userauth_pubkey: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 	    return -1;
 
 	}
@@ -270,7 +285,7 @@ static int send_userauth_pubkey(struct ssh_session_s *session, struct ssh_string
 
 	    /* check the received key is the same as the one send */
 
-	    result=check_received_pubkey_pk(payload->buffer, payload->len, public_key);
+	    result=check_received_pubkey_pk(payload->buffer, payload->len, pkey);
 
 	} else if (payload->type==SSH_MSG_USERAUTH_FAILURE) {
 
@@ -287,8 +302,7 @@ static int send_userauth_pubkey(struct ssh_session_s *session, struct ssh_string
 
     } else {
 
-	if (session->status.error==0) session->status.error=EIO;
-	logoutput("send_userauth_pubkey: error %i sending SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	logoutput("send_userauth_pubkey: error %i sending SSH_MSG_SERVICE_REQUEST (%s)", EIO, strerror(EIO));
 
     }
 
@@ -298,25 +312,23 @@ static int send_userauth_pubkey(struct ssh_session_s *session, struct ssh_string
 
 /* perform pubkey authentication using identities */
 
-struct common_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, void *ptr, unsigned int *methods)
+struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_list_s *pkeys, struct ssh_userauth_s *userauth)
 {
-    struct common_identity_s *identity=NULL;
-    struct ssh_string_s remote_user;
+    struct pk_identity_s *user_identity=NULL;
+    char *r_user=NULL;
     unsigned int error=0;
 
     /* browse the identities */
 
-    identity=get_next_identity_record(ptr);
+    user_identity=get_next_pk_identity(pkeys, "user");
 
-    while (identity) {
-	struct ssh_key_s public_key;
+    while (user_identity) {
+	struct ssh_key_s pkey;
 	int result=-1;
 
-	init_ssh_key(&public_key);
+	init_ssh_key(&pkey, SSH_KEY_TYPE_PUBLIC, NULL);
 
-	if (identity->file) logoutput("ssh_auth_pubkey: send public key (%s)", identity->file);
-
-	if (read_public_key_helper(identity, &public_key)==-1) {
+	if (read_key_param(user_identity, &pkey)==-1) {
 
 	    logoutput("ssh_auth_pubkey: error reading public key");
 	    goto next;
@@ -326,23 +338,28 @@ struct common_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, void *p
 	/* if there is a remote user with this identity take that one
 	    otherwise fall back to the local user */
 
-	remote_user.ptr=session->identity.pwd.pw_name;
-	if (identity->user) remote_user.ptr=identity->user;
-	remote_user.len=strlen(remote_user.ptr);
+	r_user=get_pk_identity_user(user_identity);
+	if (r_user==NULL) r_user=session->identity.pwd.pw_name;
 
-	if (send_userauth_pubkey(session, &remote_user, &public_key)==0) {
-	    struct ssh_key_s private_key;
+	/* TODO:
+	    try all the available sign algo's for pkey
+	    now it uses only the default (which always works by the way)
+	    but there might be different available like:
+	    - rsa-sha2-256
+	    - rsa-sha2-512
+	*/
+
+	if (send_userauth_pubkey(session, r_user, &pkey, userauth)==0) {
+	    struct ssh_key_s skey;
 
 	    /* current public key is accepted by server: send signature
 		get the private key for this identity */
 
-	    init_ssh_key(&private_key);
-	    private_key.type=_PUBKEY_METHOD_PRIVATE;
-	    private_key.type|=public_key.type & (_PUBKEY_METHOD_SSH_DSS | _PUBKEY_METHOD_SSH_RSA | _PUBKEY_METHOD_SSH_ED25519);
+	    init_ssh_key(&skey, SSH_KEY_TYPE_PRIVATE, pkey.algo);
 
-	    if (read_private_key_helper(identity, &private_key)==0) {
+	    if (read_key_param(user_identity, &skey)==0) {
 
-		result=ssh_send_pk_signature(session, &remote_user, &public_key, &private_key, methods);
+		result=ssh_send_pk_signature(session, r_user, &pkey, &skey, userauth);
 
 	    } else {
 
@@ -356,20 +373,20 @@ struct common_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, void *p
 
 	    }
 
-	    free_ssh_key(&private_key);
+	    free_ssh_key(&skey);
 
 	}
 
 	next:
 
-	free_ssh_key(&public_key);
+	free_ssh_key(&pkey);
 	if (result==0) break; /* if success then ready */
 
-	free_identity_record(identity);
-	identity=get_next_identity_record(ptr);
+	free(user_identity);
+	user_identity=get_next_pk_identity(pkeys, "user");
 
     }
 
-    return identity;
+    return user_identity;
 
 }

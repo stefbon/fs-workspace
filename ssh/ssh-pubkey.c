@@ -43,8 +43,6 @@
 #include "utils.h"
 
 #include "ssh-common.h"
-#include "ssh-pubkey-libgcrypt.h"
-#include "ssh-pubkey-utils.h"
 #include "ssh-utils.h"
 
 #include "ctx-options.h"
@@ -55,30 +53,9 @@ const char *get_hashname_pubkey(struct ssh_session_s *session, struct ssh_key_s 
     return "sha1";
 }
 
-int read_parameters_pubkey(struct ssh_session_s *session, struct ssh_key_s *key, unsigned int *error)
-{
-    struct ssh_pubkey_s *pubkey=&session->pubkey;
-    return (* pubkey->read_parameters)(key, error);
-}
-
-int verify_sigH(struct ssh_session_s *session, struct ssh_key_s *key, struct common_buffer_s *data, struct common_buffer_s *sigH)
-{
-    struct ssh_pubkey_s *pubkey=&session->pubkey;
-    const char *hashname=get_hashname_pubkey(session, key);
-    return (* pubkey->verify_sigH)(key, data, sigH, hashname);
-}
-
-int create_signature(struct ssh_session_s *session, struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, unsigned int *error)
-{
-    struct ssh_pubkey_s *pubkey=&session->pubkey;
-    const char *hashname=get_hashname_pubkey(session, key);
-    return (* pubkey->create_signature)(key, data, signature, hashname, error);
-}
-
 void init_pubkey(struct ssh_session_s *session)
 {
     struct ssh_pubkey_s *pubkey=&session->pubkey;
-    init_pubkey_libgcrypt(pubkey);
 }
 
 void free_pubkey(struct ssh_session_s *session)

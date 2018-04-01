@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-struct common_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, void *ptr, unsigned int *methods);
+struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_list_s *pkeys, struct ssh_userauth_s *userauth);
 
 #endif

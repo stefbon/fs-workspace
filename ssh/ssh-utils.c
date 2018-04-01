@@ -273,8 +273,10 @@ void store_uint64(unsigned char *buff, uint64_t value)
 
 unsigned int store_ssh_string(char *buff, struct ssh_string_s *string)
 {
-    store_uint32(buff, string->len);
-    memcpy(buff+4, string->ptr, string->len);
+    if (buff) {
+	store_uint32(buff, string->len);
+	memcpy(buff+4, string->ptr, string->len);
+    }
     return string->len + 4;
 }
 
@@ -311,19 +313,7 @@ uint64_t get_int64(unsigned char *buf)
     return (int64_t)(a | b);
 }
 
-void init_ssh_payload(struct ssh_payload_s *payload)
-{
-    memset(payload, 0, sizeof(struct ssh_payload_s));
-
-    payload->type=0;
-    payload->sequence=0;
-    payload->len=0;
-    payload->next=NULL;
-    payload->prev=NULL;
-
-}
-
-unsigned int hash(const char *name, struct common_buffer_s *in, struct common_buffer_s *out, unsigned int *error)
+unsigned int hash(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error)
 {
     return (* utils.hash)(name, in, out, error);
 }
@@ -422,41 +412,6 @@ int compare_encoded_base64(char *encoded, struct common_buffer_s *buffer)
 
 }
 
-void init_ssh_string(struct ssh_string_s *s)
-{
-    s->flags=0;
-    s->ptr=NULL;
-    s->len=0;
-}
-
-void free_ssh_string(struct ssh_string_s *s)
-{
-    if (s->ptr) {
-
-	free(s->ptr);
-	s->ptr=NULL;
-
-    }
-
-    s->len=0;
-    s->flags=0;
-}
-
-unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len)
-{
-    s->ptr=malloc(len);
-
-    if (s->ptr) {
-
-	s->flags|=SSH_STRING_FLAG_ALLOCATE;
-	return len;
-
-    }
-
-    return 0;
-
-}
-
 unsigned int copy_ssh_string_to_buffer(struct common_buffer_s *b, struct ssh_string_s *s)
 {
 
@@ -515,62 +470,3 @@ unsigned int copy_byte_to_buffer(struct common_buffer_s *b, unsigned char s)
     return 1;
 }
 
-int get_ssh_string_from_buffer(struct common_buffer_s *b, struct ssh_string_s *s, unsigned int flags)
-{
-    unsigned int left=(unsigned int) (b->ptr + b->len - b->pos);
-
-    if (left > 4) {
-
-	s->len=get_uint32(b->pos);
-	b->pos+=4;
-	left-=4;
-
-    } else {
-
-	/* buffer is not large enough */
-	return -1;
-
-    }
-
-    if (s->len <= left) {
-
-	if (flags & SSH_STRING_FLAG_ALLOCATE) {
-	    unsigned int size=s->len + (flags & SSH_STRING_FLAG_NULLTERMINATE) ? 1 : 0;
-
-	    if (create_ssh_string(s, size)>0) {
-
-		memcpy(s->ptr, b->pos, s->len);
-
-		if (size == s->len + 1) {
-
-		    *(s->ptr + s->len)='\0';
-		    s->flags|=SSH_STRING_FLAG_NULLTERMINATE;
-
-		}
-
-		b->pos+=s->len;
-
-	    } else {
-
-		/* allocation problem */
-		return -1;
-
-	    }
-
-	} else {
-
-	    s->ptr=b->pos;
-	    b->pos+=s->len;
-
-	}
-
-    } else {
-
-	/* not enough data in buffer */
-	return -1;
-
-    }
-
-    return (4 + s->len);
-
-}

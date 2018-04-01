@@ -48,6 +48,7 @@
 #include "ssh-utils.h"
 #include "ssh-keyx.h"
 #include "ssh-keyx-dh.h"
+#include "pk/pk-types.h"
 
 #include "ctx-options.h"
 
@@ -75,8 +76,8 @@ void init_keyx(struct ssh_keyx_s *keyx)
 
     memset(keyx, 0, sizeof(struct ssh_keyx_s));
     memset(keyx->digestname, '\0', sizeof(keyx->digestname));
-    keyx->type_hostkey=0;
 
+    keyx->algo=NULL;
     keyx->start_keyx=start_keyx_dummy;
     keyx->free=free_keyx_dummy;
 
@@ -91,12 +92,16 @@ int set_keyx(struct ssh_keyx_s *keyx, const char *name, const char *keyname, uns
 	(and none)
     */
 
-    keyx->type_hostkey=get_pubkey_type((unsigned char *) keyname, strlen(keyname));
+    keyx->algo = get_pkalgo((char *)keyname, strlen(keyname));
 
-    if (keyx->type_hostkey==0) {
+    if (keyx->algo == NULL) {
 
 	*error=EINVAL;
 	return -1;
+
+    } else {
+
+	logoutput("set_keyx: algo set %s", keyx->algo->name);
 
     }
 
@@ -106,11 +111,11 @@ int set_keyx(struct ssh_keyx_s *keyx, const char *name, const char *keyname, uns
 
     } else if (strcmp(name, "none") == 0) {
 
-	logoutput_warning("init_keyx: error none as key exchange method");
+	logoutput_warning("set_keyx: error none as key exchange method");
 
     } else {
 
-	logoutput_warning("init_keyx: key exchange method %s not reckognized", name);
+	logoutput_warning("set_keyx: key exchange method %s not reckognized", name);
 	*error=EINVAL;
 	return -1;
 

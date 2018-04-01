@@ -47,7 +47,7 @@
 #include "ssh-common-protocol.h"
 #include "ssh-utils.h"
 #include "ssh-send.h"
-#include "ssh-pubkey-utils.h"
+#include "pk/pk-types.h"
 
 /*
     take care for userauth for this client
@@ -81,105 +81,155 @@
     - byte[]	signature blob
 */
 
-struct userauth_pubkey_s {
-    struct ssh_string_s		*user;
+struct userauth_helper_s {
+    char			*r_user;
     const char			*service;
-    struct ssh_key_s		*public_key;
+    struct ssh_key_s		*pkey;
+    char			*l_hostname;
+    char			*l_user;
     struct ssh_string_s 	*signature;
 };
 
-static unsigned int _write_userauth_pubkey_message(struct common_buffer_s *tmp, void *ptr)
+static unsigned int _write_userauth_pubkey_message(char *buffer, unsigned int size, void *ptr)
 {
-    struct userauth_pubkey_s *userauth=(struct userauth_pubkey_s *) ptr;
-    unsigned int len=0;
-    char *pos=(tmp) ? tmp->pos : NULL;
+    struct userauth_helper_s *userauth=(struct userauth_helper_s *) ptr;
 
-    len+=copy_byte_to_buffer(tmp, SSH_MSG_USERAUTH_REQUEST);
+    if (buffer==NULL) {
+	unsigned int len=32;
+	unsigned int error=0;
+	struct ssh_string_s *sign=userauth->signature;
 
-    /* user */
-    len+=copy_ssh_string_to_buffer(tmp, userauth->user);
+	len+=1;
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->r_user);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->service);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) "publickey");
+	len+=1;
+	len+=write_pkalgo(NULL, userauth->pkey->algo); /* TODO: use signature algo */
+	len+=(* userauth->pkey->write_key)(userauth->pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
 
-    /* service */
-    len+=copy_char_to_buffer(tmp, (char *) userauth->service, strlen(userauth->service));
+	if (sign && sign->ptr) {
 
-    /* method "publickey" */
-    len+=copy_char_to_buffer(tmp, (char *) "publickey", 9);
-
-    /* signature included? */
-    len+=copy_byte_to_buffer(tmp, (userauth->signature) ? 1 : 0);
-
-    /* pubkey algo name */
-    len+=copy_ssh_pk_algo_to_buffer(tmp, userauth->public_key->type);
-
-    /* pubkey */
-    len+=copy_buffer_to_buffer(tmp, &userauth->public_key->data);
-
-    /* copy signature --only-- when signature->ptr is defined */
-
-    if (userauth->signature) {
-
-	if (userauth->signature->ptr) {
-
-	    len += copy_ssh_pk_signature_to_buffer(tmp, userauth->public_key->type, userauth->signature);
+	    /* TODO: use signature algo */
+	    len+=4 + write_pkalgo(NULL, userauth->pkey->algo) + write_ssh_string(NULL, 0, 's', (void *)sign);
 
 	}
 
+	return len;
+
+    } else {
+	unsigned int error = 0;
+	struct ssh_string_s *sign=userauth->signature;
+	char *pos=buffer;
+	unsigned int result=0;
+	int left=(int) size;
+
+	*pos=SSH_MSG_USERAUTH_REQUEST;
+	pos++;
+	left--;
+
+	result=write_ssh_string(pos, left, 'c', (void *) userauth->r_user);
+	pos+=result;
+	left-=result;
+
+	result=write_ssh_string(pos, left, 'c', (void *) userauth->service);
+	pos+=result;
+	left-=result;
+
+	result=write_ssh_string(pos, left, 'c', (void *) "publickey");
+	pos+=result;
+	left-=result;
+
+	*pos=(sign) ? 1 : 0;
+	pos++;
+	left--;
+
+	result=write_pkalgo(pos, userauth->pkey->algo); /* TODO: use signature algo */
+	pos+=result;
+	left-=result;
+
+	result=(* userauth->pkey->write_key)(userauth->pkey, pos, left, PK_DATA_FORMAT_SSH_STRING, &error);
+	pos+=result;
+	left-=result;
+
+	if (sign && sign->ptr) {
+	    char *start=pos;
+
+	    pos+=4;
+
+	    result=write_pkalgo(pos, userauth->pkey->algo);
+	    pos+=result;
+	    left-=result;
+
+	    result=write_ssh_string(pos, left, 's', (void *)sign);
+	    pos+=result;
+	    left-=result;
+
+	    store_uint32(start, (unsigned int)(pos - (start + 4)));
+
+	}
+
+	log_message((unsigned char*) buffer, (unsigned int)(pos - buffer), userauth->pkey->algo->name, 0);
+
+	return (unsigned int)(pos - buffer);
+
     }
 
-    return len;
+    return 0;
 
 }
 
 static int _send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    struct common_buffer_s tmp;
-
-    init_common_buffer(&tmp);
+    char *buffer = NULL;
+    unsigned int size = 0;
 
     if (payload) {
 
-	tmp.ptr=(char *) payload->buffer;
-	tmp.size=payload->len;
+	buffer=(char *) payload->buffer;
+	size=payload->len;
 
     }
 
-    tmp.pos=tmp.ptr;
-    tmp.len=0;
-
-    return _write_userauth_pubkey_message(&tmp, ptr);
+    return _write_userauth_pubkey_message(buffer, size, ptr);
 
 }
 
 /* write the userauth request message to a buffer
     used for the creating of a signature with public key auth */
 
-unsigned int write_userauth_pubkey_request(struct common_buffer_s *buffer, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key)
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *r_user, const char *service, struct ssh_key_s *pkey)
 {
-    struct userauth_pubkey_s userauth;
+    struct userauth_helper_s userauth;
     struct ssh_string_s signature;
 
-    userauth.user=user;
-    userauth.service=service;
-    userauth.public_key=public_key;
-    userauth.signature=&signature;
+    memset(&userauth, 0, sizeof(struct userauth_helper_s));
 
     signature.ptr=NULL;
     signature.len=0;
 
-    return _write_userauth_pubkey_message(buffer, (void *) &userauth);
+    userauth.r_user=r_user;
+    userauth.service=service;
+    userauth.pkey=pkey;
+    userauth.l_hostname=NULL;
+    userauth.l_user=NULL;
+    userauth.signature=&signature;
+
+    return _write_userauth_pubkey_message(buffer, size, (void *) &userauth);
 
 }
 
-int send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *signature, unsigned int *seq)
+int send_userauth_pubkey_message(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_string_s *signature, unsigned int *seq)
 {
-    struct userauth_pubkey_s userauth_pubkey;
+    struct userauth_helper_s userauth;
 
-    userauth_pubkey.user=user;
-    userauth_pubkey.service=service;
-    userauth_pubkey.public_key=public_key;
-    userauth_pubkey.signature=signature;
+    memset(&userauth, 0, sizeof(struct userauth_helper_s));
 
-    if (send_ssh_message(session, _send_userauth_pubkey_message, (void *) &userauth_pubkey, seq)==-1) {
+    userauth.r_user=r_user;
+    userauth.service=service;
+    userauth.pkey=pkey;
+    userauth.signature=signature;
+
+    if (send_ssh_message(session, _send_userauth_pubkey_message, (void *) &userauth, seq)==-1) {
     	unsigned int error=session->status.error;
 
 	session->status.error=0;
@@ -193,52 +243,59 @@ int send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_strin
 
 }
 
-struct userauth_none_s {
-    struct ssh_string_s		*user;
-    const char			*service;
-};
-
 static int _send_userauth_none_message(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    struct userauth_none_s *userauth=(struct userauth_none_s *) ptr;
-    unsigned int len=0;
-    struct common_buffer_s tmp;
+    struct userauth_helper_s *userauth=(struct userauth_helper_s *) ptr;
 
-    init_common_buffer(&tmp);
+    if (payload==NULL) {
+	unsigned int len=0;
 
-    if (payload) {
+	len+=1;
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->r_user);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->service);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) "none");
 
-	tmp.ptr=(char *) payload->buffer;
-	tmp.size=payload->len;
+	return len;
+
+    } else {
+	char *pos = payload->buffer;
+	int left = payload->len;
+	unsigned int result=0;
+
+	*pos=SSH_MSG_USERAUTH_REQUEST;
+	pos++;
+	left--;
+
+	result+=write_ssh_string(pos, left, 'c', (void *) userauth->r_user);
+	pos+=result;
+	left-=result;
+
+	result+=write_ssh_string(pos, left, 'c', (void *) userauth->service);
+	pos+=result;
+	left-=result;
+
+	result+=write_ssh_string(pos, left, 'c', (void *) "none");
+	pos+=result;
+	left-=result;
+
+	return (unsigned int)(pos - payload->buffer);
 
     }
 
-    tmp.pos=tmp.ptr;
-    tmp.len=0;
-
-    len+=copy_byte_to_buffer(&tmp, SSH_MSG_USERAUTH_REQUEST);
-
-    /* user */
-    len+=copy_ssh_string_to_buffer(&tmp, userauth->user);
-
-    /* service string */
-    len+=copy_char_to_buffer(&tmp, (char *)userauth->service, strlen(userauth->service));
-
-    /* method "none" */
-    len+=copy_char_to_buffer(&tmp, "none", 4);
-
-    return len;
+    return 0;
 
 }
 
-int send_userauth_none_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, unsigned int *seq)
+int send_userauth_none_message(struct ssh_session_s *session, char *r_user, const char *service, unsigned int *seq)
 {
-    struct userauth_none_s userauth_none;
+    struct userauth_helper_s userauth;
 
-    userauth_none.user=user;
-    userauth_none.service=service;
+    memset(&userauth, 0, sizeof(struct userauth_helper_s));
 
-    if (send_ssh_message(session, _send_userauth_none_message, (void *) &userauth_none, seq)==-1) {
+    userauth.r_user=r_user;
+    userauth.service=service;
+
+    if (send_ssh_message(session, _send_userauth_none_message, (void *) &userauth, seq)==-1) {
 	unsigned int error=session->status.error;
 
 	session->status.error=0;
@@ -266,99 +323,139 @@ int send_userauth_none_message(struct ssh_session_s *session, struct ssh_string_
     - string	signature
 */
 
-struct userauth_hostbased_s {
-    struct ssh_string_s		*r_user;
-    const char			*service;
-    struct ssh_key_s		*hostkey;
-    struct ssh_string_s		*hostname;
-    struct ssh_string_s		*l_user;
-    struct ssh_string_s 	*signature;
-};
-
-static unsigned int _write_userauth_hostbased_message(struct common_buffer_s *tmp, void *ptr)
+static unsigned int _write_userauth_hostbased_message(char *buffer, unsigned int size, void *ptr)
 {
-    struct userauth_hostbased_s *userauth=(struct userauth_hostbased_s *) ptr;
-    unsigned int len=0;
+    struct userauth_helper_s *userauth=(struct userauth_helper_s *) ptr;
 
-    len+=copy_byte_to_buffer(tmp, SSH_MSG_USERAUTH_REQUEST);
+    if (buffer==NULL) {
+	unsigned int len=0;
+	unsigned int error=0;
+	struct ssh_string_s *sign=userauth->signature;
 
-    /* remote user */
-    len+=copy_ssh_string_to_buffer(tmp, userauth->r_user);
+	len+=1;
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->r_user);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->service);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) "hostbased");
+	len+=write_pkalgo(NULL, userauth->pkey->algo); /* TODO: use signature algo */
+	len+=(* userauth->pkey->write_key)(userauth->pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->l_hostname);
+	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->l_user);
 
-    /* service */
-    len+=copy_char_to_buffer(tmp, (char *)userauth->service, strlen(userauth->service));
+	if (sign && sign->ptr) {
 
-    /* method "hostbased" */
-    len+=copy_char_to_buffer(tmp, (char *)"hostbased", 9);
+	    /* TODO: use signature algo */
+	    len+=4 + write_pkalgo(NULL, userauth->pkey->algo) + write_ssh_string(NULL, 0, 's', (void *)sign);
 
-    /* pubkey algo name client public hostkey */
-    len+=copy_ssh_pk_algo_to_buffer(tmp, userauth->hostkey->type);
+	}
 
-    /* client public hostkey */
-    len+=copy_buffer_to_buffer(tmp, &userauth->hostkey->data);
+	return len;
 
-    /* client hostname */
-    len+=copy_ssh_string_to_buffer(tmp, userauth->hostname);
+    } else {
+	unsigned int error=0;
+	struct ssh_string_s *sign=userauth->signature;
+	char *pos = buffer;
+	unsigned int result=0;
+	int left = (int) size;
 
-    /* local user */
-    len+=copy_ssh_string_to_buffer(tmp, userauth->l_user);
+	*pos = SSH_MSG_USERAUTH_REQUEST;
+	pos++;
+	left--;
 
-    if (userauth->signature) {
+	result = write_ssh_string(pos, left, 'c', (void *) userauth->r_user);
+	pos += result;
+	left -= result;
 
-	len+=copy_ssh_pk_signature_to_buffer(tmp, userauth->hostkey->type, userauth->signature);
+	result = write_ssh_string(pos, left, 'c', (void *) userauth->service);
+	pos+=result;
+	left-=result;
+
+	result = write_ssh_string(pos, left, 'c', (void *) "hostbased");
+	pos+=result;
+	left-=result;
+
+	result=write_pkalgo(pos, userauth->pkey->algo); /* TODO: use signature algo */
+	pos+=result;
+	left-=result;
+
+	result=(* userauth->pkey->write_key)(userauth->pkey, pos, left, PK_DATA_FORMAT_SSH_STRING, &error);
+	pos+=result;
+	left-=result;
+
+	result = write_ssh_string(pos, left, 'c', (void *) userauth->l_hostname);
+	pos+=result;
+	left-=result;
+
+	result = write_ssh_string(pos, left, 'c', (void *) userauth->l_user);
+	pos+=result;
+	left-=result;
+
+	if (sign && sign->ptr) {
+	    char *start=pos;
+
+	    pos+=4;
+
+	    result=write_pkalgo(pos, userauth->pkey->algo);
+	    pos+=result;
+	    left-=result;
+
+	    result=write_ssh_string(pos, left, 's', (void *)sign);
+	    pos+=result;
+	    left-=result;
+
+	    store_uint32(start, (unsigned int)(pos - (start + 4)));
+
+	}
+
+	return (unsigned int)(pos - buffer);
 
     }
 
-    return len;
+    return 0;
 
 }
 
 static int _send_userauth_hostbased_message(struct ssh_session_s *session, struct ssh_payload_s *payload, void *ptr)
 {
-    struct common_buffer_s tmp;
-
-    init_common_buffer(&tmp);
+    char *buffer=NULL;
+    unsigned int size=0;
 
     if (payload) {
 
-	tmp.ptr=(char *) payload->buffer;
-	tmp.size=payload->len;
+	buffer=(char *) payload->buffer;
+	size=payload->len;
 
     }
 
-    tmp.pos=tmp.ptr;
-    tmp.len=0;
-
-    return _write_userauth_hostbased_message(&tmp, ptr);
+    return _write_userauth_hostbased_message(buffer, size, ptr);
 }
 
-unsigned int write_userauth_hostbased_request(struct common_buffer_s *buffer, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *hostkey, struct ssh_string_s *hostname, struct ssh_string_s *l_user)
+unsigned int write_userauth_hostbased_request(char *buffer, unsigned int size, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user)
 {
-    struct userauth_hostbased_s userauth;
+    struct userauth_helper_s userauth;
 
-    memset(&userauth, 0, sizeof(struct userauth_hostbased_s));
+    memset(&userauth, 0, sizeof(struct userauth_helper_s));
 
     userauth.r_user=r_user;
     userauth.service=service;
-    userauth.hostkey=hostkey;
-    userauth.hostname=hostname;
+    userauth.pkey=pkey;
+    userauth.l_hostname=l_hostname;
     userauth.l_user=l_user;
     userauth.signature=NULL;
 
-    return _write_userauth_hostbased_message(buffer, (void *) &userauth);
+    return _write_userauth_hostbased_message(buffer, size, (void *) &userauth);
 
 }
 
-int send_userauth_hostbased_message(struct ssh_session_s *session, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *hostkey, struct ssh_string_s *hostname, struct ssh_string_s *l_user, struct ssh_string_s *signature, unsigned int *seq)
+int send_userauth_hostbased_message(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_string_s *signature, unsigned int *seq)
 {
-    struct userauth_hostbased_s userauth;
+    struct userauth_helper_s userauth;
 
-    memset(&userauth, 0, sizeof(struct userauth_hostbased_s));
+    memset(&userauth, 0, sizeof(struct userauth_helper_s));
 
     userauth.r_user=r_user;
     userauth.service=service;
-    userauth.hostkey=hostkey;
-    userauth.hostname=hostname;
+    userauth.pkey=pkey;
+    userauth.l_hostname=l_hostname;
     userauth.l_user=l_user;
     userauth.signature=signature;
 

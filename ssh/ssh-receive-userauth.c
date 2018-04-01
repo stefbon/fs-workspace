@@ -72,55 +72,6 @@
 static void receive_msg_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
 
-    /*
-	message looks like:
-	- byte			SSH_MSG_USERAUTH_FAILURE
-	- name-list		authentications that can continue
-	- boolean		partial success
-    */
-
-    unsigned int len=get_uint32(&payload->buffer[1]);
-    char namelist[payload->len+1];
-    unsigned int pos=0;
-    char *sep=NULL;
-    unsigned int authmethods=0;
-    unsigned char success=0;
-
-    memcpy(namelist, &payload->buffer[5], len);
-    namelist[len]='\0';
-
-    while (pos<len) {
-
-	sep=strchr(&namelist[pos], ',');
-	if (sep) *sep='\0';
-
-	if (strcmp(&namelist[pos], "publickey")==0) {
-
-	    authmethods|=SSH_USERAUTH_PUBLICKEY;
-
-	} else if (strcmp(&namelist[pos], "password")==0) {
-
-	    authmethods|=SSH_USERAUTH_PASSWORD;
-
-	} else if (strcmp(&namelist[pos], "hostbased")==0) {
-
-	    authmethods|=SSH_USERAUTH_HOSTBASED;
-
-	} else if (strcmp(&namelist[pos], "none")==0) {
-
-	    authmethods|=SSH_USERAUTH_NONE;
-
-	}
-
-	if (! sep) break;
-	*sep=',';
-	pos = 1 + (unsigned int) (sep - &namelist[0]);
-
-    }
-
-    success=(unsigned char) payload->buffer[5+len];
-    if (success>0) authmethods|=SSH_USERAUTH_SUCCESS;
-
     /* TODO */
 
     free(payload);

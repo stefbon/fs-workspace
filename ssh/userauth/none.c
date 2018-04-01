@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -62,10 +60,10 @@
 #include "userauth/hostbased.h"
 #include "userauth/utils.h"
 
-int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_user, unsigned int *methods)
+int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_userauth_s *userauth)
 {
     unsigned int error=0;
-    unsigned int sequence=0;
+    unsigned int seq=0;
     int result=-1;
 
     /* get the list of authemtication 'method name' values
@@ -74,7 +72,7 @@ int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_use
 
     logoutput("ssh_userauth_none: send none userauth request");
 
-    if (send_userauth_none_message(session, l_user, "ssh-connection", &sequence)==0) {
+    if (send_userauth_none_message(session, user, "ssh-connection", &seq)==0) {
 	struct ssh_payload_s *payload=NULL;
 	struct timespec expire;
 
@@ -82,12 +80,34 @@ int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_use
 
 	getresponse:
 
-	payload=get_ssh_payload(session, &expire, &sequence, &error);
+	payload=get_ssh_payload(session, &expire, &seq, &error);
 
 	if (! payload) {
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    if (error==0) error=EIO;
+	    /* why not receiving payload ? */
+
+	    if (error==EOPNOTSUPP) {
+
+		/* not supported ??
+		    protocol error */
+
+		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+
+	    } else if (error==ETIMEDOUT) {
+
+		/* why timedout ?
+		    here analyse why */
+
+		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+
+	    } else {
+
+		if (error == 0) error=EIO;
+		userauth->status|=SSH_USERAUTH_STATUS_FAILURE;
+
+	    }
+
+	    userauth->error=error;
 	    logoutput("ssh_userauth_none: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 	    goto finish;
 
@@ -96,16 +116,13 @@ int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_use
 	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
 	    /* huhh?? which server allows this weak security? */
-
 	    logoutput("ssh_userauth_none: server accepted none.....");
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
-	    *methods=SSH_USERAUTH_NONE;
+	    userauth->required_methods=0;
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
-	    /* failure gives the required methods */
-	    result=handle_userauth_failure(session, payload, methods);
+	    result=handle_userauth_failure(session, payload, userauth);
 
 	} else if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER) {
 
@@ -115,9 +132,18 @@ int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_use
 
 	} else {
 
-	    logoutput("ssh_userauth_none: got unexpected reply %i", payload->type);
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    error=EPROTO;
+	    if (payload->type == SSH_MSG_DISCONNECT) {
+
+		logoutput("ssh_userauth_none: received disconnect message");
+
+	    } else {
+
+		logoutput("ssh_userauth_none: got unexpected reply %i", payload->type);
+		userauth->error=EPROTO;
+
+	    }
+
+	    userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
 
 	}
 
@@ -130,9 +156,12 @@ int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_use
 
     } else {
 
-	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	/* why send error ?*/
+
 	error=(session->status.error==0) ? session->status.error : EIO;
 	logoutput("ssh_userauth_none: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
+	userauth->error=error;
+	userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
 
     }
 

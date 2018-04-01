@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remote_user, struct ssh_string_s *hostname, struct ssh_string_s *local_user, unsigned int *methods);
+struct pk_identity_s *ssh_auth_hostbased(struct ssh_session_s *session, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_userauth_s *userauth);
 
 #endif

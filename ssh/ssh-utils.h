@@ -41,9 +41,7 @@ uint16_t get_uint16(unsigned char *buff);
 int init_sshlibrary();
 void end_sshlibrary();
 
-void init_ssh_payload(struct ssh_payload_s *payload);
-
-unsigned int hash(const char *name, struct common_buffer_s *in, struct common_buffer_s *out, unsigned int *error);
+unsigned int hash(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error);
 unsigned int get_digest_len(const char *name);
 uint64_t ntohll(uint64_t value);
 unsigned int fill_random(char *pos, unsigned int len);
@@ -55,15 +53,9 @@ void replace_newline_char(char *ptr, unsigned int *size);
 char *decode_base64(struct common_buffer_s *buffer, unsigned int *len);
 int compare_encoded_base64(char *encoded, struct common_buffer_s *buffer);
 
-void init_ssh_string(struct ssh_string_s *s);
-void free_ssh_string(struct ssh_string_s *s);
-unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len);
-
 unsigned int copy_byte_to_buffer(struct common_buffer_s *b, unsigned char s);
 unsigned int copy_ssh_string_to_buffer(struct common_buffer_s *b, struct ssh_string_s *s);
 unsigned int copy_buffer_to_buffer(struct common_buffer_s *b, struct common_buffer_s *s);
 unsigned int copy_char_to_buffer(struct common_buffer_s *b, char *s, unsigned int len);
-
-int get_ssh_string_from_buffer(struct common_buffer_s *b, struct ssh_string_s *s, unsigned int flags);
 
 #endif

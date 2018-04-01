@@ -56,117 +56,179 @@
 #include "ssh-send.h"
 #include "ssh-send-userauth.h"
 #include "ssh-connection.h"
-
 #include "ssh-utils.h"
 
-#include "ctx-keystore.h"
+#include "pk/pk-types.h"
+#include "pk/pk-keys.h"
+#include "pk/pk-utils.h"
+#include "pk/pk-keystore.h"
+
 #include "userauth/pubkey.h"
 #include "userauth/hostbased.h"
 #include "userauth/utils.h"
 #include "userauth/none.h"
 
+static void init_ssh_userauth(struct ssh_userauth_s *userauth)
+{
+    memset(userauth, 0, sizeof(struct ssh_userauth_s));
+
+    userauth->status=0;
+    userauth->error=0;
+    userauth->required_methods=0;
+    userauth->methods_done=0;
+
+    userauth->l_hostname=NULL;
+    userauth->l_ipv4=NULL;
+
+    userauth->r_hostname=NULL;
+    userauth->r_ipv4=NULL;
+
+}
+
+static void clear_ssh_userauth(struct ssh_userauth_s *userauth)
+{
+
+    if (userauth->l_hostname) free(userauth->l_hostname);
+    if (userauth->l_ipv4) free(userauth->l_ipv4);
+
+    if (userauth->r_hostname) free(userauth->r_hostname);
+    if (userauth->r_ipv4) free(userauth->r_ipv4);
+
+}
+
+static int userauth_method_supported(unsigned int methods)
+{
+
+    if (methods & SSH_USERAUTH_METHOD_NONE) methods -= SSH_USERAUTH_METHOD_NONE;
+    if (methods & SSH_USERAUTH_METHOD_PUBLICKEY) methods -= SSH_USERAUTH_METHOD_PUBLICKEY;
+    if (methods & SSH_USERAUTH_METHOD_HOSTBASED) methods -= SSH_USERAUTH_METHOD_HOSTBASED;
+
+    return (methods > 0) ? -1 : 0;
+}
+
 int ssh_authentication(struct ssh_session_s *session)
 {
-    struct ssh_string_s local_user;
     unsigned int error=0;
-    char *remotehostname=NULL;
-    char *remoteipv4=NULL;
-    char *localhostname=NULL;
-    unsigned int required_methods=0;
-    unsigned int sequence=0;
-    void *ptr=NULL;
     int result=-1;
-    struct common_identity_s *identity=NULL;
-    struct hostaddress_s hostaddress;
+    struct pk_list_s pkeys;
+    struct pk_identity_s *user_identity=NULL;
+    struct pk_identity_s *host_identity=NULL;
+    struct ssh_userauth_s userauth;
 
-    local_user.ptr=session->identity.pwd.pw_name;
-    local_user.len=strlen(local_user.ptr);
+    init_ssh_userauth(&userauth);
 
-    remotehostname=get_connection_hostname(session->connection.fd, 1, &error);
-
-    if (remotehostname==NULL) {
-
-	logoutput("ssh_authentication: failed to get remote hostname (error %i:%s)", error, strerror(error));
-	goto finish;
-
-    }
-
-    remoteipv4=get_connection_ipv4(session->connection.fd, 1, &error);
-
-    if (remoteipv4==NULL) {
-
-	logoutput("ssh_authentication: failed to get remote ipv4 (error %i:%s)", error, strerror(error));
-	goto finish;
-
-    }
-
-    hostaddress.type=_HOSTADDRESS_TYPE_IPV4;
-    hostaddress.ip=remoteipv4;
-    hostaddress.hostname=remotehostname;
-
-    logoutput("ssh_authentication: found remote host %s / %s", remotehostname, remoteipv4);
-
-    ptr=init_identity_records(&session->identity.pwd, &hostaddress, "user", &error);
-
-    if (ptr==NULL) {
-
-	logoutput("ssh_authentication: error %i init public keys for user (%s)", error, strerror(error));
-	goto finish;
-
-    }
+    init_list_public_keys(&session->identity.pwd, &pkeys);
 
     /* get the list of authemtication 'method name' values
 	see https://tools.ietf.org/html/rfc4252#section-5.2: The "none" Authentication Request
 	note the remote user is set as the local user since the remote user is not known here */
 
-    logoutput("ssh_authentication: send none userauth request");
+    result=send_userauth_none(session, session->identity.pwd.pw_name, &userauth);
 
-    result=send_userauth_none(session, &local_user, &required_methods);
+    if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.error > 0) {
 
-    if ((session->userauth.status&SESSION_USERAUTH_STATUS_ERROR) ||
-	required_methods==SSH_USERAUTH_NONE ||
-	(required_methods & SSH_USERAUTH_UNKNOWN)) goto finish;
+	/* system/fatal error and/or disconnected by server */
+	goto finish;
 
-    /* try publickey first if required
-	assume the order of methods does not matter to the server */
+    } else if (userauth.required_methods == SSH_USERAUTH_METHOD_NONE || userauth.required_methods == 0) {
 
-    if (required_methods & SSH_USERAUTH_PUBLICKEY) {
-	unsigned int methods=0;
+	/* no futher methods required */
+	userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
+	result=0;
+	goto finish;
 
-	identity=ssh_auth_pubkey(session, ptr, &methods);
+    } else if (userauth_method_supported(userauth.required_methods)==-1) {
 
-	if (identity==NULL) {
+	/* not supported userauth methods requested by server */
+	goto finish;
 
-	    logoutput("ssh_authentication: publickey auth failed/no identity found");
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+    }
+
+    trypublickey:
+
+    /* 	try publickey first if required
+	assume the order of methods does not matter to the server
+    */
+
+    if (userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
+
+	result = -1;
+
+	if (userauth.methods_done & SSH_USERAUTH_METHOD_PUBLICKEY) {
+
+	    /* prevent cycles */
+
+	    logoutput("ssh_authentication: publickey auth failed: cycles detected");
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
 	    goto finish;
 
 	}
 
-	if (methods==0) {
+	logoutput("ssh_authentication: starting publickey userauth");
 
-	    /* no more methods required: ready */
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
-	    required_methods=0;
-	    result=0;
+	if (populate_list_public_keys(&pkeys, PK_IDENTITY_SOURCE_OPENSSH_LOCAL, "user")==0) {
+
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    goto finish;
+
+	}
+
+	userauth.methods_done|=SSH_USERAUTH_METHOD_PUBLICKEY;
+
+	user_identity=ssh_auth_pubkey(session, &pkeys, &userauth);
+
+	if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.status == SSH_USERAUTH_STATUS_FAILURE || userauth.status == SSH_USERAUTH_STATUS_ERROR) {
+
+	    /* system/fatal error and/or disconnected by server */
+	    goto finish;
+
+	}
+
+	if (user_identity==NULL) {
+
+	    /* pubkey userauth should result in at least one pk identity */
+
+	    logoutput("ssh_authentication: publickey auth failed/no identity found");
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    goto finish;
 
 	} else {
+	    char *user=get_pk_identity_user(user_identity);
+	    char *file=get_pk_identity_file(user_identity);
 
-	    /* still methods to do */
+	    if (user==NULL) user=session->identity.pwd.pw_name;
 
-	    if (methods & (SSH_USERAUTH_PUBLICKEY | SSH_USERAUTH_UNKNOWN)) {
+	    if (file) {
 
-		/* another publickey or unknown is not supported */
-		session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-		error=EPROTO;
-		result=-1;
-		goto finish;
+		logoutput("ssh_authentication: publickey userauth success with file %s (user %s)", file, user);
 
 	    } else {
 
-		required_methods=methods;
+		logoutput("ssh_authentication: publickey userauth success with user %s", user);
 
 	    }
+
+	}
+
+	if (userauth.required_methods==0) {
+
+	    /* no more methods required: ready */
+	    userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
+	    result=0;
+	    goto finish;
+
+	} else if (userauth_method_supported(userauth.required_methods)==-1) {
+
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    userauth.error=EPROTO;
+	    goto finish;
+
+	} else if ( userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
+
+	    /* another publickey or unknown or password is not supported */
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    userauth.error=EPROTO;
+	    goto finish;
 
 	}
 
@@ -174,137 +236,133 @@ int ssh_authentication(struct ssh_session_s *session)
 
     /* is hostbased auth required? */
 
-    if (required_methods & SSH_USERAUTH_HOSTBASED) {
-	unsigned int methods=0;
-	struct ssh_string_s remote_user;
-	struct ssh_string_s hostname;
+    if (userauth.required_methods & SSH_USERAUTH_METHOD_HOSTBASED) {
+	char *l_user=NULL;
+	char *r_user=NULL;
 
-	localhostname=get_connection_hostname(session->connection.fd, 0, &error);
+	if (userauth.methods_done & SSH_USERAUTH_METHOD_HOSTBASED) {
 
-	if (localhostname==NULL) {
+	    /* prevent cycles */
 
-	    logoutput("ssh_authentication: failed to get local hostname");
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    logoutput("ssh_authentication: hostbased auth failed: cycles detected");
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
 	    goto finish;
 
 	}
 
-	hostname.ptr=localhostname;
-	hostname.len=strlen(localhostname);
+	if (populate_list_public_keys(&pkeys, PK_IDENTITY_SOURCE_OPENSSH_LOCAL, "host")==0) {
 
-	logoutput("ssh_authentication: found local host %s", localhostname);
-
-	remote_user.ptr=session->identity.pwd.pw_name;
-	if (identity && identity->user) remote_user.ptr=identity->user;
-	remote_user.len=strlen(remote_user.ptr);
-
-	result=ssh_auth_hostbased(session, &remote_user, &hostname, &local_user, &methods);
-
-	if (result==0) {
-
-	    if (methods==0) {
-
-		/* no more methods required: ready */
-		session->userauth.status|=SESSION_USERAUTH_STATUS_SUCCESS;
-		required_methods=0;
-
-	    } else {
-
-		/* still methods to do */
-
-		if (methods & (SSH_USERAUTH_HOSTBASED | SSH_USERAUTH_UNKNOWN)) {
-
-		    /* another hostbased/unknown is not supported */
-		    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-		    result=-1;
-		    goto finish;
-
-		} else {
-
-		    required_methods=methods;
-
-		}
-
-	    }
-
-	} else {
-
-	    logoutput("ssh_authentication: hostbased auth failed");
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    result=-1;
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    goto finish;
 
 	}
 
-    }
+	userauth.methods_done|=SSH_USERAUTH_METHOD_HOSTBASED;
 
-    out:
+	userauth.l_hostname=get_connection_hostname(session->connection.fd, 0, &error);
 
-    if (required_methods>0) {
+	if (userauth.l_hostname==NULL) {
 
-	if (required_methods & SSH_USERAUTH_PUBLICKEY) logoutput("ssh_authentication: failed: publickey required");
-	if (required_methods & SSH_USERAUTH_HOSTBASED) logoutput("ssh_authentication: failed: hostbased required");
-	if (required_methods & SSH_USERAUTH_PASSWORD) logoutput("ssh_authentication: failed: password required");
-	if (required_methods & SSH_USERAUTH_UNKNOWN) logoutput("ssh_authentication: failed: unknown required");
-	result=-1;
+	    logoutput("ssh_authentication: failed to get local hostname");
+	    userauth.status|=SSH_USERAUTH_STATUS_ERROR;
+	    userauth.error=error;
+	    goto finish;
 
-    } else {
+	}
 
-	logoutput("ssh_authentication: no more methods required (result=%s)", result==0 ? "success" : "failed");
+	logoutput("ssh_authentication: using hostname %s for hostbased userauth", userauth.l_hostname);
+
+	l_user=session->identity.pwd.pw_name;
+
+	if (user_identity) {
+
+	    r_user=get_pk_identity_user(user_identity);
+	    if (r_user==NULL) r_user=l_user;
+
+	}
+
+	host_identity=ssh_auth_hostbased(session, &pkeys, r_user, l_user, &userauth);
+
+	if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.error > 0) {
+
+	    /* system/fatal error and/or disconnected by server */
+	    goto finish;
+
+	}
+
+	if (host_identity==NULL) {
+
+	    /* hostbased userauth should result in at least one pk identity */
+
+	    logoutput("ssh_authentication: hostbased auth failed/no identity found");
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    goto finish;
+
+	}
+
+	if (userauth.required_methods==0) {
+
+	    /* no more methods required: ready */
+	    userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
+	    result=0;
+	    goto finish;
+
+	} else if (userauth.required_methods & SSH_USERAUTH_METHOD_HOSTBASED) {
+
+	    /* another publickey or unknown or password is not supported */
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    userauth.error=EPROTO;
+	    result=-1;
+	    goto finish;
+
+	} else if (userauth_method_supported(userauth.required_methods)==-1) {
+
+	    /* another publickey or unknown or password is not supported */
+	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    userauth.error=EPROTO;
+	    result=-1;
+	    goto finish;
+
+	} else if (userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
+
+	    goto trypublickey;
+
+	}
 
     }
 
     finish:
 
-    if (remotehostname) {
+    if (result == 0) {
+	char *r_user=NULL;
 
-	free(remotehostname);
-	remotehostname=NULL;
+	if (user_identity) r_user=get_pk_identity_user(user_identity);
 
-    }
+	if (r_user) {
+	    unsigned int len=strlen(r_user);
 
-    if (remoteipv4) {
+	    /* if there is a remote user keep that */
 
-	free(remoteipv4);
-	remoteipv4=NULL;
+	    session->identity.remote_user.ptr=malloc(len);
 
-    }
+	    if (session->identity.remote_user.ptr) {
 
-    if (localhostname) {
+		memcpy(session->identity.remote_user.ptr, r_user, len);
+		session->identity.remote_user.len=len;
 
-	free(localhostname);
-	localhostname=NULL;
-
-    }
-
-    if (identity) {
-
-	/* if there is a remote user with this identity take this one
-	    otherwise fall back to the local user */
-
-	if (identity->user) {
-
-	    session->identity.remote_user.ptr=identity->user;
-	    identity->user=NULL;
-
-	} else {
-
-	    session->identity.remote_user.ptr=local_user.ptr;
+	    }
 
 	}
 
-	session->identity.remote_user.len=strlen(session->identity.remote_user.ptr);
-
-	free_identity_record(identity);
-	identity=NULL;
-
     }
 
-    if (ptr) {
+    /* also do something with the public key file ? */
 
-	finish_identity_records(ptr);
-	ptr=NULL;
+    if (host_identity) free(host_identity);
+    if (user_identity) free(user_identity);
 
-    }
+    clear_ssh_userauth(&userauth);
+    free_lists_public_keys(&pkeys);
 
     return result;
 

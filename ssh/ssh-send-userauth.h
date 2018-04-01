@@ -22,12 +22,12 @@
 
 /* prototypes */
 
-unsigned int write_userauth_pubkey_request(struct common_buffer_s *buffer, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key);
-int send_userauth_pubkey_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *sig, unsigned int *seq);
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *ruser, const char *service, struct ssh_key_s *pkey);
+int send_userauth_pubkey_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_string_s *sig, unsigned int *seq);
 
-int send_userauth_none_message(struct ssh_session_s *session, struct ssh_string_s *user, const char *service, unsigned int *seq);
+int send_userauth_none_message(struct ssh_session_s *session, char *user, const char *service, unsigned int *seq);
 
-unsigned int write_userauth_hostbased_request(struct common_buffer_s *buffer, struct ssh_string_s *ruser, const char *service, struct ssh_key_s *key, struct ssh_string_s *hostname, struct ssh_string_s *luser);
-int send_userauth_hostbased_message(struct ssh_session_s *session, struct ssh_string_s *ruser, const char *service, struct ssh_key_s *key, struct ssh_string_s *hostname, struct ssh_string_s *luser, struct ssh_string_s *signature, unsigned int *seq);
+unsigned int write_userauth_hostbased_request(char *buffer, unsigned int size, char *ruser, const char *service, struct ssh_key_s *key, char *lhostname, char *luser);
+int send_userauth_hostbased_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *key, char *lhostname, char *luser, struct ssh_string_s *signature, unsigned int *seq);
 
 #endif

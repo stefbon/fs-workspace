@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-int send_userauth_none(struct ssh_session_s *session, struct ssh_string_s *l_user, unsigned int *methods);
+int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_userauth_s *userauth);
 
 #endif

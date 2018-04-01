@@ -20,10 +20,6 @@
 #ifndef FS_WORKSPACE_SSH_PUBKEY_H
 #define FS_WORKSPACE_SSH_PUBKEY_H
 
-int read_parameters_pubkey(struct ssh_session_s *session, struct ssh_key_s *key, unsigned int *error);
-int verify_sigH(struct ssh_session_s *session, struct ssh_key_s *key, struct common_buffer_s *hash, struct common_buffer_s *sigH);
-int create_signature(struct ssh_session_s *session, struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, unsigned int *error);
-
 void init_pubkey(struct ssh_session_s *session);
 void free_pubkey(struct ssh_session_s *session);
 

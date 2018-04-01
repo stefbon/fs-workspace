@@ -346,31 +346,29 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	struct timespec expire;
 	unsigned int error=0;
 	struct ssh_payload_s *payload=NULL;
-	unsigned int sequence_number=0;
+	unsigned int seq=0;
+	int result=-1;
 
 	logoutput("_setup_ssh_session: request for service ssh-userauth");
 
-	if (send_service_request_message(session, "ssh-userauth", &sequence_number)==-1) {
+	if (send_service_request_message(session, "ssh-userauth", &seq)==-1) {
 
-	    error=(session->status.error==0) ? EIO : session->status.error;
+	    error=EIO;
 	    logoutput("_setup_ssh_session: error %i sending service request ssh-userauth (%s)", error, strerror(error));
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 	    goto outrequest;
 
 	}
 
-	session->userauth.status=SESSION_USERAUTH_STATUS_REQUEST;
 	get_session_expire_init(session, &expire);
 
 	getrequest:
 
-	payload=get_ssh_payload(session, &expire, &sequence_number, &error);
+	payload=get_ssh_payload(session, &expire, &seq, &error);
 
 	if (! payload) {
 
 	    if (error==0) error=EIO;
 	    logoutput("_setup_ssh_session: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 	    goto outrequest;
 
 	}
@@ -386,12 +384,11 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	    if (memcmp(payload->buffer, buffer, len)==0) {
 
 		logoutput("_setup_ssh_session: server accepted service ssh-userauth");
-		session->userauth.status|=SESSION_USERAUTH_STATUS_ACCEPT;
+		result=0;
 
 	    } else {
 
 		logoutput("_setup_ssh_session: server has sent an invalid service accept message");
-		session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
 		goto outrequest;
 
 	    }
@@ -405,13 +402,9 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 		payload=NULL;
 		goto getrequest;
 
-	    } else {
-
-		logoutput("_setup_ssh_session: server send unexpected %i: disconnect", payload->type);
-
 	    }
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    logoutput("_setup_ssh_session: server send unexpected %i: disconnect", payload->type);
 	    goto outrequest;
 
 	}
@@ -425,9 +418,9 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 
 	}
 
-	if (session->userauth.status&SESSION_USERAUTH_STATUS_ERROR) {
+	if (result==-1) {
 
-	    logoutput("_setup_ssh_session: error in request for userauth phase (%i:%s)", error, strerror(error));
+	    logoutput("_setup_ssh_session: userauth failed");
 	    goto error;
 
 	}
@@ -439,7 +432,6 @@ static int _setup_ssh_session(struct ssh_session_s *session, struct context_inte
 	if (ssh_authentication(session)==0) {
 
 	    logoutput("_setup_ssh_session: authentication succes");
-	    session->userauth.status=0;
 
 	} else {
 
@@ -764,5 +756,17 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
     }
 
     pthread_mutex_unlock(&session->status.mutex);
+
+}
+
+void init_ssh_payload(struct ssh_payload_s *payload)
+{
+    memset(payload, 0, sizeof(struct ssh_payload_s));
+
+    payload->type=0;
+    payload->sequence=0;
+    payload->len=0;
+    payload->next=NULL;
+    payload->prev=NULL;
 
 }

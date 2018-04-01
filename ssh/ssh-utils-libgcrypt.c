@@ -52,45 +52,46 @@ static unsigned char done=0;
 
 /* create a hash */
 
-static unsigned int hash_libgcrypt(const char *name, struct common_buffer_s *in, struct common_buffer_s *out, unsigned int *error)
+static unsigned int hash_libgcrypt(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error)
 {
     int algo=gcry_md_map_name(name);
     unsigned int len=0;
 
-    if (algo>0) {
+    if (algo==0) {
 
-	len=gcry_md_get_algo_dlen(algo);
+	*error=EINVAL;
+	return 0;
 
-	if (len<=out->len) {
-	    gcry_md_hd_t handle;
+    }
 
-	    if (gcry_md_open(&handle, algo, 0)==0) {
-		unsigned char *digest=NULL;
+    len=gcry_md_get_algo_dlen(algo);
 
-		gcry_md_write(handle, in->ptr, in->len);
-		digest=gcry_md_read(handle, algo);
+    if (out==NULL) return len;
 
-		memcpy(out->ptr, digest, len);
+    if (len<=out->len) {
+	gcry_md_hd_t handle;
 
-		gcry_md_close(handle);
+	if (gcry_md_open(&handle, algo, 0)==0) {
+	    unsigned char *digest=NULL;
 
-	    } else {
+	    gcry_md_write(handle, in->ptr, in->len);
+	    digest=gcry_md_read(handle, algo);
 
-		len=0;
-		*error=EINVAL;
+	    memcpy(out->ptr, digest, len);
 
-	    }
+	    gcry_md_close(handle);
 
 	} else {
 
-	    *error=ENOBUFS;
 	    len=0;
+	    *error=EINVAL;
 
 	}
 
     } else {
 
-	*error=EINVAL;
+	*error=ENOBUFS;
+	len=0;
 
     }
 

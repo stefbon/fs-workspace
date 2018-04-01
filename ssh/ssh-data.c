@@ -149,7 +149,6 @@ int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsig
 
 	memcpy(session->data.sessionid.ptr, id, len);
 	session->data.sessionid.len=len;
-	session->data.sessionid.flags|=SSH_STRING_FLAG_ALLOCATE;
 	return 0;
 
     }

@@ -48,8 +48,9 @@
 #include "ssh-common-protocol.h"
 
 #include "ssh-pubkey.h"
-#include "ssh-pubkey-utils.h"
-#include "ssh-pubkey-layout.h"
+#include "pk/pk-types.h"
+#include "pk/pk-keys.h"
+#include "pk/pk-keystore.h"
 
 #include "ssh-receive.h"
 #include "ssh-queue-payload.h"
@@ -59,7 +60,6 @@
 #include "ssh-hostinfo.h"
 
 #include "ssh-utils.h"
-#include "ctx-keystore.h"
 #include "userauth/utils.h"
 
 /*
@@ -83,35 +83,36 @@
 	using the private key
     */
 
-static signed char create_hb_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, const char *service, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *l_user, struct ssh_key_s *private_key, struct ssh_string_s *signature)
+static signed char create_hb_signature(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_key_s *skey, struct ssh_string_s *signature)
 {
-    struct common_buffer_s data=INIT_COMMON_BUFFER;
-    unsigned int len=write_userauth_hostbased_request(&data, r_user, service, public_key, hostname, l_user) + 4 + session->data.sessionid.len;
+    unsigned int len=write_userauth_hostbased_request(NULL, 0, r_user, service, pkey, l_hostname, l_user) + write_ssh_string(NULL, 0, 's', (void *) &session->data.sessionid);
+    unsigned int left = len;
     char buffer[len];
     unsigned int error=0;
-
-    data.ptr=&buffer[0];
-    data.pos=data.ptr;
-    data.size=len;
-    data.len=0;
+    int result = 0;
+    char *pos = buffer;
 
     /* session id */
 
-    data.len+=copy_ssh_string_to_buffer(&data, &session->data.sessionid);
+    result = write_ssh_string(pos, left, 's', (void *) &session->data.sessionid);
+    pos += result;
+    left -= result;
 
     /* write the userauth hostbased message */
 
-    data.len+=write_userauth_hostbased_request(&data, r_user, service, public_key, hostname, l_user);
+    result = write_userauth_hostbased_request(pos, left, r_user, service, pkey, l_hostname, l_user);
+    pos += result;
+    left -= result;
 
     /* create a signature of this data using the private key belonging to the host key */
 
-    if (create_signature(session, private_key, &data, signature, &error)>=0) {
+    if ((* skey->sign)(skey, buffer, (unsigned int)(pos - buffer), signature, NULL, &error)>=0) {
 
 	return 0;
 
     } else {
 
-	logoutput_debug("create_hb_signature: error %i creating signature (%s)", error, strerror(error));
+	logoutput("create_hb_signature: error %i creating signature (%s)", error, strerror(error));
 
     }
 
@@ -119,7 +120,7 @@ static signed char create_hb_signature(struct ssh_session_s *session, struct ssh
 
 }
 
-static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ssh_string_s *r_user, struct ssh_key_s *public_key, struct ssh_string_s *hostname, struct ssh_string_s *l_user, struct ssh_key_s *private_key, unsigned int *methods)
+static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_key_s *skey, struct ssh_userauth_s *userauth)
 {
     struct ssh_string_s signature;
     int result=-1;
@@ -127,7 +128,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     init_ssh_string(&signature);
 
-    if (create_hb_signature(session, r_user, "ssh-connection", public_key, hostname, l_user, private_key, &signature)==-1) {
+    if (create_hb_signature(session, r_user, "ssh-connection", pkey, l_hostname, l_user, skey, &signature)==-1) {
 
 	logoutput("ssh_send_hostbased_signature: creating public hostkey signature failed");
 	goto out;
@@ -136,7 +137,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     /* send userauth hostbased request to server with signature */
 
-    if (send_userauth_hostbased_message(session, r_user, "ssh-connection", public_key, hostname, l_user, &signature, &seq)==0) {
+    if (send_userauth_hostbased_message(session, r_user, "ssh-connection", pkey, l_hostname, l_user, &signature, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
@@ -149,9 +150,10 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	if (! payload) {
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
-	    if (session->status.error==0) session->status.error=EIO;
-	    logoutput("ssh_send_hostbased_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", session->status.error, strerror(session->status.error));
+	    if (error==0) error=EIO;
+	    logoutput("ssh_send_hb_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
+	    userauth->error=error;
+	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 	    goto out;
 
 	}
@@ -164,16 +166,16 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
 	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ACCEPT;
+	    userauth->required_methods=0;
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
-	    result=handle_userauth_failure(session, payload, methods);
+	    result=handle_userauth_failure(session, payload, userauth);
 
 	} else {
 
-	    session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 
 	}
 
@@ -186,7 +188,7 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
 
     } else {
 
-	session->userauth.status|=SESSION_USERAUTH_STATUS_ERROR;
+	userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 
     }
 
@@ -206,47 +208,40 @@ static int ssh_send_hostbased_signature(struct ssh_session_s *session, struct ss
     try that first, if failed then try the remaining hostkeys
 */
 
-int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remote_user, struct ssh_string_s *hostname, struct ssh_string_s *local_user, unsigned int *methods)
+struct pk_identity_s *ssh_auth_hostbased(struct ssh_session_s *session, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_userauth_s *userauth)
 {
-    void *ptr=NULL;
     int result=-1;
     unsigned int error=0;
-    struct common_identity_s *identity=NULL;
+    struct pk_identity_s *host_identity=NULL;
 
     logoutput("ssh_auth_hostbased");
 
-    ptr=init_identity_records(&session->identity.pwd, NULL, "system", &error);
-    if (ptr==NULL) return -1;
+    host_identity=get_next_pk_identity(pkeys, "host");
 
-    identity=get_next_identity_record(ptr);
+    while (host_identity) {
+	struct ssh_key_s pkey;
+	struct ssh_key_s skey;
 
-    while (identity) {
-	struct ssh_key_s public_key;
-	struct ssh_key_s private_key;
+	init_ssh_key(&pkey, SSH_KEY_TYPE_PUBLIC, NULL);
+	init_ssh_key(&skey, SSH_KEY_TYPE_PRIVATE, NULL);
 
-	init_ssh_key(&public_key);
-	init_ssh_key(&private_key);
-
-	if (identity->file) logoutput("ssh_auth_hostbased: found public key (%s)", identity->file);
-
-	if (read_public_key_helper(identity, &public_key)==-1) {
+	if (read_key_param(host_identity, &pkey)==-1) {
 
 	    logoutput("ssh_auth_hostbased: error reading public key");
 	    goto next;
 
 	}
 
-	private_key.type=_PUBKEY_METHOD_PRIVATE;
-	private_key.type|=public_key.type & (_PUBKEY_METHOD_SSH_DSS | _PUBKEY_METHOD_SSH_RSA | _PUBKEY_METHOD_SSH_ED25519);
+	init_ssh_key(&skey, SSH_KEY_TYPE_PRIVATE, pkey.algo);
 
-	if (read_private_key_helper(identity, &private_key)==-1) {
+	if (read_key_param(host_identity, &skey)==-1) {
 
 	    logoutput("ssh_auth_hostbased: error reading private key");
 	    goto next;
 
 	}
 
-	if (ssh_send_hostbased_signature(session, remote_user, &public_key, hostname, local_user, &private_key, methods)==0) {
+	if (ssh_send_hb_signature(session, r_user, &pkey, userauth->l_hostname, l_user, &skey, userauth)==0) {
 
 	    logoutput("ssh_auth_hostbased: server accepted hostkey");
 	    result=0;
@@ -255,18 +250,17 @@ int ssh_auth_hostbased(struct ssh_session_s *session, struct ssh_string_s *remot
 
 	next:
 
-	free_ssh_key(&public_key);
-	free_ssh_key(&private_key);
-	free_identity_record(identity);
+	free_ssh_key(&pkey);
+	free_ssh_key(&skey);
 
 	if (result==0) break;
-	identity=get_next_identity_record(ptr);
+	free(host_identity);
+	host_identity=get_next_pk_identity(pkeys, "host");
 
     }
 
     finish:
-    finish_identity_records(ptr);
 
-    return result;
+    return host_identity;
 
 }
