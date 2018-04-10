@@ -38,8 +38,6 @@
 #include <sys/param.h>
 #include <sys/types.h>
 
-#include <gcrypt.h>
-
 #include "logging.h"
 #include "main.h"
 
@@ -96,79 +94,6 @@ static unsigned int hash_libgcrypt(const char *name, struct common_buffer_s *in,
     }
 
     return len;
-
-}
-
-struct hash_libgcrypt_s {
-    gcry_md_hd_t		md;
-    unsigned int		algo;
-};
-
-void *hash_init_libgcrypt(const char *name, unsigned int *error)
-{
-    int algo=gcry_md_map_name(name);
-
-    if (algo>0) {
-	struct hash_libgcrypt_s *handle=NULL;
-
-	handle=malloc(sizeof(struct hash_libgcrypt_s));
-
-	if (handle) {
-	    gcry_error_t result=0;
-
-	    handle->md=NULL;
-	    handle->algo=algo;
-
-	    result=gcry_md_open(&handle->md, algo, 0);
-
-	    if (result==0) {
-
-		return (void *) handle;
-
-	    } else {
-
-		logoutput("hash_init_libgcrypt: error %s/%s", gcry_strsource(result), gcry_strerror(result));
-		free(handle);
-
-	    }
-
-	}
-
-    }
-
-    return NULL;
-
-}
-
-void update_hash_libgcrypt(void *ptr, unsigned char *buffer, size_t size)
-{
-    struct hash_libgcrypt_s *handle=(struct hash_libgcrypt_s *) ptr;
-
-    gcry_md_write(handle->md, buffer, size);
-
-}
-
-void final_hash_libgcrypt(void *ptr, unsigned char *hash, size_t size)
-{
-    struct hash_libgcrypt_s *handle=(struct hash_libgcrypt_s *) ptr;
-    gcry_error_t result=0;
-    unsigned char *read=NULL;
-    unsigned int len=gcry_md_get_algo_dlen(handle->algo);
-
-    read=gcry_md_read(handle->md, 0);
-
-    if (size<=len) {
-
-	memcpy(hash, read, size);
-
-    } else {
-
-	memcpy(hash, read, len);
-
-    }
-
-    gcry_md_close(handle->md);
-    free(handle);
 
 }
 
