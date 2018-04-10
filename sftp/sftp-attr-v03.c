@@ -83,7 +83,7 @@ static unsigned int read_attr_zero(struct sftp_subsystem_s *sftp, char *buffer, 
 static unsigned int read_attr_size(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
 
-    attr->size=get_uint64((unsigned char *) buffer);
+    attr->size=get_uint64(buffer);
     fuse_attr->size=attr->size;
     fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_SIZE;
@@ -98,7 +98,7 @@ static unsigned int read_attr_uidgid(struct sftp_subsystem_s *sftp, char *buffer
     struct sftp_user_s user;
     struct sftp_group_s group;
 
-    attr->uid=get_uint32((unsigned char *) pos);
+    attr->uid=get_uint32(pos);
     pos+=4;
 
     user.remote.id=attr->uid;
@@ -109,7 +109,7 @@ static unsigned int read_attr_uidgid(struct sftp_subsystem_s *sftp, char *buffer
     fuse_attr->valid[FUSE_SFTP_INDEX_USER]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_USER;
 
-    attr->gid=get_uint32((unsigned char *) pos);
+    attr->gid=get_uint32(pos);
     pos+=4;
 
     group.remote.id=attr->gid;
@@ -125,7 +125,7 @@ static unsigned int read_attr_uidgid(struct sftp_subsystem_s *sftp, char *buffer
 
 static unsigned int read_attr_permissions(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->permissions=get_uint32((unsigned char *) buffer);
+    attr->permissions=get_uint32(buffer);
     fuse_attr->permissions=(S_IRWXU | S_IRWXG | S_IRWXO) & attr->permissions; /* sftp uses the same permission bits as Linux */
     fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_PERMISSIONS;
@@ -134,12 +134,12 @@ static unsigned int read_attr_permissions(struct sftp_subsystem_s *sftp, char *b
 
 static unsigned int read_attr_acmodtime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->accesstime=get_uint32((unsigned char *) buffer);
+    attr->accesstime=get_uint32(buffer);
     fuse_attr->atime=attr->accesstime;
     fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_ATIME;
 
-    attr->modifytime=get_uint32((unsigned char *) buffer+4);
+    attr->modifytime=get_uint32(buffer+4);
     fuse_attr->mtime=attr->modifytime;
     fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_MTIME;
@@ -221,7 +221,7 @@ static unsigned int read_attributes_v03(struct sftp_subsystem_s *sftp, char *buf
     unsigned int valid=0;
 
     memset(&sftp_attr, 0, sizeof(struct sftp_attr_s));
-    valid=get_uint32((unsigned char *) pos);
+    valid=get_uint32(pos);
     pos+=4;
 
     pos+=read_sftp_attributes(sftp, valid, pos, size-4, &sftp_attr, fuse_attr);
@@ -365,7 +365,7 @@ static unsigned int write_attributes_v03(struct sftp_subsystem_s *sftp, char *bu
 
 static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr)
 {
-    unsigned char *pos=(unsigned char *) response->pos;
+    char *pos=response->pos;
     struct sftp_string_s longname;
 
     *len=get_uint32(pos);
