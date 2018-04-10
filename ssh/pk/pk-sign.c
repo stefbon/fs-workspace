@@ -156,6 +156,8 @@ int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
     gcry_error_t err = 0;
     int len=0;
 
+    logoutput("create_sig_rsa: hash %s", hashname);
+
     if (dlen==0) {
 
 	logoutput("create_sig_rsa: hash %s not supported", hashname);
