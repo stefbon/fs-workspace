@@ -73,6 +73,7 @@
 #include "ssh-queue-rawdata.h"
 #include "ssh-queue-payload.h"
 #include "ssh-receive-waitreply.h"
+#include "extensions/extension.h"
 
 #include "ssh-kexinit.h"
 
@@ -89,66 +90,72 @@ static void init_session_status(struct ssh_session_s *session)
     status->status=0;
     status->substatus=0;
     status->unique=0;
+    status->thread=0;
 
 }
 
 static void free_session_status(struct ssh_session_s *session)
 {
-    struct ssh_status_s *status=&session->status;
-    pthread_mutex_destroy(&status->mutex);
-    pthread_cond_destroy(&status->cond);
+    struct ssh_status_s *ssh_status=&session->status;
+    pthread_mutex_destroy(&ssh_status->mutex);
+    pthread_cond_destroy(&ssh_status->cond);
 }
 
 void change_session_status(struct ssh_session_s *session, unsigned int status)
 {
-    pthread_mutex_lock(&session->status.mutex);
-    session->status.status=status;
-    session->status.substatus=0;
-    pthread_mutex_unlock(&session->status.mutex);
+    struct ssh_status_s *ssh_status=&session->status;
+
+    pthread_mutex_lock(&ssh_status->mutex);
+    ssh_status->status=status;
+    ssh_status->substatus=0;
+    pthread_mutex_unlock(&ssh_status->mutex);
 }
 
 int check_session_status(struct ssh_session_s *session, unsigned int status, unsigned int substatus)
 {
+    struct ssh_status_s *ssh_status=&session->status;
     int result=-1;
-    pthread_mutex_lock(&session->status.mutex);
+
+    pthread_mutex_lock(&ssh_status->mutex);
 
     if (substatus>0) {
 
-	result=(session->status.status==status && (session->status.substatus&substatus)) ? 0 : -1;
+	result=(ssh_status->status==status && (ssh_status->substatus & substatus)) ? 0 : -1;
 
     } else {
 
-	result=(session->status.status==status) ? 0 : -1;
+	result=(ssh_status->status==status) ? 0 : -1;
 
     }
 
-    pthread_mutex_unlock(&session->status.mutex);
+    pthread_mutex_unlock(&ssh_status->mutex);
     return result;
 }
 
 int check_change_session_substatus(struct ssh_session_s *session, unsigned int status, unsigned int substatus, unsigned int subnew)
 {
+    struct ssh_status_s *ssh_status=&session->status;
     int result=-1;
 
-    pthread_mutex_lock(&session->status.mutex);
+    pthread_mutex_lock(&ssh_status->mutex);
 
-    if (session->status.status==status && (substatus==0 || (session->status.substatus&substatus))) {
+    if (ssh_status->status==status && (substatus==0 || (ssh_status->substatus & substatus))) {
 
-	if (session->status.substatus&subnew) {
+	if (ssh_status->substatus & subnew) {
 
 	    /* already set */
 	    result=1;
 
 	} else {
 
-	    session->status.substatus|=subnew;
+	    ssh_status->substatus|=subnew;
 	    result=0;
 
 	}
 
     }
 
-    pthread_mutex_unlock(&session->status.mutex);
+    pthread_mutex_unlock(&ssh_status->mutex);
     return result;
 }
 
@@ -234,13 +241,13 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 	init_session_data(ssh_session);
 	init_ssh_connection(ssh_session);
 	init_hostinfo(ssh_session);
+	init_ssh_extensions(ssh_session);
 
 	/* start without compression, encryption, hmac and publickey */
 
 	init_compression(ssh_session);
 	init_encryption(ssh_session);
 	init_mac(ssh_session);
-	init_pubkey(ssh_session);
 	init_send(ssh_session);
 
 	if (init_ssh_identity(ssh_session, uid, error)==-1) {
@@ -267,7 +274,6 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 
 	free_receive(ssh_session);
 	free_send(ssh_session);
-	free_pubkey(ssh_session);
 
 	free_hostinfo(ssh_session);
 	free_session_data(ssh_session);
@@ -484,7 +490,6 @@ void _free_ssh_session(struct ssh_session_s *session)
     free_session_data(session);
     free_receive(session);
     free_send(session);
-    free_pubkey(session);
 
     free_s2c_mac(session);
     free_c2s_mac(session);
@@ -697,14 +702,18 @@ void set_max_packet_size(struct ssh_session_s *session, unsigned int size)
 
 void get_session_expire_init(struct ssh_session_s *session, struct timespec *expire)
 {
+    struct ssh_connection_s *connection=&session->connection;
+
     get_current_time(expire);
-    expire->tv_sec+=5; /* make this configurable */
+    expire->tv_sec+=connection->expire;
 }
 
 void get_session_expire_session(struct ssh_session_s *session, struct timespec *expire)
 {
+    struct ssh_connection_s *connection=&session->connection;
+
     get_current_time(expire);
-    expire->tv_sec+=1; /* make this configurable */
+    expire->tv_sec+=connection->expire; /* make this configurable */
 }
 
 void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server, unsigned int reason)
