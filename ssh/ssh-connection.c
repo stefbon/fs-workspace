@@ -48,6 +48,7 @@
 #include "beventloop.h"
 #include "beventloop-xdata.h"
 #include "workspace-interface.h"
+#include "workerthreads.h"
 
 #include "ssh-common.h"
 #include "ssh-connection.h"
@@ -64,16 +65,21 @@ void init_ssh_connection(struct ssh_session_s *session)
     connection->type=0;
     connection->fd=0;
     connection->xdata=NULL;
+    connection->status=SSH_CONNECTION_STATUS_INIT;
+    connection->error=0;
+    connection->expire=5;
 
 }
 
 int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned int port)
 {
     int fd=-1;
+    struct ssh_connection_s *connection=&session->connection;
 
     if (isvalid_ipv4(address)==1) {
-	struct ssh_connection_s *connection=&session->connection;
 	struct sockaddr_in *sin=&connection->socket.inet;
+
+	connection->status=SSH_CONNECTION_STATUS_CONNECTING;
 
 	memset(sin, 0, sizeof(struct sockaddr_in));
 
@@ -93,6 +99,8 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 		logoutput("connect_ssh_server: connected to %s:%i with fd %i", address, port, fd);
 		connection->fd=fd;
 
+		connection->status=SSH_CONNECTION_STATUS_CONNECTED;
+
 		flags=fcntl(fd, F_GETFD);
 		flags|=O_NONBLOCK;
 		fcntl(fd, F_SETFD, flags);
@@ -100,7 +108,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 	    } else {
 
 		logoutput("connect_ssh_server: error (%i:%s) connected to %s:%i", errno, strerror(errno), address, port);
-		session->status.error=errno;
+		connection->error=errno;
 		close(fd);
 		fd=-1;
 
@@ -108,7 +116,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 
 	} else {
 
-	    session->status.error=errno;
+	    connection->error=errno;
 	    logoutput("connect_ssh_server: unable to create fd error (%i:%s)", errno, strerror(errno));
 	    fd=-1;
 
@@ -116,8 +124,8 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 
     } else {
 
-	session->status.error=EINVAL;
-	logoutput("connect_ssh_server: unable to connect error (%i:%s)", session->status.error, strerror(session->status.error));
+	connection->error=EINVAL;
+	logoutput("connect_ssh_server: unable to connect error (%i:%s)", connection->error, strerror(connection->error));
 
     }
 
@@ -196,3 +204,96 @@ void remove_session_eventloop(struct ssh_session_s *session)
 
 }
 
+static unsigned int get_status_networkconnection(struct ssh_session_s *session)
+{
+    struct ssh_connection_s *connection=&session->connection;
+    int error=0;
+
+    if (connection->fd>0) {
+	socklen_t len=sizeof(int);
+
+	if (getsockopt(connection->fd, SOL_SOCKET, SO_ERROR, (void *) &error, &len)==0) {
+
+	    logoutput("get_status_networkconnection: got error %i (%s)", error, strerror(error));
+
+	} else {
+
+	    /* */
+
+	    logoutput("get_status_networkconnection: error %i (%s)", errno, strerror(errno));
+
+	}
+
+    }
+
+    return abs(error);
+
+}
+
+static void analyze_connection_problem(void *ptr)
+{
+    struct ssh_session_s *session=(struct ssh_session_s *) ptr;
+    struct ssh_connection_s *connection=&session->connection;
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
+	unsigned int error=0;
+
+	error=get_status_networkconnection(session);
+
+	if (error>0) {
+
+	    connection->error=error;
+	    connection->status=SSH_CONNECTION_STATUS_DISCONNECTED;
+	    disconnect_ssh_server(session);
+	    remove_session_eventloop(session);
+	    connection->expire=0; /* prevent waiting */
+
+	}
+
+    }
+
+    session->status.thread=0;
+
+    pthread_mutex_unlock(&session->status.mutex);
+
+    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+        struct ssh_receive_s *receive=&session->receive;
+	struct payload_queue_s *queue=&receive->payload_queue;
+
+	/* signal any waiting thread */
+
+	pthread_mutex_lock(queue->signal.mutex);
+	pthread_cond_broadcast(queue->signal.cond);
+	pthread_mutex_unlock(queue->signal.mutex);
+
+    }
+
+}
+
+void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level)
+{
+    struct ssh_connection_s *connection=&session->connection;
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (session->status.thread>0) goto unlock;
+
+    if (level==0) {
+
+	if (connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
+	    unsigned int error=0;
+
+	    work_workerthread(NULL, 0, analyze_connection_problem, (void *) session, &error);
+	    session->status.thread=1;
+
+	}
+
+    }
+
+    unlock:
+
+    pthread_mutex_unlock(&session->status.mutex);
+
+}
