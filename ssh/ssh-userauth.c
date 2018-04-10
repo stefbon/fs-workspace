@@ -128,6 +128,7 @@ int ssh_authentication(struct ssh_session_s *session)
     if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.error > 0) {
 
 	/* system/fatal error and/or disconnected by server */
+	result=-1;
 	goto finish;
 
     } else if (userauth.required_methods == SSH_USERAUTH_METHOD_NONE || userauth.required_methods == 0) {
@@ -140,6 +141,7 @@ int ssh_authentication(struct ssh_session_s *session)
     } else if (userauth_method_supported(userauth.required_methods)==-1) {
 
 	/* not supported userauth methods requested by server */
+	result=-1;
 	goto finish;
 
     }
@@ -335,22 +337,28 @@ int ssh_authentication(struct ssh_session_s *session)
 
     if (result == 0) {
 	char *r_user=NULL;
+	unsigned int len=0;
 
-	if (user_identity) r_user=get_pk_identity_user(user_identity);
+	if (user_identity) {
 
-	if (r_user) {
-	    unsigned int len=strlen(r_user);
+	    r_user=get_pk_identity_user(user_identity);
 
-	    /* if there is a remote user keep that */
+	    /* fallback to local user */
 
-	    session->identity.remote_user.ptr=malloc(len);
+	    if (r_user==NULL) r_user=session->identity.pwd.pw_name;
 
-	    if (session->identity.remote_user.ptr) {
+	}
 
-		memcpy(session->identity.remote_user.ptr, r_user, len);
-		session->identity.remote_user.len=len;
+	len=strlen(r_user);
 
-	    }
+	/* if there is a remote user keep that */
+
+	session->identity.remote_user.ptr=malloc(len);
+
+	if (session->identity.remote_user.ptr) {
+
+	    memcpy(session->identity.remote_user.ptr, r_user, len);
+	    session->identity.remote_user.len=len;
 
 	}
 
