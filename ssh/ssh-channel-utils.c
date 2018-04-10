@@ -153,7 +153,7 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
 		} else {
 
 		    logoutput("get_timeinfo_server: error output");
-		    return 0;
+		    return;
 
 		}
 
@@ -178,7 +178,7 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
 		    } else {
 
 			logoutput("get_timeinfo_server: error output");
-			return 0;
+			return;
 
 		    }
 
@@ -381,6 +381,7 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
     error:
 
     logoutput_warning("translate_channel_uri: error %i (%s)", *error, strerror(*error));
+    return -1;
 
 }
 
