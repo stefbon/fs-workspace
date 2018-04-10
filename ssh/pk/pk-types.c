@@ -82,6 +82,50 @@ struct ssh_pkalgo_s *get_pkalgo(char *algo, unsigned int len)
 
 }
 
+struct ssh_pkalgo_s *get_pkalgo_byid(unsigned int id)
+{
+
+    switch (id) {
+
+    case SSH_PKALGO_ID_RSA:
+
+	return &ssh_pkalgo_rsa;
+
+    case SSH_PKALGO_ID_DSS:
+
+	return &ssh_pkalgo_dss;
+
+    case SSH_PKALGO_ID_ED25519:
+
+	return &ssh_pkalgo_ed25519;
+
+    }
+
+    return NULL;
+
+}
+
+struct ssh_pkalgo_s *get_next_pkalgo(struct ssh_pkalgo_s *algo)
+{
+
+    if (algo==NULL) {
+
+	return &ssh_pkalgo_rsa;
+
+    } else if (algo==&ssh_pkalgo_rsa) {
+
+	return &ssh_pkalgo_dss;
+
+    } else if (algo==&ssh_pkalgo_dss) {
+
+	return &ssh_pkalgo_ed25519;
+
+    }
+
+    return NULL;
+
+}
+
 unsigned int write_pkalgo(char *buffer, struct ssh_pkalgo_s *pkalgo)
 {
 
