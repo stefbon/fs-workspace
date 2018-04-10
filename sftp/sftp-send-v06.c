@@ -129,7 +129,7 @@ static int send_sftp_fstat_v06(struct sftp_subsystem_s *sftp_subsystem, struct s
 
 int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[18 + sftp_r->call.link.len + sftp_r->call.link.target_len];
+    char data[18 + sftp_r->call.link.len + sftp_r->call.link.target_len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -168,7 +168,7 @@ int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[33 + sftp_r->call.block.len];
+    char data[33 + sftp_r->call.block.len];
     unsigned int pos=0;
     unsigned int mask=get_sftp_lockflags_flock(sftp_r->call.block.type);
 
@@ -207,7 +207,7 @@ int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[29 + sftp_r->call.unblock.len];
+    char data[29 + sftp_r->call.unblock.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -248,7 +248,7 @@ int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[14 + sftp_r->call.realpath.len];
+    char data[14 + sftp_r->call.realpath.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
