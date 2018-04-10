@@ -140,7 +140,7 @@ static void get_sftp_openmode(unsigned int posix_access, unsigned int *sftp_acce
 
 int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[26 + sftp_r->call.open.len];
+    char data[26 + sftp_r->call.open.len];
     unsigned int pos=0;
     unsigned int access=0;
     unsigned int flags=0;
@@ -187,7 +187,7 @@ int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
 
 int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[21 + sftp_r->call.create.len + sftp_r->call.create.size];
+    char data[21 + sftp_r->call.create.len + sftp_r->call.create.size];
     unsigned int pos=0;
     unsigned int access=0;
     unsigned int flags=0;
@@ -231,7 +231,7 @@ int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
 
 int send_sftp_rename_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[21 + sftp_r->call.rename.len + sftp_r->call.rename.target_len];
+    char data[21 + sftp_r->call.rename.len + sftp_r->call.rename.target_len];
     unsigned int pos=0;
     unsigned int flags=SSH_FXF_RENAME_NATIVE; /* seems reasonable */
 
