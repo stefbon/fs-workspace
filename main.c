@@ -317,7 +317,7 @@ static unsigned int get_option_mount(struct context_interface_s *interface, cons
     } else if (strcmp(name, "parallel-dirops")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=0;
+	option->value.number=1; /* try */
 
     } else if (strcmp(name, "posix-acl")==0) {
 
