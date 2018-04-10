@@ -48,6 +48,7 @@
 #include "ssh-utils.h"
 #include "ssh-send.h"
 #include "pk/pk-types.h"
+#include "pk/sign-types.h"
 
 /*
     take care for userauth for this client
@@ -87,6 +88,7 @@ struct userauth_helper_s {
     struct ssh_key_s		*pkey;
     char			*l_hostname;
     char			*l_user;
+    struct ssh_signalgo_s	*signalgo;
     struct ssh_string_s 	*signature;
 };
 
@@ -104,13 +106,12 @@ static unsigned int _write_userauth_pubkey_message(char *buffer, unsigned int si
 	len+=write_ssh_string(NULL, 0, 'c', (void *) userauth->service);
 	len+=write_ssh_string(NULL, 0, 'c', (void *) "publickey");
 	len+=1;
-	len+=write_pkalgo(NULL, userauth->pkey->algo); /* TODO: use signature algo */
+	len+=write_signalgo(NULL, userauth->signalgo);
 	len+=(* userauth->pkey->write_key)(userauth->pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
 
 	if (sign && sign->ptr) {
 
-	    /* TODO: use signature algo */
-	    len+=4 + write_pkalgo(NULL, userauth->pkey->algo) + write_ssh_string(NULL, 0, 's', (void *)sign);
+	    len+=write_signature(NULL, 0, userauth->pkey->algo, userauth->signalgo, sign);
 
 	}
 
@@ -143,7 +144,7 @@ static unsigned int _write_userauth_pubkey_message(char *buffer, unsigned int si
 	pos++;
 	left--;
 
-	result=write_pkalgo(pos, userauth->pkey->algo); /* TODO: use signature algo */
+	result=write_signalgo(pos, userauth->signalgo); /* TODO: use signature algo */
 	pos+=result;
 	left-=result;
 
@@ -152,19 +153,11 @@ static unsigned int _write_userauth_pubkey_message(char *buffer, unsigned int si
 	left-=result;
 
 	if (sign && sign->ptr) {
-	    char *start=pos;
 
-	    pos+=4;
+	    result=write_signature(pos, left, userauth->pkey->algo, userauth->signalgo, sign);
 
-	    result=write_pkalgo(pos, userauth->pkey->algo);
 	    pos+=result;
 	    left-=result;
-
-	    result=write_ssh_string(pos, left, 's', (void *)sign);
-	    pos+=result;
-	    left-=result;
-
-	    store_uint32(start, (unsigned int)(pos - (start + 4)));
 
 	}
 
@@ -197,7 +190,7 @@ static int _send_userauth_pubkey_message(struct ssh_session_s *session, struct s
 /* write the userauth request message to a buffer
     used for the creating of a signature with public key auth */
 
-unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *r_user, const char *service, struct ssh_key_s *pkey)
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo)
 {
     struct userauth_helper_s userauth;
     struct ssh_string_s signature;
@@ -212,13 +205,14 @@ unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char
     userauth.pkey=pkey;
     userauth.l_hostname=NULL;
     userauth.l_user=NULL;
+    userauth.signalgo=signalgo;
     userauth.signature=&signature;
 
     return _write_userauth_pubkey_message(buffer, size, (void *) &userauth);
 
 }
 
-int send_userauth_pubkey_message(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_string_s *signature, unsigned int *seq)
+int send_userauth_pubkey_message(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo, struct ssh_string_s *signature, unsigned int *seq)
 {
     struct userauth_helper_s userauth;
 
@@ -227,6 +221,7 @@ int send_userauth_pubkey_message(struct ssh_session_s *session, char *r_user, co
     userauth.r_user=r_user;
     userauth.service=service;
     userauth.pkey=pkey;
+    userauth.signalgo=signalgo;
     userauth.signature=signature;
 
     if (send_ssh_message(session, _send_userauth_pubkey_message, (void *) &userauth, seq)==-1) {
