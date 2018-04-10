@@ -92,9 +92,20 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
 	result=pthread_cond_timedwait(queue->signal.cond, queue->signal.mutex, expire);
 
 	if (result==ETIMEDOUT) {
+	    struct ssh_connection_s *connection=&session->connection;
 
 	    pthread_mutex_unlock(queue->signal.mutex);
 	    *error=ETIMEDOUT;
+
+	    /* is there a better error causing this timeout?
+		the timeout is possibly caused by connection problems */
+
+	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+
+		*error=(connection->error>0) ? connection->error : ENOTCONN;
+
+	    }
+
 	    return NULL;
 
 	} else if (queue->signal.error>0 && sequence && *sequence==queue->signal.sequence_number_error) {
@@ -106,6 +117,19 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct time
 	    queue->signal.error=0;
 
 	    return NULL;
+
+	} else {
+	    struct ssh_connection_s *connection=&session->connection;
+
+	    /* it's possible that a broadcast is send cause of connection problems */
+
+	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+
+		*error=(connection->error>0) ? connection->error : ENOTCONN;
+		pthread_mutex_unlock(queue->signal.mutex);
+		return NULL;
+
+	    }
 
 	}
 
