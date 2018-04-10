@@ -128,7 +128,7 @@ static unsigned int _write_sftp_init(struct sftp_subsystem_s *sftp, char *data)
 int send_sftp_init_v03(struct sftp_subsystem_s *sftp, unsigned int *seq)
 {
     unsigned int len=_write_sftp_init(sftp, NULL);
-    unsigned char data[len];
+    char data[len];
 
     len=_write_sftp_init(sftp, data);
 
@@ -151,7 +151,7 @@ int send_sftp_init_v03(struct sftp_subsystem_s *sftp, unsigned int *seq)
 
 int send_sftp_open_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[22 + sftp_r->call.open.len];
+    char data[22 + sftp_r->call.open.len];
     unsigned int pos=0;
     unsigned int pflags=0;
 
@@ -197,7 +197,7 @@ int send_sftp_open_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
 
 int send_sftp_create_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[17 + sftp_r->call.create.len + sftp_r->call.create.size];
+    char data[17 + sftp_r->call.create.len + sftp_r->call.create.size];
     unsigned int pos=0;
     unsigned int access=0;
     unsigned int pflags=0;
@@ -236,7 +236,7 @@ int send_sftp_create_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
 
 int send_sftp_opendir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.opendir.len];
+    char data[13 + sftp_r->call.opendir.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -268,7 +268,7 @@ int send_sftp_opendir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_read_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[25 + sftp_r->call.read.len];
+    char data[25 + sftp_r->call.read.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -305,7 +305,7 @@ int send_sftp_read_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
 
 int send_sftp_write_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[25 + sftp_r->call.write.len + sftp_r->call.write.size];
+    char data[25 + sftp_r->call.write.len + sftp_r->call.write.size];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -341,7 +341,7 @@ int send_sftp_write_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_readdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.readdir.len];
+    char data[13 + sftp_r->call.readdir.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -371,7 +371,7 @@ int send_sftp_readdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_close_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.close.len];
+    char data[13 + sftp_r->call.close.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -401,7 +401,7 @@ int send_sftp_close_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_remove_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.remove.len];
+    char data[13 + sftp_r->call.remove.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -433,7 +433,7 @@ int send_sftp_remove_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
 
 int send_sftp_rename_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[17 + sftp_r->call.rename.len + sftp_r->call.rename.target_len];
+    char data[17 + sftp_r->call.rename.len + sftp_r->call.rename.target_len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -472,7 +472,7 @@ int send_sftp_rename_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
 
 int send_sftp_mkdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.mkdir.len + sftp_r->call.mkdir.size];
+    char data[13 + sftp_r->call.mkdir.len + sftp_r->call.mkdir.size];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -504,7 +504,7 @@ int send_sftp_mkdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_rmdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.remove.len];
+    char data[13 + sftp_r->call.remove.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -534,7 +534,7 @@ int send_sftp_rmdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_stat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.stat.len];
+    char data[13 + sftp_r->call.stat.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -564,7 +564,7 @@ int send_sftp_stat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
 
 int send_sftp_lstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.lstat.len];
+    char data[13 + sftp_r->call.lstat.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -594,7 +594,7 @@ int send_sftp_lstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_fstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.fstat.len];
+    char data[13 + sftp_r->call.fstat.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -630,7 +630,7 @@ int send_sftp_fstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
 
 int send_sftp_setstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.setstat.len + sftp_r->call.setstat.size];
+    char data[13 + sftp_r->call.setstat.len + sftp_r->call.setstat.size];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -667,7 +667,7 @@ int send_sftp_setstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_fsetstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.fsetstat.len + sftp_r->call.fsetstat.size];
+    char data[13 + sftp_r->call.fsetstat.len + sftp_r->call.fsetstat.size];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -699,7 +699,7 @@ int send_sftp_fsetstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 int send_sftp_readlink_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.readlink.len];
+    char data[13 + sftp_r->call.readlink.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -731,7 +731,7 @@ int send_sftp_readlink_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 int send_sftp_symlink_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[17 + sftp_r->call.link.len + sftp_r->call.link.target_len];
+    char data[17 + sftp_r->call.link.len + sftp_r->call.link.target_len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -788,7 +788,7 @@ int send_sftp_unblock_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
 
 int send_sftp_realpath_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.realpath.len];
+    char data[13 + sftp_r->call.realpath.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -819,7 +819,7 @@ int send_sftp_realpath_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 int send_sftp_extension_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
 {
-    unsigned char data[13 + sftp_r->call.extension.len + sftp_r->call.extension.size];
+    char data[13 + sftp_r->call.extension.len + sftp_r->call.extension.size];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
