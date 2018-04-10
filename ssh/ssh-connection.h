@@ -29,4 +29,6 @@ void disconnect_ssh_server(struct ssh_session_s *session);
 int add_session_eventloop(struct ssh_session_s *session, struct context_interface_s *interface, unsigned int *error);
 void remove_session_eventloop(struct ssh_session_s *session);
 
+void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level);
+
 #endif
