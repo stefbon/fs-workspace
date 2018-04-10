@@ -20,10 +20,6 @@
 #ifndef FS_WORKSPACE_SSH_PK_KEYS_H
 #define FS_WORKSPACE_SSH_PK_KEYS_H
 
-#if HAVE_LIBGCRYPT
-#include <gcrypt.h>
-#endif
-
 #include "ssh-datatypes.h"
 
 /* layout of the data containing keymaterial (headers, footer, encoding, ...)
