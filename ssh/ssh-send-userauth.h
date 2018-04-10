@@ -22,8 +22,8 @@
 
 /* prototypes */
 
-unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *ruser, const char *service, struct ssh_key_s *pkey);
-int send_userauth_pubkey_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_string_s *sig, unsigned int *seq);
+unsigned int write_userauth_pubkey_request(char *buffer, unsigned int size, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo);
+int send_userauth_pubkey_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo, struct ssh_string_s *sig, unsigned int *seq);
 
 int send_userauth_none_message(struct ssh_session_s *session, char *user, const char *service, unsigned int *seq);
 
