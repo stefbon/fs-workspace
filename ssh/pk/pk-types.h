@@ -24,7 +24,16 @@
 #define SSH_PKALGO_ID_RSA		2
 #define SSH_PKALGO_ID_ED25519		3
 
+struct ssh_pkalgo_s {
+    unsigned int			id;
+    const char				*name;
+    unsigned int			len;
+};
+
 struct ssh_pkalgo_s *get_pkalgo(char *algo, unsigned int len);
+struct ssh_pkalgo_s *get_pkalgo_byid(unsigned int id);
+
+struct ssh_pkalgo_s *get_next_pkalgo(struct ssh_pkalgo_s *algo);
 unsigned int write_pkalgo(char *buffer, struct ssh_pkalgo_s *pkalgo);
 struct ssh_pkalgo_s *read_pkalgo(char *buffer, unsigned int size, int *read);
 
