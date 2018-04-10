@@ -60,7 +60,7 @@
 int send_sftp_init_v04(struct sftp_subsystem_s *sftp_subsystem, unsigned int *seq)
 {
     unsigned int error=0;
-    unsigned char data[9];
+    char data[9];
 
     store_uint32(&data[0], 5);
     data[4]=(unsigned char) SSH_FXP_INIT;
@@ -81,7 +81,7 @@ int send_sftp_init_v04(struct sftp_subsystem_s *sftp_subsystem, unsigned int *se
 
 int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
 {
-    unsigned char data[17 + sftp_r->call.stat.len];
+    char data[17 + sftp_r->call.stat.len];
     unsigned int pos=0;
 
     logoutput("send_sftp_stat_v04_generic: flags %i", flags);
@@ -122,7 +122,7 @@ static int send_sftp_stat_v04(struct sftp_subsystem_s *sftp_subsystem, struct sf
 
 int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
 {
-    unsigned char data[17 + sftp_r->call.lstat.len];
+    char data[17 + sftp_r->call.lstat.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
@@ -161,7 +161,7 @@ static int send_sftp_lstat_v04(struct sftp_subsystem_s *sftp_subsystem, struct s
 
 int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
 {
-    unsigned char data[17 + sftp_r->call.fstat.len];
+    char data[17 + sftp_r->call.fstat.len];
     unsigned int pos=0;
 
     sftp_r->id=get_sftp_request_id(sftp_subsystem);
