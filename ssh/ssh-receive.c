@@ -180,7 +180,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	    /* peer has performed an orderly shutdown */
 
-	    disconnect_ssh_session(session, 1, 0);
+	    start_thread_connection_problem(session, 0);
 	    return -1;
 
 	} else if (error==EAGAIN || error==EWOULDBLOCK) {
@@ -190,6 +190,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 	} else if (error==ECONNRESET || error==ENOTCONN || error==EBADF || error==ENOTSOCK) {
 
 	    logoutput_warning("read_ssh_data: socket is not connected? error %i:%s", error, strerror(error));
+	    start_thread_connection_problem(session, 0);
 
 	} else {
 
@@ -234,7 +235,7 @@ int read_incoming_data(int fd, void *ptr, uint32_t events)
 
 	/* disconnect also this side */
 
-	disconnect_ssh_session(session, 1, 0);
+	start_thread_connection_problem(session, 0);
 
     } else if ( ! (events & EPOLLIN) ) {
 
