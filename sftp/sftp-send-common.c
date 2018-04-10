@@ -186,7 +186,7 @@ int send_sftp_fsync_ctx(void *ptr, struct sftp_request_s *sftp_r)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     unsigned int len=sftp_r->call.fsync.len;
-    unsigned char data[len+4];
+    char data[len+4];
 
     store_uint32(data, len);
     memcpy(data+4, sftp_r->call.fsync.handle, len);
@@ -204,7 +204,7 @@ int send_sftp_statvfs_ctx(void *ptr, struct sftp_request_s *sftp_r)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     unsigned int len=sftp_r->call.statvfs.len;
-    unsigned char data[len+4];
+    char data[len+4];
 
     store_uint32(data, len);
     if (len>0) memcpy(data+4, sftp_r->call.statvfs.path, len);
@@ -222,7 +222,7 @@ int send_sftp_fstatvfs_ctx(void *ptr, struct sftp_request_s *sftp_r)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     unsigned int len=sftp_r->call.fstatvfs.len;
-    unsigned char data[len+4];
+    char data[len+4];
 
     store_uint32(data, len);
     memcpy(data+4, sftp_r->call.fstatvfs.handle, len);
@@ -240,7 +240,7 @@ int send_sftp_fsnotify_ctx(void *ptr, struct sftp_request_s *sftp_r)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     unsigned int len=sftp_r->call.fsnotify.len;
-    unsigned char data[len+20];
+    char data[len+20];
     unsigned int pos=0;
 
     //store_uint32(&data[pos], len + 12);
