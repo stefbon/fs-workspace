@@ -405,7 +405,7 @@ int send_start_command_message(struct ssh_channel_s *channel, const char *comman
 
 struct channel_data_s {
     unsigned int 		len;
-    unsigned char		*data;
+    char			*data;
     unsigned int 		remote_channel;
 };
 
@@ -440,7 +440,7 @@ static int _send_channel_data_message(struct ssh_session_s *session, struct ssh_
 
 }
 
-static int send_channel_data_message_connected(struct ssh_channel_s *channel, unsigned int len, unsigned char *data, unsigned int *seq)
+static int send_channel_data_message_connected(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq)
 {
     struct channel_data_s channel_data;
 
@@ -462,12 +462,12 @@ static int send_channel_data_message_connected(struct ssh_channel_s *channel, un
 
 }
 
-static int send_channel_data_message_error(struct ssh_channel_s *channel, unsigned int len, unsigned char *data, unsigned int *seq)
+static int send_channel_data_message_error(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq)
 {
     return -1;
 }
 
-int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, unsigned char *data, unsigned int *seq)
+int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq)
 {
     int result=0;
     pthread_mutex_lock(&channel->mutex);
