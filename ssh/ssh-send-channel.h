@@ -26,7 +26,7 @@ int send_channel_open_message(struct ssh_channel_s *channel, unsigned int *seq);
 void send_channel_close_message(struct ssh_channel_s *channel);
 
 int send_start_command_message(struct ssh_channel_s *channel, const char *command, const char *name, unsigned char reply, unsigned int *seq);
-int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, unsigned char *data, unsigned int *seq);
+int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq);
 void switch_channel_send_data(struct ssh_channel_s *channel, const char *what);
 
 #endif
