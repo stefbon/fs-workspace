@@ -41,13 +41,15 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/ssh-connection.c \
 			ssh/ssh-data.c \
 			ssh/ssh-datatypes.c \
-			ssh/ssh-encryption-libgcrypt.c ssh/ssh-encryption.c ssh/ssh-encryption-chacha20-poly1305-libgcrypt.c\
+			ssh/datatypes/ssh-namelist.c ssh/datatypes/ssh-string.c ssh/datatypes/ssh-mpint.c ssh/datatypes/ssh-uint.c \
+			ssh/ssh-encryption-libgcrypt.c ssh/ssh-encryption.c ssh/ssh-encryption-chacha20-poly1305-libgcrypt.c \
+			ssh/extensions/extension.c \
 			ssh/ssh-hostinfo.c \
 			ssh/ssh-kexinit.c ssh/ssh-kex.c \
 			ssh/ssh-keyx-dh-libgcrypt.c ssh/ssh-keyx-dh.c ssh/ssh-keyx.c \
 			ssh/ssh-language.c \
 			ssh/ssh-mac-libgcrypt.c ssh/ssh-mac.c ssh/ssh-mac-chacha20-poly1305-libgcrypt.c \
-			ssh/ssh-pubkey.c ssh/ssh-pubkey-libgcrypt.c \
+			ssh/ssh-pubkey.c \
 			ssh/ssh-receive-channel.c \
 			ssh/ssh-receive-greeter.c \
 			ssh/ssh-queue-payload.c \
@@ -66,5 +68,6 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/pk/asn1.c ssh/pk/openssh-localdb.c ssh/pk/openssh-utils.c \
 			ssh/pk/pk-types.c ssh/pk/pk-keys.c ssh/pk/pk-compare.c ssh/pk/pk-keystore.c ssh/pk/pk-keystore-openssh.c \
 			ssh/pk/pk-layout.c ssh/pk/pk-read-private.c ssh/pk/pk-readwrite-public.c ssh/pk/pk-sign.c ssh/pk/pk-utils.c ssh/pk/pk-verify.c \
+			ssh/pk/sign-types.c \
 			ssh/ssh-utils-libgcrypt.c ssh/ssh-utils.c
 
