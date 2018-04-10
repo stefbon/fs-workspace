@@ -97,6 +97,11 @@ struct server_reply_s {
 
 #define SESSION_STATUS_DISCONNECT				99
 
+#define SESSION_LEVEL_SYSTEM					0
+#define SESSION_LEVEL_TRANSPORT					1
+#define SESSION_LEVEL_AUTH					2
+#define SESSION_LEVEL_CONNECTION				3
+
 #define CHANNEL_STATUS_INIT				1
 #define CHANNEL_STATUS_UP				2
 #define CHANNEL_STATUS_DOWN				3
@@ -116,7 +121,12 @@ struct server_reply_s {
 
 #define CHANNELS_TABLE_SIZE				8
 
-
+struct subsys_status_s {
+    unsigned int			level;
+    unsigned int			status;
+    unsigned int			substatus;
+    unsigned int			error;
+};
 
 struct ssh_status_s {
     uint64_t				unique;
@@ -126,6 +136,7 @@ struct ssh_status_s {
     unsigned int			substatus;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
+    unsigned char			thread;
     unsigned int 			error;
     unsigned int			max_packet_size;
 };
@@ -177,7 +188,7 @@ struct ssh_channel_s {
     void				(* free)(struct ssh_channel_s *c);
     struct list_element_s		list;
     void				(* receive_msg_channel_data)(struct ssh_channel_s *channel, struct ssh_payload_s *payload);
-    int 				(* send_data_message)(struct ssh_channel_s *channel, unsigned int len, unsigned char *data, unsigned int *seq);
+    int 				(* send_data_message)(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq);
     union {
 	struct serversocket_s {
 	    char			*path;
@@ -192,9 +203,6 @@ struct ssh_channel_s {
 };
 
 struct ssh_pubkey_s {
-    int 				(* read_parameters)(struct ssh_key_s *key, unsigned int *error);
-    int					(* verify_sigH)(struct ssh_key_s *key, struct common_buffer_s *data, struct common_buffer_s *sigH, const char *hashname);
-    int 				(* create_signature)(struct ssh_key_s *key, struct common_buffer_s *data, struct ssh_string_s *signature, const char *hashname, unsigned int *error);
     struct ssh_key_s			server_hostkey;
 };
 
@@ -329,17 +337,26 @@ struct ssh_keyx_s {
 
 struct ssh_utils_s {
     int					(* init_library)(unsigned int *error);
-    unsigned int 			(* hash)(const char *name, struct common_buffer_s *in, struct common_buffer_s *out, unsigned int *error);
+    unsigned int 			(* hash)(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error);
     unsigned int 			(* get_digest_len)(const char *name);
     uint64_t 				(* ntohll)(uint64_t value);
     unsigned int			(* fill_random)(char *pos, unsigned int len);
 };
 
-#define _SSH_CONNECTION_TYPE_IPV4	1
-#define _SSH_CONNECTION_TYPE_IPV6	2
+#define _SSH_CONNECTION_TYPE_IPV4		1
+#define _SSH_CONNECTION_TYPE_IPV6		2
+
+#define SSH_CONNECTION_STATUS_INIT		1
+#define SSH_CONNECTION_STATUS_CONNECTING	2
+#define SSH_CONNECTION_STATUS_CONNECTED		3
+#define SSH_CONNECTION_STATUS_DISCONNECTING	4
+#define SSH_CONNECTION_STATUS_DISCONNECTED	5
 
 struct ssh_connection_s {
     unsigned char			type;
+    unsigned int			status;
+    unsigned int			expire;
+    unsigned int			error;
     union {
 	struct sockaddr_in 		inet;
 	struct sockaddr_in6 		inet6;
@@ -491,6 +508,24 @@ struct ssh_userauth_s {
     char				*r_ipv4;
 };
 
+#define SSH_EXTENSIONS_COUNT					2
+#define SSH_EXTENSION_NAME_RSA_SHA2_256			"rsa-sha2-256"
+#define SSH_EXTENSION_NAME_RSA_SHA2_512			"rsa-sha2-512"
+
+#define SSH_EXTENSION_SUPPORTED_UNKNOWN				1
+#define SSH_EXTENSION_SUPPORTED_TRUE				2
+#define SSH_EXTENSION_SUPPORTED_FALSE				3
+#define SSH_EXTENSION_SUPPORTED_ERROR				4
+
+struct ssh_extension_s {
+    unsigned char			status;
+    const char 				*name;
+};
+
+struct ssh_extensions_s {
+    struct ssh_extension_s 		a_exts[SSH_EXTENSIONS_COUNT];
+};
+
 struct session_list_s {
     struct ssh_session_s		*next;
     struct ssh_session_s		*prev;
@@ -510,6 +545,7 @@ struct ssh_session_s {
     struct ssh_receive_s		receive;
     struct ssh_send_s			send;
     struct ssh_hostinfo_s		hostinfo;
+    struct ssh_extensions_s		extensions;
     struct session_list_s		list;
 };
 
