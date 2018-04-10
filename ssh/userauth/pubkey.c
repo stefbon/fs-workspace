@@ -49,6 +49,7 @@
 #include "pk/pk-types.h"
 #include "pk/pk-keys.h"
 #include "pk/pk-keystore.h"
+#include "pk/sign-types.h"
 
 #include "ssh-receive.h"
 #include "ssh-queue-payload.h"
@@ -81,14 +82,15 @@
 
 */
 
-static signed char create_pk_signature(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_string_s *signature)
+static signed char create_pk_signature(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_signalgo_s *signalgo, struct ssh_string_s *signature)
 {
-    unsigned int len = write_userauth_pubkey_request(NULL, 0, r_user, service, pkey) + write_ssh_string(NULL, 0, 's', (void *) &session->data.sessionid);
+    unsigned int len = write_userauth_pubkey_request(NULL, 0, r_user, service, pkey, signalgo) + write_ssh_string(NULL, 0, 's', (void *) &session->data.sessionid);
     unsigned int left = len;
     char buffer[len];
     unsigned int error=0;
     int result=0;
     char *pos=buffer;
+    char *hashname=get_hashname_signalgo(signalgo);
 
     /* session id */
 
@@ -98,13 +100,15 @@ static signed char create_pk_signature(struct ssh_session_s *session, char *r_us
 
     /* write the userauth pubkey message */
 
-    result = write_userauth_pubkey_request(pos, left, r_user, service, pkey);
+    result = write_userauth_pubkey_request(pos, left, r_user, service, pkey, signalgo);
     pos += result;
     left -= result;
 
+    logoutput("create_pk_signature: hash %s", hashname);
+
     /* create a signature of this data using the private key belonging to the public key */
 
-    if ((* skey->sign)(skey, buffer, (unsigned int)(pos - buffer), signature, NULL, &error)>=0) {
+    if ((* skey->sign)(skey, buffer, (unsigned int)(pos - buffer), signature, hashname, &error)>=0) {
 
 	return 0;
 
@@ -125,17 +129,17 @@ static signed char create_pk_signature(struct ssh_session_s *session, char *r_us
     - string 			public key blob from request
 */
 
-static int check_received_pubkey_pk(char *buffer, unsigned int size, struct ssh_key_s *pkey)
+static int check_received_pubkey_pk(char *buffer, unsigned int size, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo)
 {
     unsigned int error=0;
-    unsigned int len = 32 + write_pkalgo(NULL, pkey->algo) + (* pkey->write_key)(pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
+    unsigned int len = 32 + write_signalgo(NULL, signalgo) + (* pkey->write_key)(pkey, NULL, 0, PK_DATA_FORMAT_SSH_STRING, &error);
     char data[len];
     unsigned int pos=0;
 
     data[pos]=SSH_MSG_USERAUTH_PK_OK;
     pos++;
 
-    pos+=write_pkalgo(&data[pos], pkey->algo);
+    pos+=write_signalgo(&data[pos], signalgo);
     pos+=(* pkey->write_key)(pkey, &data[pos], len - pos, PK_DATA_FORMAT_SSH_STRING, &error);
 
     if ( pos == size && memcmp((char *)buffer, data, size) == 0) return 0;
@@ -144,17 +148,15 @@ static int check_received_pubkey_pk(char *buffer, unsigned int size, struct ssh_
 
 }
 
-static int ssh_send_pk_signature(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_userauth_s *userauth)
+static int ssh_send_pk_signature(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_key_s *skey, struct ssh_signalgo_s *signalgo, struct ssh_userauth_s *userauth)
 {
     struct ssh_string_s signature;
     int result=-1;
     unsigned int seq=0;
 
-    logoutput("ssh_send_pk_signature");
-
     init_ssh_string(&signature);
 
-    if (create_pk_signature(session, r_user, "ssh-connection", pkey, skey, &signature)==-1) {
+    if (create_pk_signature(session, r_user, "ssh-connection", pkey, skey, signalgo, &signature)==-1) {
 
 	logoutput("ssh_send_pk_signature: creating public key signature failed");
 	userauth->status|=SSH_USERAUTH_STATUS_ERROR;
@@ -164,7 +166,7 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, char *r_user, st
 
     /* send userauth publickey request to server with signature */
 
-    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, &signature, &seq)==0) {
+    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, signalgo, &signature, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
@@ -228,12 +230,12 @@ static int ssh_send_pk_signature(struct ssh_session_s *session, char *r_user, st
 
 /* test pk algo and public key are accepted */
 
-static int send_userauth_pubkey(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_userauth_s *userauth)
+static int send_userauth_pubkey(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, struct ssh_signalgo_s *signalgo, struct ssh_userauth_s *userauth)
 {
     unsigned int seq=0;
     int result=-1;
 
-    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, NULL, &seq)==0) {
+    if (send_userauth_pubkey_message(session, r_user, "ssh-connection", pkey, signalgo, NULL, &seq)==0) {
 	struct timespec expire;
 	struct ssh_payload_s *payload=NULL;
 	unsigned int error=0;
@@ -285,7 +287,7 @@ static int send_userauth_pubkey(struct ssh_session_s *session, char *r_user, str
 
 	    /* check the received key is the same as the one send */
 
-	    result=check_received_pubkey_pk(payload->buffer, payload->len, pkey);
+	    result=check_received_pubkey_pk(payload->buffer, payload->len, pkey, signalgo);
 
 	} else if (payload->type==SSH_MSG_USERAUTH_FAILURE) {
 
@@ -324,6 +326,7 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
 
     while (user_identity) {
 	struct ssh_key_s pkey;
+	struct ssh_signalgo_s *signalgo=NULL;
 	int result=-1;
 
 	init_ssh_key(&pkey, SSH_KEY_TYPE_PUBLIC, NULL);
@@ -349,8 +352,12 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
 	    - rsa-sha2-512
 	*/
 
-	if (send_userauth_pubkey(session, r_user, &pkey, userauth)==0) {
+	signalgo=get_default_signalgo(pkey.algo->id);
+
+	if (send_userauth_pubkey(session, r_user, &pkey, signalgo, userauth)==0) {
 	    struct ssh_key_s skey;
+
+	    /* confirm the signature method is accepted by server if not alrady */
 
 	    /* current public key is accepted by server: send signature
 		get the private key for this identity */
@@ -359,7 +366,7 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
 
 	    if (read_key_param(user_identity, &skey)==0) {
 
-		result=ssh_send_pk_signature(session, r_user, &pkey, &skey, userauth);
+		result=ssh_send_pk_signature(session, r_user, &pkey, &skey, signalgo, userauth);
 
 	    } else {
 
