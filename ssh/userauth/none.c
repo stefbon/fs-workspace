@@ -46,6 +46,10 @@
 #include "ssh-common-protocol.h"
 
 #include "ssh-pubkey.h"
+#include "pk/pk-types.h"
+#include "pk/pk-keys.h"
+#include "pk/pk-keystore.h"
+#include "pk/sign-types.h"
 
 #include "ssh-receive.h"
 #include "ssh-queue-payload.h"
