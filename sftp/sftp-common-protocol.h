@@ -185,8 +185,8 @@ struct name_response_s {
     unsigned int		left;
     unsigned int		size;
     signed char			eof; /* optional end-of-data, only supported version >= 6 */
-    unsigned char		*buff; /* list of names (name, attr) as send by server, leave it to the receiving (FUSE) thread to process */
-    unsigned char		*pos;
+    char			*buff; /* list of names (name, attr) as send by server, leave it to the receiving (FUSE) thread to process */
+    char			*pos;
 };
 
 struct attr_response_s {
