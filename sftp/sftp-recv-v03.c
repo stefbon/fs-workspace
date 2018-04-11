@@ -123,7 +123,7 @@ static unsigned int map_sftp_error(unsigned int ssh_fx_error)
     the rest is in buffer
 */
 
-void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer)
+void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -133,6 +133,7 @@ void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.status.code=get_uint32(&buffer[pos]);
@@ -148,7 +149,7 @@ void receive_sftp_status_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
 }
 
-void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, char *buffer)
+void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -158,6 +159,7 @@ void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.handle.len=get_uint32(&buffer[pos]);
@@ -167,17 +169,13 @@ void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
 	if (sftp_r->response.handle.len < 256) {
 
-	    sftp_r->response.handle.name=malloc(sftp_r->response.handle.len);
+	    memmove(buffer, &buffer[pos], sftp_r->response.handle.len);
+	    buffer=realloc(buffer, sftp_r->response.handle.len);
 
-	    if (sftp_r->response.handle.name) {
+	    sftp_r->response.handle.name=buffer;
+	    if (sftp_r->response.handle.name==NULL) sftp_r->error=ENOMEM;
 
-		memcpy(sftp_r->response.handle.name, &buffer[pos], sftp_r->response.handle.len);
-
-	    } else {
-
-		sftp_r->error=ENOMEM;
-
-	    }
+	    sftp_header->buffer=NULL;
 
 	} else {
 
@@ -192,7 +190,7 @@ void receive_sftp_handle_v03(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
 }
 
-void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -202,26 +200,22 @@ void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.data.size=get_uint32(&buffer[pos]);
-	sftp_r->response.data.data=malloc(sftp_r->response.data.size);
 	pos+=4;
+
+	memmove(buffer, &buffer[pos], sftp_r->response.data.size);
+	buffer=realloc(buffer, sftp_r->response.data.size);
 
 	logoutput("receive_sftp_data: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
 
-	if (sftp_r->response.data.data) {
+	/* let the processing of this into names, attr to the receiving (FUSE) thread */
+	sftp_r->response.data.data=buffer;
+	sftp_r->response.data.eof=-1;
 
-	    /* let the processing of this into names, attr to the receiving (FUSE) thread */
-	    memcpy(sftp_r->response.data.data, &buffer[pos], sftp_r->response.data.size);
-	    pos+=sftp_r->response.data.size;
-	    sftp_r->response.data.eof=-1;
-
-	} else {
-
-	    sftp_r->error=ENOMEM;
-
-	}
+	sftp_header->buffer=NULL;
 
 	signal_sftp_received_id(sftp_subsystem, req);
 
@@ -233,7 +227,7 @@ void receive_sftp_data_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 }
 
-void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -243,24 +237,22 @@ void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.names.left=get_uint32(&buffer[pos]);
-	sftp_r->response.names.size=sftp_header->len - 4; /* minus the count field */
-	sftp_r->response.names.buff=malloc(sftp_r->response.names.size);
-	sftp_r->response.names.eof=-1;
 	pos+=4;
+	sftp_r->response.names.size=sftp_header->len - pos; /* minus the count field */
 
-	if (sftp_r->response.names.buff) {
+	memmove(buffer, &buffer[pos], sftp_r->response.names.size);
+	buffer=realloc(buffer, sftp_r->response.names.size);
 
-	    /* let the processing of this into names, attr to the receiving (FUSE) thread */
-	    memcpy(sftp_r->response.names.buff, &buffer[pos], sftp_r->response.names.size);
+	/* let the processing of this into names, attr to the receiving (FUSE) thread */
+	sftp_r->response.names.buff=buffer;
+	sftp_r->response.names.eof=-1;
+	sftp_header->buffer=NULL;
 
-	} else {
-
-	    sftp_r->error=ENOMEM;
-
-	}
+	if (sftp_r->response.names.buff==NULL) sftp_r->error=ENOMEM;
 
 	sftp_r->response.names.pos=sftp_r->response.names.buff;
 
@@ -274,7 +266,7 @@ void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 }
 
-void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -284,22 +276,12 @@ void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.attr.size=sftp_header->len;
-	sftp_r->response.attr.buff=malloc(sftp_r->response.attr.size);
-
-	if (sftp_r->response.attr.buff) {
-
-	    /* let the processing of this attr to the receiving (FUSE) thread */
-	    memcpy(sftp_r->response.attr.buff, &buffer[pos], sftp_r->response.attr.size);
-
-	} else {
-
-	    sftp_r->error=ENOMEM;
-	    sftp_r->response.attr.size=0;
-
-	}
+	sftp_r->response.attr.buff=buffer;
+	sftp_header->buffer=NULL;
 
 	signal_sftp_received_id(sftp_subsystem, req);
 
@@ -311,8 +293,9 @@ void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 
 }
 
-void receive_sftp_extension_v03(struct sftp_subsystem_s *sftp, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_extension_v03(struct sftp_subsystem_s *sftp, struct sftp_header_s *sftp_header)
 {
+    char *buffer=sftp_header->buffer;
     unsigned int len=get_uint32(buffer);
     unsigned int pos=4;
 
@@ -373,7 +356,7 @@ void receive_sftp_extension_v03(struct sftp_subsystem_s *sftp, struct sftp_heade
 
 }
 
-void receive_sftp_extension_reply_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_extension_reply_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -383,20 +366,13 @@ void receive_sftp_extension_reply_v03(struct sftp_subsystem_s *sftp_subsystem, s
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.extension.size=sftp_header->len;
-	sftp_r->response.extension.buff=malloc(sftp_r->response.extension.size);
+	sftp_r->response.extension.buff=buffer;
 
-	if (sftp_r->response.extension.buff) {
-
-	    memcpy(sftp_r->response.extension.buff, &buffer[pos], sftp_r->response.extension.size);
-
-	} else {
-
-	    sftp_r->error=ENOMEM;
-
-	}
+	sftp_header->buffer=NULL;
 
 	signal_sftp_received_id(sftp_subsystem, req);
 

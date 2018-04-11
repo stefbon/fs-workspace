@@ -128,7 +128,7 @@ static unsigned int map_sftp_error(unsigned int ssh_fx_error)
     the rest is in buffer
 */
 
-void receive_sftp_status_v04(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_status_v04(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -138,6 +138,7 @@ void receive_sftp_status_v04(struct sftp_subsystem_s *sftp_subsystem, struct sft
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.status.code=get_uint32(&buffer[pos]);

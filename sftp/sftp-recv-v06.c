@@ -147,7 +147,7 @@ static unsigned int map_sftp_error(unsigned int ssh_fx_error)
     the rest is in buffer
 */
 
-void receive_sftp_status_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_status_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
@@ -157,6 +157,7 @@ void receive_sftp_status_v06(struct sftp_subsystem_s *sftp_subsystem, struct sft
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
+	char *buffer=sftp_header->buffer;
 	unsigned int len=0;
 
 	sftp_r->type=sftp_header->type;
@@ -206,18 +207,19 @@ void receive_sftp_status_v06(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
     } else {
 
-	logoutput("receive_sftp_status: error %i storing status (%s)", error, strerror(error));
+	logoutput("receive_sftp_status_v06: error %i storing status (%s)", error, strerror(error));
 
     }
 
 }
 
-void receive_sftp_data_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header, unsigned char *buffer)
+void receive_sftp_data_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_header_s *sftp_header)
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
     unsigned int pos=0;
     void *req=NULL;
+    char *buffer=sftp_header->buffer;
 
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
     if (req==NULL) return;
@@ -225,46 +227,24 @@ void receive_sftp_data_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     sftp_r->type=sftp_header->type;
     sftp_r->response.data.size=get_uint32(&buffer[pos]);
     pos+=4;
+    sftp_r->response.data.eof=-1;
 
-    logoutput("receive_sftp_data: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
+    /* there is an extra byte for eol */
 
-    sftp_r->response.data.data=malloc(sftp_r->response.data.size);
+    if (sftp_r->response.data.size + pos + 1 == sftp_header->len) sftp_r->response.data.eof=(unsigned char) buffer[sftp_r->response.data.size + pos];
 
-    if (sftp_r->response.data.data==NULL) {
+    logoutput("receive_sftp_data_v06: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
 
-	sftp_r->error=ENOMEM;
-
-	if (signal_sftp_received_id(sftp_subsystem, req)==-1) {
-
-	    free(sftp_r->response.data.data);
-
-	}
-
-	return;
-
-    }
+    memmove(buffer, &buffer[pos], sftp_r->response.data.size);
+    buffer=realloc(buffer, sftp_r->response.data.size);
 
     /* let the processing of this into names, attr to the receiving (FUSE) thread */
-    memcpy(sftp_r->response.data.data, &buffer[pos], sftp_r->response.data.size);
-    pos+=sftp_r->response.data.size;
+    sftp_r->response.data.data=buffer;
+    sftp_header->buffer=NULL;
 
-    if (pos + 1 == sftp_header->len) {
+    if (sftp_r->response.data.data==NULL) sftp_r->error=ENOMEM;
 
-	/* there is an extra byte for eol */
-
-	sftp_r->response.data.eof=(unsigned char) buffer[pos];
-
-    } else {
-
-	sftp_r->response.data.eof=-1;
-
-    }
-
-    if (signal_sftp_received_id(sftp_subsystem, req)==-1) {
-
-	free(sftp_r->response.data.data);
-
-    }
+    signal_sftp_received_id(sftp_subsystem, req);
 
 }
 

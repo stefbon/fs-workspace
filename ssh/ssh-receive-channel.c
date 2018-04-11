@@ -302,7 +302,7 @@ static void receive_msg_channel_data(struct ssh_session_s *session, struct ssh_p
 
 }
 
-void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s *p))
+void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s *payload))
 {
 
     logoutput("switch_channel_receive_data: %s", name);

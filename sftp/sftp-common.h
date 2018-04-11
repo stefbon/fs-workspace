@@ -27,6 +27,7 @@ struct sftp_header_s {
     unsigned int			id;
     unsigned int			sequence;
     unsigned int 			len;
+    char				*buffer;
 };
 
 /* interface specific data like prefix */
@@ -72,13 +73,13 @@ struct sftp_attr_ops_s {
 };
 
 struct sftp_recv_ops_s {
-    void				(* status)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* handle)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* data)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* name)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* attr)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* extension)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
-    void				(* extension_reply)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header, char *buffer);
+    void				(* status)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* handle)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* data)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* name)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* attr)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* extension)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
+    void				(* extension_reply)(struct sftp_subsystem_s *sftp, struct sftp_header_s *header);
 };
 
 struct sftp_supported_s {

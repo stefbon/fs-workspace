@@ -21,6 +21,6 @@
 #define FS_WORKSPACE_SSH_RECEIVE_CHANNEL_H
 
 void register_channel_cb();
-void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s *p));
+void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, char **b, unsigned int l, unsigned int s));
 
 #endif

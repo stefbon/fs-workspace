@@ -83,9 +83,7 @@ static void process_sftp_error(struct sftp_subsystem_s *sftp_subsystem, struct s
     unsigned int id=0;
     void *req=NULL;
 
-    /*
-	something is wrong with message: try to send a signal to waiting thread
-    */
+    /* something is wrong with message: try to send a signal to waiting thread */
 
     id=get_uint32(&payload->buffer[pos]);
     req=get_sftp_request(sftp_subsystem, id, &sftp_r, &tmp_error);
@@ -109,7 +107,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ( ((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
     struct sftp_header_s sftp_header;
-    unsigned int pos=9; /* payload is of form SSH_MSG_CHANNEL_DATA || local channel || string data so data begins at 1 + 4 + 4 = 9 */
+    unsigned int pos=9;
     unsigned int len=get_uint32(&payload->buffer[pos]);
 
     /*
@@ -121,12 +119,12 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
     */
 
     /*
-	length of sftp data plus 4 plus 9 is equal to the length of the payload
+	length of sftp data plus 4 is equal to the length of the payload
     */
 
     if (13 + len != payload->len) {
 
-	logoutput("receive_sftp_reply: sftp size %i not equal to length payload %i", 13 + len, payload->len);
+	logoutput("receive_sftp_reply: sftp size %i not equal to length %i", 13 + len, payload->len);
 	process_sftp_error(sftp_subsystem, payload, EPROTO);
 	free(payload);
 	return;
@@ -139,65 +137,144 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
     sftp_header.type=(unsigned char) payload->buffer[pos];
     sftp_header.id=0;
     sftp_header.sequence=payload->sequence;
+    sftp_header.buffer=NULL;
     pos++;
     sftp_header.len--;
 
     switch (sftp_header.type) {
 
-	case SSH_FXP_STATUS:
+	case SSH_FXP_STATUS: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->status)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->status)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_HANDLE:
+	case SSH_FXP_HANDLE: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->handle)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->handle)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_DATA:
+	case SSH_FXP_DATA: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->data)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->data)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_NAME:
+	case SSH_FXP_NAME: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->name)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->name)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_ATTRS:
+	case SSH_FXP_ATTRS: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->attr)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->attr)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_EXTENDED:
+	case SSH_FXP_EXTENDED: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->extension)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->extension)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
-	case SSH_FXP_EXTENDED_REPLY:
+	case SSH_FXP_EXTENDED_REPLY: {
+	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
-	    (* sftp_subsystem->recv_ops->extension_reply)(sftp_subsystem, &sftp_header, &payload->buffer[pos]);
+
+	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
+	    buffer=realloc(buffer, sftp_header.len);
+	    sftp_header.buffer=buffer;
+
+	    (* sftp_subsystem->recv_ops->extension_reply)(sftp_subsystem, &sftp_header);
+
+	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    payload=NULL;
+	    }
+
 	    break;
 
 	default:
@@ -206,11 +283,11 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
 
     }
 
-    free(payload);
+    if (payload) free(payload);
+
 
 }
 
 void receive_sftp_eof(struct ssh_channel_s *channel)
 {
-    
 }
