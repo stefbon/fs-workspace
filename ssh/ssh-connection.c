@@ -56,33 +56,25 @@
 
 #define _SSH_BEVENTLOOP_NAME			"SSH"
 
-extern int read_incoming_data(int fd, void *ptr, uint32_t events);
-
-void init_ssh_connection(struct ssh_session_s *session)
+void init_ssh_connection(struct ssh_connection_s *connection)
 {
-    struct ssh_connection_s *connection=&session->connection;
-
     connection->type=0;
     connection->fd=0;
     connection->xdata=NULL;
     connection->status=SSH_CONNECTION_STATUS_INIT;
     connection->error=0;
-    connection->expire=5;
-
+    connection->expire=5; /* default expire in seconds */
 }
 
-int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned int port)
+int connect_ssh_connection(struct ssh_connection_s *connection, char *address, unsigned int port)
 {
     int fd=-1;
-    struct ssh_connection_s *connection=&session->connection;
 
-    if (isvalid_ipv4(address)==1) {
+    if (check_family_ip_address(address, "ipv4")==1) {
 	struct sockaddr_in *sin=&connection->socket.inet;
 
 	connection->status=SSH_CONNECTION_STATUS_CONNECTING;
-
 	memset(sin, 0, sizeof(struct sockaddr_in));
-
 	connection->type=_SSH_CONNECTION_TYPE_IPV4;
 
 	fd=socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -96,7 +88,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 	    if (connect(fd, (struct sockaddr *) sin, sizeof(struct sockaddr_in))==0) {
 		int flags=0;
 
-		logoutput("connect_ssh_server: connected to %s:%i with fd %i", address, port, fd);
+		logoutput("connect_ssh_connection: connected to %s:%i with fd %i", address, port, fd);
 		connection->fd=fd;
 
 		connection->status=SSH_CONNECTION_STATUS_CONNECTED;
@@ -107,7 +99,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 
 	    } else {
 
-		logoutput("connect_ssh_server: error (%i:%s) connected to %s:%i", errno, strerror(errno), address, port);
+		logoutput("connect_ssh_connection: error (%i:%s) connected to %s:%i", errno, strerror(errno), address, port);
 		connection->error=errno;
 		close(fd);
 		fd=-1;
@@ -117,7 +109,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 	} else {
 
 	    connection->error=errno;
-	    logoutput("connect_ssh_server: unable to create fd error (%i:%s)", errno, strerror(errno));
+	    logoutput("connect_ssh_connection: unable to create fd error (%i:%s)", errno, strerror(errno));
 	    fd=-1;
 
 	}
@@ -125,7 +117,7 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
     } else {
 
 	connection->error=EINVAL;
-	logoutput("connect_ssh_server: unable to connect error (%i:%s)", connection->error, strerror(connection->error));
+	logoutput("connect_ssh_connection: unable to connect error (%i:%s)", connection->error, strerror(connection->error));
 
     }
 
@@ -133,15 +125,18 @@ int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned in
 
 }
 
-signed char compare_session_connection(struct ssh_session_s *session, char *address, unsigned int port)
+signed char compare_ssh_connection(struct ssh_connection_s *connection, char *address, unsigned int port)
 {
-    struct ssh_connection_s *connection=&session->connection;
-    struct sockaddr_in *sin=&connection->socket.inet;
 
-    if (sin->sin_port == htons(port)) {
-	char *tmp=inet_ntoa(sin->sin_addr);
+    if (connection->type==_SSH_CONNECTION_TYPE_IPV4) {
+	struct sockaddr_in *sin=&connection->socket.inet;
 
-	if (isvalid_ipv4(address) && strcmp(address, tmp)==0) return 0;
+	if (sin->sin_port == htons(port)) {
+	    char *tmp=inet_ntoa(sin->sin_addr);
+
+	    if (check_family_ip_address(address, "ipv4")==1 && strcmp(address, tmp)==0) return 0;
+
+	}
 
     }
 
@@ -149,11 +144,9 @@ signed char compare_session_connection(struct ssh_session_s *session, char *addr
 
 }
 
-void disconnect_ssh_server(struct ssh_session_s *session)
+void disconnect_ssh_connection(struct ssh_connection_s *connection)
 {
-    struct ssh_connection_s *connection=&session->connection;
-
-    logoutput("disconnect_ssh_server");
+    logoutput("disconnect_ssh_connection");
 
     if (connection->fd>0) {
 
@@ -164,21 +157,20 @@ void disconnect_ssh_server(struct ssh_session_s *session)
 
 }
 
-int add_session_eventloop(struct ssh_session_s *session, struct context_interface_s *interface, unsigned int *error)
+int add_ssh_connection_eventloop(struct ssh_connection_s *connection, int (* read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, struct context_interface_s *interface, unsigned int *error)
 {
-    struct ssh_connection_s *connection=&session->connection;
 
     if (connection->fd>0) {
 
-	connection->xdata=(* interface->add_context_eventloop)(interface, connection->fd, read_incoming_data, session, (char *) _SSH_BEVENTLOOP_NAME, error);
+	connection->xdata=(* interface->add_context_eventloop)(interface, connection->fd, read_incoming_data, ptr, (char *) _SSH_BEVENTLOOP_NAME, error);
 
 	if (connection->xdata) {
 
-	    logoutput("add_session_eventloop: fd %i added to eventloop", connection->fd);
+	    logoutput("add_ssh_connection_eventloop: fd %i added to eventloop", connection->fd);
 
 	} else {
 
-	    logoutput("add_session_eventloop: failed to add fd %i to eventloop, error %i (%s)", connection->fd, *error, strerror(*error));
+	    logoutput("add_ssh_connection_eventloop: failed to add fd %i to eventloop, error %i (%s)", connection->fd, *error, strerror(*error));
 	    return -1;
 
 	}
@@ -189,11 +181,9 @@ int add_session_eventloop(struct ssh_session_s *session, struct context_interfac
 
 }
 
-void remove_session_eventloop(struct ssh_session_s *session)
+void remove_ssh_connection_eventloop(struct ssh_connection_s *connection)
 {
-    struct ssh_connection_s *connection=&session->connection;
-
-    logoutput("remove_session_eventloop");
+    logoutput("remove_ssh_connection_eventloop");
 
     if (connection->xdata) {
 
@@ -204,9 +194,8 @@ void remove_session_eventloop(struct ssh_session_s *session)
 
 }
 
-static unsigned int get_status_networkconnection(struct ssh_session_s *session)
+unsigned int get_status_ssh_connection(struct ssh_connection_s *connection)
 {
-    struct ssh_connection_s *connection=&session->connection;
     int error=0;
 
     if (connection->fd>0) {
@@ -218,11 +207,14 @@ static unsigned int get_status_networkconnection(struct ssh_session_s *session)
 
 	} else {
 
-	    /* */
-
+	    error=errno;
 	    logoutput("get_status_networkconnection: error %i (%s)", errno, strerror(errno));
 
 	}
+
+    } else {
+
+	error=ENOTCONN;
 
     }
 
@@ -230,70 +222,3 @@ static unsigned int get_status_networkconnection(struct ssh_session_s *session)
 
 }
 
-static void analyze_connection_problem(void *ptr)
-{
-    struct ssh_session_s *session=(struct ssh_session_s *) ptr;
-    struct ssh_connection_s *connection=&session->connection;
-
-    pthread_mutex_lock(&session->status.mutex);
-
-    if (connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
-	unsigned int error=0;
-
-	error=get_status_networkconnection(session);
-
-	if (error>0) {
-
-	    connection->error=error;
-	    connection->status=SSH_CONNECTION_STATUS_DISCONNECTED;
-	    disconnect_ssh_server(session);
-	    remove_session_eventloop(session);
-	    connection->expire=0; /* prevent waiting */
-
-	}
-
-    }
-
-    session->status.thread=0;
-
-    pthread_mutex_unlock(&session->status.mutex);
-
-    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
-        struct ssh_receive_s *receive=&session->receive;
-	struct payload_queue_s *queue=&receive->payload_queue;
-
-	/* signal any waiting thread */
-
-	pthread_mutex_lock(queue->signal.mutex);
-	pthread_cond_broadcast(queue->signal.cond);
-	pthread_mutex_unlock(queue->signal.mutex);
-
-    }
-
-}
-
-void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level)
-{
-    struct ssh_connection_s *connection=&session->connection;
-
-    pthread_mutex_lock(&session->status.mutex);
-
-    if (session->status.thread>0) goto unlock;
-
-    if (level==0) {
-
-	if (connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
-	    unsigned int error=0;
-
-	    work_workerthread(NULL, 0, analyze_connection_problem, (void *) session, &error);
-	    session->status.thread=1;
-
-	}
-
-    }
-
-    unlock:
-
-    pthread_mutex_unlock(&session->status.mutex);
-
-}

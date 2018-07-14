@@ -95,6 +95,7 @@ static void install_net_services_context(unsigned int service, struct context_ad
     struct workspace_mount_s *workspace=context->workspace;
     struct inode_s *inode=NULL;
     struct directory_s *root_directory=NULL;
+    struct simple_lock_s wlock;
 
     if (workspace->syncdate.tv_sec < found->tv_sec || (workspace->syncdate.tv_sec == found->tv_sec && workspace->syncdate.tv_nsec < found->tv_nsec)) {
 
@@ -105,7 +106,7 @@ static void install_net_services_context(unsigned int service, struct context_ad
 
     inode=&workspace->rootinode;
 
-    if (lock_directory_excl(inode)==-1) {
+    if (wlock_directory(inode, &wlock)==-1) {
 
 	logoutput("install_net_services_context: unable to lock root directory");
 	return;
@@ -113,7 +114,7 @@ static void install_net_services_context(unsigned int service, struct context_ad
     }
 
     root_directory=get_directory(inode);
-    unlock_directory_excl(inode);
+    unlock_directory(inode, &wlock);
 
     if (service==WORKSPACE_SERVICE_SFTP) {
 	unsigned int error=0;
@@ -140,18 +141,21 @@ static void install_net_services_all(unsigned int service, struct context_addres
     unsigned int hashvalue=0;
     void *index=NULL;
     struct list_element_s *list=NULL;
+    struct simple_lock_s wlock;
+
+    init_wlock_users_hash(&wlock);
 
     rwlock:
 
-    lock_users_hash();
+    lock_users_hash(&wlock);
 
     nextuser:
 
     user=get_next_fuse_user(&index, &hashvalue);
-    if (! user) {
+    if (user==NULL) {
 
 	logoutput("install_net_services_all: ready");
-	unlock_users_hash();
+	unlock_users_hash(&wlock);
 	return;
 
     }
@@ -159,7 +163,7 @@ static void install_net_services_all(unsigned int service, struct context_addres
     if (!(user->options & WORKSPACE_TYPE_NETWORK)) goto nextuser;
 
     pthread_mutex_lock(&user->mutex);
-    unlock_users_hash();
+    unlock_users_hash(&wlock);
 
     list=user->workspaces.head;
 

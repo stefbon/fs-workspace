@@ -20,6 +20,6 @@
 #ifndef FS_WORKSPACE_SFTP_RECV_COMMON_H
 #define FS_WORKSPACE_SFTP_RECV_COMMON_H
 
-void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *payload);
+void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **payload);
 
 #endif

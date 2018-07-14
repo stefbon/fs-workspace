@@ -22,11 +22,6 @@
 
 /* prototypes */
 
-unsigned int pk_mpint_get_nbits(struct ssh_mpint_s *mp);
-int pk_mpint_cmp(struct ssh_mpint_s *a, struct ssh_mpint_s *b);
-void pk_mpint_swap(struct ssh_mpint_s *a, struct ssh_mpint_s *b);
-int pk_mpint_invm(struct ssh_mpint_s *x, struct ssh_mpint_s *a, struct ssh_mpint_s *m);
-
 int decode_buffer_base64(char *buffer, unsigned int size, struct ssh_string_s *decoded);
 
 #endif

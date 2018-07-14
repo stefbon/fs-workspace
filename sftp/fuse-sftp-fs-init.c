@@ -73,8 +73,6 @@ extern unsigned int get_sftp_interface_info(struct context_interface_s *interfac
 extern void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
 extern int start_sftp_common(struct context_interface_s *interface, void *data);
 
-static unsigned char done=0;
-
 /* generic sftp fs */
 
 static struct service_fs_s sftp_fs = {
@@ -126,13 +124,6 @@ static struct service_fs_s sftp_fs = {
 void init_sftp_subsystem_interface(struct context_interface_s *interface)
 {
     struct service_context_s *context=get_service_context(interface);
-
-    if (done==0) {
-
-	init_sshlibrary();
-	done=1;
-
-    }
 
     interface->get_interface_info=get_sftp_interface_info;
     interface->start=start_sftp_common;

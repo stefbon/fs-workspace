@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2013, 2014, 2015, 2016 Stef Bon <stefbon@gmail.com>
+  2016, 2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-int ssh_authentication(struct ssh_session_s *session);
+int start_ssh_userauth(struct ssh_session_s *session, struct payload_queue_s *queue);
 
 #endif

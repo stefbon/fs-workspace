@@ -53,11 +53,8 @@
 #include "ssh-common.h"
 #include "ssh-common-list.h"
 #include "ssh-channel.h"
-#include "ssh-admin-channel.h"
 
-#include "ssh-send-channel.h"
 #include "ssh-hostinfo.h"
-#include "ssh-receive-channel.h"
 #include "ssh-utils.h"
 
 #include "sftp-common-protocol.h"
@@ -66,8 +63,6 @@
 #include "sftp-user-v03.h"
 #include "sftp-user-v04.h"
 
-#include "ctx-options.h"
-
 /*
     get the uid and gid of the unknown user and group
     uid and gid of the remote host which are not reckognized
@@ -75,16 +70,26 @@
     get this uid/gid
 */
 
-static void get_local_unknown(struct sftp_usermapping_s *usermapping)
+static void get_local_unknown(struct context_interface_s *interface, struct sftp_usermapping_s *usermapping)
 {
     struct passwd *pwd=NULL;
-    char *unknown_user=NULL;
+    char *user=NULL;
+    struct context_option_s option;
 
-    unknown_user=get_ssh_options("user-unknown");
+    usermapping->local_unknown_uid=(uid_t) -1;
+    usermapping->local_unknown_gid=(gid_t) -1;
 
-    if (unknown_user) {
+    memset(&option, 0, sizeof(struct context_option_s));
 
-	pwd=getpwnam(unknown_user);
+    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.user-unknown", &option)==_INTERFACE_OPTION_PCHAR) {
+
+	user=option.value.ptr;
+
+    }
+
+    if (user) {
+
+	pwd=getpwnam(user);
 
     } else {
 
@@ -96,26 +101,36 @@ static void get_local_unknown(struct sftp_usermapping_s *usermapping)
 
 	usermapping->local_unknown_uid=pwd->pw_uid;
 	usermapping->local_unknown_gid=pwd->pw_gid;
+	return;
+
+    }
+
+    /* take nobody */
+
+    user=NULL;
+
+    memset(&option, 0, sizeof(struct context_option_s));
+
+    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.user-nobody", &option)==_INTERFACE_OPTION_PCHAR) {
+
+	user=option.value.ptr;
+
+    }
+
+    if (user) {
+
+	pwd=getpwnam(user);
 
     } else {
-	char *nobody_user=NULL;
 
-	/* take nobody */
+	pwd=getpwnam("nobody");
 
-	nobody_user=get_ssh_options("user-nobody");
+    }
 
-	if (nobody_user) {
+    if (pwd) {
 
-	    pwd=getpwnam(nobody_user);
-
-	    if (pwd) {
-
-		usermapping->local_unknown_uid=pwd->pw_uid;
-		usermapping->local_unknown_gid=pwd->pw_gid;
-
-	    }
-
-	}
+	usermapping->local_unknown_uid=pwd->pw_uid;
+	usermapping->local_unknown_gid=pwd->pw_gid;
 
     }
 
@@ -127,19 +142,14 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
     unsigned int size=1024;
     unsigned int error=0;
 
-    size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, &buffer[0], size, &error);
+    size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, buffer, size, &error);
 
     if (size>0) {
-	unsigned char *output=&buffer[0];;
-	unsigned char *sep=NULL;
+	char *output=buffer;
+	char *sep=NULL;
 	unsigned int len=0;
-	unsigned char string[size+1];
 
 	replace_cntrl_char(output, size);
-	memcpy(string, output, size);
-	string[size]='\0';
-
-	// logoutput("get_remote_sftp_userinfo: received %s", string);
 
 	searchoutput:
 
@@ -176,7 +186,7 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 		    memcpy(group, output, len);
 		    group[len]='\0';
 
-		    logoutput("get_remote_sftp_userinfo: found remote group %s", group);
+		    logoutput("get_remote_sftp_userinfo: found remote group '%s'", group);
 
 		}
 
@@ -274,12 +284,60 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
 }
 
-int init_sftp_usermapping(struct sftp_subsystem_s *sftp)
+static unsigned char get_sftp_user_mapping(struct context_interface_s *interface)
+{
+    struct context_option_s option;
+    unsigned char mapping=_SFTP_USER_MAPPING_SHARED;
+
+    memset(&option, 0, sizeof(struct context_option_s));
+
+    /* TODO: add "sending" of the name of the remote host */
+
+    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.type", &option)>0) {
+
+	if (strcmp(option.value.ptr, "none")==0) {
+
+	    /* no mapping or translation required, uid and gid are shared via ldap/ad for example  */
+
+	    mapping=_SFTP_USER_MAPPING_SHARED;
+
+	} else if (strcmp(option.value.ptr, "map")==0) {
+
+	    /* simple mapping is used like:
+		local user 	<-> remote user
+		root		<-> root
+		nobody		<-> nobody
+		everything else mapped to the unknown user */
+
+	    mapping=_SFTP_USER_MAPPING_NONSHARED;
+
+	} else if (strcmp(option.value.ptr, "file")==0) {
+
+	    /* there is a file with remote users mapped to local users
+		for now handle this as simple mapping */
+
+	    mapping=_SFTP_USER_MAPPING_NONSHARED;
+
+	} else {
+
+	    logoutput_warning("get_sftp_user_mapping: option sftp.usermapping.type value %s not reckognized", option.value.ptr);
+
+	}
+
+    } else {
+
+	logoutput_warning("get_sftp_user_mapping: option sftp.usermapping.type not reckognized");
+
+    }
+
+    return mapping;
+}
+
+int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_subsystem_s *sftp)
 {
     struct ssh_session_s *session=sftp->channel.session;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
     unsigned char mapping=_SFTP_USER_MAPPING_NONSHARED;
-    char *type_mapping=NULL;
     gid_t *local_gid=NULL;
     struct ssh_string_s *remote_group=NULL;
     uid_t *remote_uid=NULL;
@@ -289,14 +347,11 @@ int init_sftp_usermapping(struct sftp_subsystem_s *sftp)
 
     memset(usermapping, 0, sizeof(struct sftp_usermapping_s));
 
-    usermapping->local_unknown_uid=(uid_t) -1;
-    usermapping->local_unknown_gid=(gid_t) -1;
-    get_local_unknown(usermapping);
+    get_local_unknown(interface, usermapping);
 
     /* is the user id db shared with server? (via ldap etc.) */
 
-    type_mapping=get_mapping_user_context_ssh(session->identity.pwd.pw_uid);
-    if (strcmp(type_mapping, "none")==0) mapping=_SFTP_USER_MAPPING_SHARED;
+    mapping=get_sftp_user_mapping(interface);
 
     if (sftp->server_version==3) {
 
@@ -314,7 +369,8 @@ int init_sftp_usermapping(struct sftp_subsystem_s *sftp)
 
     } else {
 
-	/* users and groups via names */
+	/* users and groups are send from server as strings like
+	    user@example.nl and group@example.nl */
 
 	use_sftp_user_v04(sftp, mapping);
 
@@ -345,39 +401,13 @@ int init_sftp_usermapping(struct sftp_subsystem_s *sftp)
 	struct sftp_userinfo_s sftp_userinfo;
 
 	sftp_userinfo.wanted=0;
+	sftp_userinfo.remote_group=remote_group;
+	sftp_userinfo.remote_uid=remote_uid;
+	sftp_userinfo.remote_gid=remote_gid;
 
-	if (remote_group) {
-
-	    sftp_userinfo.remote_group=remote_group;
-	    sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GROUP;
-
-	} else {
-
-	    sftp_userinfo.remote_group=NULL;
-
-	}
-
-	if (remote_uid) {
-
-	    sftp_userinfo.remote_uid=remote_uid;
-	    sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_UID;
-
-	} else {
-
-	    sftp_userinfo.remote_uid=NULL;
-
-	}
-
-	if (remote_gid) {
-
-	    sftp_userinfo.remote_gid=remote_gid;
-	    sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GID;
-
-	} else {
-
-	    sftp_userinfo.remote_gid=NULL;
-
-	}
+	if (remote_group) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GROUP;
+	if (remote_uid) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_UID;
+	if (remote_gid) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GID;
 
 	sftp_userinfo.received=0;
 	get_remote_sftp_userinfo(sftp, &sftp_userinfo);

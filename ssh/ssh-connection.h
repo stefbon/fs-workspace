@@ -20,15 +20,15 @@
 #ifndef FS_WORKSPACE_SSH_CONNECTION_H
 #define FS_WORKSPACE_SSH_CONNECTION_H
 
-void init_ssh_connection(struct ssh_session_s *session);
+void init_ssh_connection(struct ssh_connection_s *connection);
+unsigned int get_status_ssh_connection(struct ssh_connection_s *connection);
 
-int connect_ssh_server(struct ssh_session_s *session, char *address, unsigned int port);
-signed char compare_session_connection(struct ssh_session_s *session, char *address, unsigned int port);
-void disconnect_ssh_server(struct ssh_session_s *session);
+signed char compare_ssh_connection(struct ssh_connection_s *connection, char *address, unsigned int port);
 
-int add_session_eventloop(struct ssh_session_s *session, struct context_interface_s *interface, unsigned int *error);
-void remove_session_eventloop(struct ssh_session_s *session);
+int connect_ssh_connection(struct ssh_connection_s *connection, char *address, unsigned int port);
+void disconnect_ssh_connection(struct ssh_connection_s *connection);
 
-void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level);
+int add_ssh_connection_eventloop(struct ssh_connection_s *connection, int (* read_incoming_data)(int fd, void *ptr, uint32_t events), void *ptr, struct context_interface_s *interface, unsigned int *error);
+void remove_ssh_connection_eventloop(struct ssh_connection_s *connection);
 
 #endif

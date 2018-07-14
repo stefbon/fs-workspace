@@ -27,12 +27,14 @@
 #define WORKSPACE_SERVICE_NFS				5
 
 #define DISCOVER_METHOD_AVAHI				1
+#define DISCOVER_METHOD_STATICFILE			2
 
 // Prototypes
 
 typedef void (*process_new_service)(unsigned int service, struct context_address_s *address, struct timespec *found, unsigned long hostid, unsigned long serviceid, void *ptr);
 
 void add_net_service_avahi(const char *type, char *hostname, char *ipv4, unsigned int port);
+void add_net_service_staticfile(const char *type, char *hostname, char *ipv4, unsigned int port);
 void get_net_services(struct timespec *since, process_new_service cb, void *ptr);
 
 void increase_service_refcount(unsigned long id);

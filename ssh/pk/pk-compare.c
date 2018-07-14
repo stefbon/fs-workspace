@@ -54,28 +54,48 @@ int compare_ssh_keys(struct ssh_key_s *a, struct ssh_key_s *b)
 
     if (a->algo->id == SSH_PKALGO_ID_RSA) {
 
-	if (pk_mpint_cmp(&a->param.rsa.n, &b->param.rsa.n)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.rsa.e, &b->param.rsa.e)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.n, &b->param.rsa.n)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.e, &b->param.rsa.e)!=0) return -1;
 
 	/* if one of keys is public then ready */
 	if (a->secret==0 || b->secret==0) goto ready;
 
-	if (pk_mpint_cmp(&a->param.rsa.d, &b->param.rsa.d)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.rsa.p, &b->param.rsa.p)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.rsa.q, &b->param.rsa.q)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.rsa.u, &b->param.rsa.u)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.d, &b->param.rsa.d)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.p, &b->param.rsa.p)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.q, &b->param.rsa.q)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.rsa.u, &b->param.rsa.u)!=0) return -1;
 
     } else if (a->algo->id == SSH_PKALGO_ID_DSS) {
 
-	if (pk_mpint_cmp(&a->param.dss.p, &b->param.dss.p)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.dss.q, &b->param.dss.q)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.dss.g, &b->param.dss.g)!=0) return -1;
-	if (pk_mpint_cmp(&a->param.dss.y, &b->param.dss.y)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.dss.p, &b->param.dss.p)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.dss.q, &b->param.dss.q)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.dss.g, &b->param.dss.g)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.dss.y, &b->param.dss.y)!=0) return -1;
 
 	/* if one of keys is public then ready */
 	if (a->secret==0 || b->secret==0) goto ready;
 
-	if (pk_mpint_cmp(&a->param.dss.x, &b->param.dss.x)!=0) return -1;
+	if (compare_ssh_mpint(&a->param.dss.x, &b->param.dss.x)!=0) return -1;
+
+    } else if (a->algo->id == SSH_PKALGO_ID_ED25519) {
+
+	/* q is the public key but is optional for the private key
+	    if defined in both test it */
+
+	if (a->secret==0 && a->param.ecc.q.lib.mpi==NULL) return -1;
+	if (b->secret==0 && b->param.ecc.q.lib.mpi==NULL) return -1;
+
+	if (a->param.ecc.q.lib.mpi && b->param.ecc.q.lib.mpi) {
+
+	    if (compare_ssh_mpoint(&a->param.ecc.q, &b->param.ecc.q)!=0) return -1;
+
+	}
+
+	if (a->secret==0 || b->secret==0) goto ready;
+
+	/* d is the private key, only found if both are private keys */
+
+	if (compare_ssh_mpint(&a->param.ecc.d, &b->param.ecc.d)!=0) return -1;
 
     } else {
 
@@ -96,24 +116,34 @@ int compare_ssh_keys(struct ssh_key_s *a, struct ssh_key_s *b)
 
 int compare_ssh_key_data(struct ssh_key_s *a, char *buffer, unsigned int len, unsigned int format)
 {
+    struct msg_buffer_s mb=INIT_SSH_MSG_BUFFER;
     struct ssh_key_s b;
     unsigned int error=0;
     int result=-1;
 
     if (buffer==NULL || len==0) return -1;
 
+    set_msg_buffer(&mb, buffer, len);
     init_ssh_key(&b, a->secret, a->algo);
 
-    if ((* b.read_key)(&b, buffer, len, format, &error)==-1) {
+    (* b.msg_read_key)(&mb, &b, format);
+
+    if (mb.error>0) {
 
 	logoutput("compare_ssh_key_data: error %i reading parameters (%s)", error, strerror(error));
-	(* b.free_param)(&b);
-	return -1;
+	goto out;
 
     }
 
     result=compare_ssh_keys(a, &b);
+
+    logoutput("compare_ssh_key_data: free");
+
+    out:
+
     (* b.free_param)(&b);
+
+    logoutput("compare_ssh_key_data: result %i", result);
 
     return result;
 

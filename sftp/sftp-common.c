@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -43,20 +41,14 @@
 #include "main.h"
 #include "logging.h"
 #include "pathinfo.h"
-#include "utils.h"
+#include "common-utils/utils.h"
 #include "workerthreads.h"
 
-#include "workspace-interface.h"
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-#include "ssh-common-list.h"
-#include "ssh-channel.h"
-#include "ssh-channel-utils.h"
-#include "ssh-admin-channel.h"
-#include "ssh-utils.h"
 
-#include "ssh-send-channel.h"
-#include "ssh-receive-channel.h"
+#include "ssh-channel.h"
+#include "ssh-utils.h"
 
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"
@@ -130,7 +122,7 @@ static void read_default_features_v06(struct sftp_subsystem_s *sftp, char *data,
 
 	logoutput("read_default_features_v06: attribute mask %i", supported->version.v06.attribute_mask);
 
-    } else { 
+    } else {
 
 	logoutput("read_default_features_v06: error reading attribute mask");
 
@@ -177,7 +169,7 @@ static void process_sftp_extension(struct sftp_subsystem_s *sftp, char *name, un
 
 */
 
-static int process_sftp_version(struct sftp_subsystem_s *sftp, unsigned char *buffer, unsigned int size)
+static int process_sftp_version(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size)
 {
     unsigned int len=0;
     unsigned int server_version=0;
@@ -360,29 +352,23 @@ static int init_sftp_subsystem(struct sftp_subsystem_s *sftp, unsigned int *erro
 
 static void clear_sftp_subsystem(struct sftp_subsystem_s *sftp)
 {
+    clear_ssh_channel(&sftp->channel);
     free_send_hash(&sftp->send_hash);
+    pthread_mutex_destroy(&sftp->mutex);
 }
 
-static void free_sftp_subsystem(struct sftp_subsystem_s *sftp_subsystem)
+static void free_sftp_subsystem(struct sftp_subsystem_s *sftp)
 {
-    struct ssh_channel_s *channel=&sftp_subsystem->channel;
-    struct ssh_session_s *session=channel->session;
-    struct channel_table_s *table=&session->channel_table;
-
     logoutput("free_sftp_subsystem");
-
-    clear_sftp_subsystem(sftp_subsystem);
-    free(sftp_subsystem);
-    sftp_subsystem=NULL;
-
+    clear_sftp_subsystem(sftp);
+    free(sftp);
 }
 
 static void remove_sftp_channel(struct ssh_channel_s *channel)
 {
     struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) (((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
-    struct ssh_session_s *session=channel->session;
 
-    remove_channel_table_locked(session, channel, 0);
+    remove_channel(channel, CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_SERVER_CLOSE);
     clear_ssh_channel(channel);
     free_sftp_subsystem(sftp);
 
@@ -406,12 +392,12 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
     }
 
     memset(sftp, 0, sizeof(struct sftp_subsystem_s));
-
+    pthread_mutex_init(&sftp->mutex, NULL);
     channel=&sftp->channel;
-    channel->type=_CHANNEL_TYPE_SFTP_SUBSYSTEM; /* default */
-    channel->session=session;
-    init_ssh_channel(channel);
+    init_ssh_channel(session, channel, _CHANNEL_TYPE_SFTP_SUBSYSTEM);
     channel->free=remove_sftp_channel;
+
+    logoutput("new_sftp_subsystem: initializing sftp");
 
     if (uri) {
 
@@ -427,8 +413,8 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
 
     logoutput("new_sftp_subsystem: error %i initializing sftp subsystem (%s)", error, strerror(error));
 
-    pthread_mutex_destroy(&channel->mutex);
-    free_sftp_subsystem(sftp);
+    clear_sftp_subsystem(sftp);
+    free(sftp);
     sftp=NULL;
 
     return NULL;
@@ -441,10 +427,8 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
 
 void umount_sftp_subsystem(struct context_interface_s *interface)
 {
-    struct sftp_subsystem_s *sftp_subsystem=NULL;
+    struct sftp_subsystem_s *sftp=NULL;
     struct ssh_channel_s *channel=NULL;
-    struct ssh_session_s *session=NULL;
-    struct channel_table_s *table=NULL;
 
     if (interface->backend.sftp.prefix.path) {
 
@@ -455,22 +439,30 @@ void umount_sftp_subsystem(struct context_interface_s *interface)
     }
 
     if (interface->ptr==NULL) return;
-
-    sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
-    channel=&sftp_subsystem->channel;
-    session=channel->session;
-    table=&session->channel_table;
+    sftp=(struct sftp_subsystem_s *) interface->ptr;
 
     logoutput("umount_sftp_subsystem");
 
-    // pthread_mutex_lock(&table->mutex);
+    channel=&sftp->channel;
 
-    /* which lock ??*/
+    pthread_mutex_lock(&sftp->mutex);
+    sftp->refcount--;
 
-    sftp_subsystem->refcount--;
-    if (sftp_subsystem->refcount==0) remove_sftp_channel(&sftp_subsystem->channel);
+    if (sftp->refcount==0) {
 
-    // pthread_mutex_unlock(&table->mutex);
+	remove_channel(&sftp->channel, CHANNEL_FLAG_CLIENT_CLOSE);
+
+    }
+
+    pthread_mutex_unlock(&sftp->mutex);
+
+    if (sftp->refcount==0) {
+
+	logoutput("umount_sftp_subsystem: refcount zero");
+	clear_sftp_subsystem(sftp);
+	free(sftp);
+
+    }
 
     interface->ptr=NULL;
 
@@ -490,7 +482,7 @@ static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, 
     if (get_sftp_sharedmap(session, name, buffer, 1024, &error)==0) {
 
 	logoutput("get_sftp_server_type_info: no prefix found for %s", name);
-	return -1;
+	return 0;
 
     }
 
@@ -558,6 +550,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
     struct sftp_subsystem_s *sftp_subsystem=NULL;
     struct ssh_channel_s *channel=NULL;
     struct channel_table_s *table=NULL;
+    struct simple_lock_s rlock;
     char *prefix=NULL;
     char *uri=NULL;
     unsigned char type=0;
@@ -634,72 +627,39 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     } else {
 
-	logoutput("connect_sftp_common: error getting sftp server info");
-	*error=EIO;
-	goto error;
+	logoutput("connect_sftp_common: no sftp server info received");
+	type=_CHANNEL_TYPE_SFTP_SUBSYSTEM;
 
     }
 
     table=&session->channel_table;
+    channeltable_readlock(table, &rlock);
 
-    /* protect the handling of adding/removing channels */
+    channel=get_next_channel(session, NULL);
+    while (channel) {
 
-    pthread_mutex_lock(&table->mutex);
+	// pthread_mutex_lock(&channel->mutex);
 
-    while (table->lock & TABLE_LOCK_LOCKED) {
+	if (channel->type==type) {
 
-	pthread_cond_wait(&table->cond, &table->mutex);
+	    if (type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
 
-    }
+		break;
 
-    table->lock|=TABLE_LOCK_OPENCHANNEL;
-    pthread_mutex_unlock(&table->mutex);
+	    } else {
 
-    /* check the channel to the same target does already exist
-	TODO: depending on the subsystem */
-
-    for (unsigned int i=0; i<table->table_size; i++) {
-	struct list_element_s *list=NULL;
-
-	list=table->hash[i].head;
-
-	while (list) {
-
-	    channel=get_containing_channel(list);
-
-	    if (channel->type==type) {
-
-		if (type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
-
-		    goto found;
-
-		} else {
-
-		    if (reverse_check_channel_uri(channel, uri)==0) goto found;
-
-		}
+		if (reverse_check_channel_uri(channel, uri)==0) break;
 
 	    }
 
-	    list=list->next;
-	    channel=NULL;
-
 	}
+
+	// pthread_mutex_unlock(&channel->mutex);
+	channel=get_next_channel(session, channel);
 
     }
 
-    found:
-
-    pthread_mutex_lock(&table->mutex);
-
-    if (channel) {
-
-	/* existing sftp found */
-
-	sftp_subsystem=(struct sftp_subsystem_s *) (((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
-	sftp_subsystem->refcount++;
-
-    } else {
+    if (channel==NULL) {
 
 	/* create new */
 
@@ -707,27 +667,63 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	if (sftp_subsystem) {
 
-	    add_channel_table(&sftp_subsystem->channel);
+	    channel=&sftp_subsystem->channel;
+	    // pthread_mutex_lock(&channel->mutex);
+
+	    channeltable_upgrade_readlock(table, &rlock);
+	    table_add_channel(channel);
+	    channeltable_unlock(table, &rlock);
+
 	    sftp_subsystem->status=SFTP_STATUS_INIT;
 	    sftp_subsystem->refcount=1;
 	    interface->free=umount_sftp_subsystem;
 
+	    if (start_channel(channel, error)==-1) {
+
+		logoutput("connect_sftp_common: unable to start channel for sftp subsystem");
+		pthread_mutex_unlock(&channel->mutex);
+		goto error;
+
+	    }
+
+	    // pthread_mutex_unlock(&channel->mutex);
+
+	} else {
+
+	    channeltable_unlock(table, &rlock);
+	    logoutput("connect_sftp_common: no sftp subsystem created");
+	    goto error;
+
 	}
 
-    }
+    } else {
 
-    if (table->lock & TABLE_LOCK_OPENCHANNEL) {
+	/* existing channel found */
 
-	/* release the lock */
-
-	table->lock -= TABLE_LOCK_OPENCHANNEL;
-	pthread_cond_broadcast(&table->cond);
+	sftp_subsystem=(struct sftp_subsystem_s *) (((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
+	sftp_subsystem->refcount++;
+	// pthread_mutex_unlock(&channel->mutex);
+	channeltable_unlock(table, &rlock);
 
     }
 
     if (sftp_subsystem) {
 
-	if (prefix==NULL || strlen(prefix)==0) {
+	if (strcmp(address->target.sftp.name, "home")==0) {
+
+	    interface->backend.sftp.complete_path=complete_path_sftp_home;
+	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_home;
+	    interface->backend.sftp.prefix.path=NULL;
+	    interface->backend.sftp.prefix.len=0;
+
+	    if (prefix) {
+
+		free(prefix);
+		prefix=NULL;
+
+	    }
+
+	} else if (prefix==NULL || strlen(prefix)==0) {
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_root;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_root;
@@ -740,16 +736,6 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 		prefix=NULL;
 
 	    }
-
-	} else if (strcmp(address->target.sftp.name, "home")==0) {
-
-	    interface->backend.sftp.complete_path=complete_path_sftp_home;
-	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_home;
-	    interface->backend.sftp.prefix.path=NULL;
-	    interface->backend.sftp.prefix.len=0;
-
-	    free(prefix);
-	    prefix=NULL;
 
 	} else {
 
@@ -773,31 +759,11 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     }
 
-    pthread_mutex_unlock(&table->mutex);
 
     if (uri) {
 
 	free(uri);
 	uri=NULL;
-
-    }
-
-    if (channel==NULL && sftp_subsystem) {
-
-	/* no existing channel found start the channel */
-
-	channel=&sftp_subsystem->channel;
-
-	if (start_new_channel(channel)==0) {
-
-	    logoutput("connect_sftp_common: started channel for sftp subsystem");
-
-	} else {
-
-	    logoutput("connect_sftp_common: unable to start channel for sftp subsystem");
-	    goto error;
-
-	}
 
     }
 
@@ -842,7 +808,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
     if (channel->type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
 	struct ssh_payload_s *payload=NULL;
 
-	/* start the sftp subsystem on the channel 
+	/* start the sftp subsystem on the channel
 	    only required for the default sftp subsytem */
 
 	logoutput("_start_sftp_common: send start sftp subsystem");
@@ -871,19 +837,18 @@ static int _start_sftp_common(struct context_interface_s *interface)
 	    } else if (payload->type==SSH_MSG_CHANNEL_FAILURE) {
 
 		logoutput("_start_sftp_common: server failed to start sftp");
-		free(payload);
+		free_payload(&payload);
 		goto error;
 
 	    } else {
 
 		logoutput("_start_sftp_common: got unexpected reply %i", payload->type);
-		free(payload);
+		free_payload(&payload);
 		goto error;
 
 	    }
 
-	    free(payload);
-	    payload=NULL;
+	    free_payload(&payload);
 
 	} else {
 
@@ -936,8 +901,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
 	    } else {
 
 		logoutput("_start_sftp_subsystem: error processing server sftp init");
-		if (session->status.error==0) session->status.error=EIO;
-		free(payload);
+		free_payload(&payload);
 		goto error;
 
 	    }
@@ -945,12 +909,12 @@ static int _start_sftp_common(struct context_interface_s *interface)
 	} else {
 
 	    logoutput("_start_sftp_subsystem: unexpected message from server: %i", payload->type);
-	    free(payload);
+	    free_payload(&payload);
 	    goto error;
 
 	}
 
-	free(payload);
+	free_payload(&payload);
 	payload=NULL;
 
     } else {
@@ -987,10 +951,10 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
     /* get basic info from server like time */
 
-    clean_ssh_channel_queue(table->admin);
+    clean_ssh_channel_queue(table->shell);
     get_timeinfo_sftp_server(sftp_subsystem);
 
-    if (init_sftp_usermapping(sftp_subsystem)==0) {
+    if (init_sftp_usermapping(interface, sftp_subsystem)==0) {
 
 	logoutput("_start_sftp_subsystem: initialized sftp usermapping");
 

@@ -26,8 +26,8 @@ struct ssh_session_s *lookup_ssh_session(uint64_t unique);
 void add_ssh_session_group(struct ssh_session_s *s);
 void remove_ssh_session_group(struct ssh_session_s *s);
 
-void lock_group_ssh_sessions();
-void unlock_group_ssh_sessions();
+void lock_group_ssh_sessions(struct simple_lock_s *l);
+void unlock_group_ssh_sessions(struct simple_lock_s *l);
 
 struct ssh_session_s *get_next_ssh_session(void **index, unsigned int *hashvalue);
 int initialize_group_ssh_sessions(unsigned int *error);

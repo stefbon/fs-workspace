@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -311,7 +309,7 @@ void *get_sftp_request(struct sftp_subsystem_s *sftp_subsystem, unsigned int id,
 
 int signal_sftp_received_id(struct sftp_subsystem_s *sftp_subsystem, void *r)
 {
-    struct ssh_signal_s *signal=sftp_subsystem->channel.signal;
+    struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) r;
     int result=0;
 
@@ -341,7 +339,7 @@ int signal_sftp_received_id(struct sftp_subsystem_s *sftp_subsystem, void *r)
 static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)
 {
     struct ssh_channel_s *channel=&sftp_subsystem->channel;
-    struct ssh_signal_s *signal=channel->signal;
+    struct ssh_signal_s *signal=channel->payload_queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) ptr;
     struct timespec expire;
     int result=0;
@@ -362,7 +360,7 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 
     pthread_mutex_lock(signal->mutex);
 
-    while (request->status!=_REQUEST_STATUS_FINISH && !(*fuse_request_flags) & FUSEDATA_FLAG_INTERRUPTED) {
+    while (request->status!=_REQUEST_STATUS_FINISH && !((*fuse_request_flags) & FUSEDATA_FLAG_INTERRUPTED)) {
 
 	result=pthread_cond_timedwait(signal->cond, signal->mutex, &expire);
 
@@ -412,7 +410,7 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 		*error=(result==ETIMEDOUT) ? ETIMEDOUT : EINTR;
 		break;
 
-	    } else if (channel->status==CHANNEL_STATUS_DOWN || (channel->status==CHANNEL_STATUS_UP && (channel->substatus & CHANNEL_SUBSTATUS_S_EOF))) {
+	    } else if (!(channel->flags & CHANNEL_FLAG_OPEN) || (channel->flags & CHANNEL_FLAG_NODATA)) {
 		struct sftp_send_hash_s *send_hash=&sftp_subsystem->send_hash;
 		struct hash_head_s *table=(struct hash_head_s *) send_hash->hashtable;
 		unsigned int hash=request->id % send_hash->tablesize;
@@ -449,7 +447,7 @@ unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeou
 
 static unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)
 {
-    struct ssh_signal_s *signal=sftp_subsystem->channel.signal;
+    struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) ptr;
     struct timespec expire;
     int result=0;

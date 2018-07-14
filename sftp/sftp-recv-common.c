@@ -43,7 +43,6 @@
 #include "main.h"
 #include "utils.h"
 
-#include "workspace-interface.h"
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
 #include "ssh-utils.h"
@@ -53,7 +52,6 @@
 #include "sftp-request-hash.h"
 
 #include "ssh-channel.h"
-#include "ssh-channel-table.h"
 
 /*
     SFTP callbacks
@@ -89,7 +87,7 @@ static void process_sftp_error(struct sftp_subsystem_s *sftp_subsystem, struct s
     req=get_sftp_request(sftp_subsystem, id, &sftp_r, &tmp_error);
 
     if (req) {
-	struct ssh_signal_s *signal=sftp_subsystem->channel.signal;
+	struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
 
 	pthread_mutex_lock(signal->mutex);
 
@@ -103,12 +101,17 @@ static void process_sftp_error(struct sftp_subsystem_s *sftp_subsystem, struct s
 
 }
 
-void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *payload)
+void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ( ((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
     struct sftp_header_s sftp_header;
+    struct ssh_payload_s *payload=*p_payload;
     unsigned int pos=9;
-    unsigned int len=get_uint32(&payload->buffer[pos]);
+    unsigned int len=0;
+
+    logoutput("receive_sftp_reply");
+
+    len=get_uint32(&payload->buffer[pos]);
 
     /*
 	SFTP has the form
@@ -126,7 +129,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
 
 	logoutput("receive_sftp_reply: sftp size %i not equal to length %i", 13 + len, payload->len);
 	process_sftp_error(sftp_subsystem, payload, EPROTO);
-	free(payload);
+	free_payload(p_payload);
 	return;
 
     }
@@ -141,95 +144,77 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
     pos++;
     sftp_header.len--;
 
+    logoutput("receive_sftp_reply: type %i", sftp_header.type);
+
     switch (sftp_header.type) {
 
 	case SSH_FXP_STATUS: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->status)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
 
 	case SSH_FXP_HANDLE: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->handle)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
 
 	case SSH_FXP_DATA: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->data)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
 
 	case SSH_FXP_NAME: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->name)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
 
 	case SSH_FXP_ATTRS: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->attr)(sftp_subsystem, &sftp_header);
 
@@ -240,39 +225,31 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
 	    break;
 
 	case SSH_FXP_EXTENDED: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->extension)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
 
 	case SSH_FXP_EXTENDED_REPLY: {
-	    char *buffer=(char *) payload;
 
 	    sftp_header.id=get_uint32(&payload->buffer[pos]);
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    memmove(buffer, &payload->buffer[pos], sftp_header.len);
-	    buffer=realloc(buffer, sftp_header.len);
-	    sftp_header.buffer=buffer;
+	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
 
 	    (* sftp_subsystem->recv_ops->extension_reply)(sftp_subsystem, &sftp_header);
 
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    payload=NULL;
 	    }
 
 	    break;
@@ -283,7 +260,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s *pay
 
     }
 
-    if (payload) free(payload);
+    if (*p_payload) free_payload(p_payload);
 
 
 }

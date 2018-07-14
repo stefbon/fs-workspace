@@ -266,6 +266,8 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 
     if (error==EOPNOTSUPP) {
 
+	logoutput("_fs_sftp_opendir_common: not supported, switching to virtual");
+
 	opendir->readdir=_fs_common_virtual_readdir;
 	opendir->fsyncdir=_fs_common_virtual_fsyncdir;
 	opendir->releasedir=_fs_common_virtual_releasedir;
@@ -377,6 +379,9 @@ static int _sftp_get_readdir_names(struct fuse_opendir_s *opendir, struct fuse_r
 
 }
 
+/* TODO: this readdir uses one big exclusive lock around the getting the names of the server and the processing of this data and creating of entries
+    possibly it's better to use the locking only when the entry is added to the directory */
+
 void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_request, size_t size, off_t offset)
 {
 
@@ -395,6 +400,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 	struct entry_s *entry=NULL;
 	char buff[size];
 	unsigned int error=EIO;
+	struct simple_lock_s wlock;
 
 	if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
@@ -404,7 +410,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 
 	}
 
-	if (lock_directory_excl(opendir->inode)==0) {
+	if (wlock_directory(opendir->inode, &wlock)==0) {
 
 	    directory=get_directory(opendir->inode);
 	    if (offset==0) get_current_time(&directory->synctime);
@@ -580,7 +586,7 @@ void _fs_sftp_readdir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
 
 	unlock:
 
-	unlock_directory_excl(opendir->inode);
+	unlock_directory(opendir->inode, &wlock);
 
     }
 
@@ -602,6 +608,7 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
     struct entry_s *entry=opendir->inode->alias;
+    struct simple_lock_s wlock;
 
     if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
@@ -684,7 +691,7 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
     /* remove local entries not found on server */
 
-    if (lock_directory_excl(opendir->inode)==0) {
+    if (wlock_directory(opendir->inode, &wlock)==0) {
 	struct directory_s *directory=get_directory(opendir->inode);
 
 	/*
@@ -706,8 +713,9 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 	    while (entry) {
 
 		next=entry->name_next;
-
 		inode=entry->inode;
+		if (check_entry_special(inode)==0) goto next;
+
 		if (inode->stim.tv_sec < directory->synctime.tv_sec || (inode->stim.tv_sec == directory->synctime.tv_sec && inode->stim.tv_nsec < directory->synctime.tv_nsec)) {
 
 		    notify_VFS_delete(get_root_ptr_context(context), opendir->inode->ino, inode->ino, entry->name.name, entry->name.len);
@@ -719,13 +727,15 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
 		}
 
+		next:
+
 		entry=next;
 
 	    }
 
 	}
 
-	unlock_directory_excl(opendir->inode);
+	unlock_directory(opendir->inode, &wlock);
 
     }
 

@@ -48,7 +48,6 @@
 #include "ssh-common-protocol.h"
 #include "ssh-utils.h"
 #include "ssh-channel.h"
-#include "ssh-channel-table.h"
 
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"

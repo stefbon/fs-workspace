@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -45,17 +43,12 @@
 #include "pathinfo.h"
 
 #include "workerthreads.h"
-#include "workspace-interface.h"
 
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-#include "ssh-common-list.h"
 #include "ssh-channel.h"
-#include "ssh-admin-channel.h"
 
-#include "ssh-send-channel.h"
 #include "ssh-hostinfo.h"
-#include "ssh-receive-channel.h"
 #include "ssh-utils.h"
 
 #include "sftp-common-protocol.h"
@@ -69,8 +62,9 @@ int get_session_status_ctx(struct context_interface_s *interface)
 
     if (sftp_subsystem) {
 	struct ssh_session_s *session=sftp_subsystem->channel.session;
+	struct ssh_status_s *status=&session->status;
 
-	return (session->status.status == SESSION_STATUS_CONNECTION || session->status.status == SESSION_STATUS_REEXCHANGE) ? 0 : -1;
+	return (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) ? -1 : 0;
 
     }
 

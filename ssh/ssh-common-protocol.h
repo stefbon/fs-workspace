@@ -31,6 +31,8 @@
 #define SSH_MSG_DEBUG                               		4
 #define SSH_MSG_SERVICE_REQUEST                     		5
 #define SSH_MSG_SERVICE_ACCEPT                      		6
+#define SSH_MSG_EXT_INFO					7
+#define SSH_MSG_NEWCOMPRESS					8
 
 #define SSH_MSG_KEXINIT                             		20
 #define SSH_MSG_NEWKEYS                             		21
@@ -103,6 +105,6 @@
 
 /* prototypes */
 
-unsigned int write_disconnect_reason(unsigned int reason, char *pos, unsigned int size, unsigned int *error);
+const char *get_disconnect_reason(unsigned int reason);
 
 #endif

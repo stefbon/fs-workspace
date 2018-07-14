@@ -180,7 +180,9 @@ static int compare_host_openssh(char *host, char *ipv4, char *hostname)
 
 }
 
-static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, struct ssh_key_s *key, unsigned int *error)
+/* look in the file fp for a hostkey */
+
+static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, struct ssh_key_s *key, const char *what, unsigned int *error)
 {
     int result=-1;
     char *line=NULL;
@@ -202,9 +204,27 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 
 	if (len==0) continue;
 	clear_cntrl_char(line, len);
-	if ( line[0] == '#' || line[0] == '@' || line[0] == '|' ) continue;
+	if ( line[0] == '#' || line[0] == '|' ) continue;
 
-	start=line;
+	if (strcmp(what, "ca")==0) {
+	    unsigned int tmp=strlen("@cert-authority");
+
+	    /* look for lines starting with @cert-authority */
+
+	    if (line[0] != '@') continue;
+	    if (len <= tmp + 1) continue;
+	    if (memcmp(line, "@cert-authority ", tmp+1)!=0) continue;
+
+	    start = line + tmp + 1;
+	    len=(unsigned int) strlen(start);
+
+	} else {
+
+	    if (line[0] == '@') continue;
+	    start=line;
+
+	}
+
 	sep=memchr(start, ' ', len);
 
 	if (sep) {
@@ -240,7 +260,7 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 
 	    *sep='\0';
 
-	    algo=get_pkalgo(start, strlen(start));
+	    algo=get_pkalgo(start, strlen(start), NULL);
 
 	    if (algo == NULL) {
 
@@ -304,7 +324,7 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 
 /* check the server hostkey against the personal known_hosts file */
 
-int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_s *hostkey)
+int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_s *pkey, const char *what)
 {
     FILE *fp = NULL;
     unsigned int error=0;
@@ -336,7 +356,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
 
     if (fp) {
 
-	result=_check_serverkey_pk(fp, remotehost, remoteipv4, hostkey, &error);
+	result=_check_serverkey_pk(fp, remotehost, remoteipv4, pkey, what, &error);
 	fclose(fp);
 	if (result==0) goto finish;
 
@@ -356,7 +376,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
 
     if (fp) {
 
-	result=_check_serverkey_pk(fp, remotehost, remoteipv4, hostkey, &error);
+	result=_check_serverkey_pk(fp, remotehost, remoteipv4, pkey, what, &error);
 	fclose(fp);
 
     } else {

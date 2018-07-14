@@ -96,7 +96,8 @@ static int write_sig_param_buffer(gcry_sexp_t s_sig, struct ssh_string_s *sig, c
 
     sig->len=size;
 
-    /* write mpi to buffer using "STD" format (no length header) */
+    /* write mpi to buffer using "STD" format (no length header)
+	test this ... for pubkey and hostbased auth */
 
     pos=sig->ptr;
 
@@ -172,6 +173,7 @@ int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_rsa: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -187,6 +189,7 @@ int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_rsa: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -196,6 +199,7 @@ int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_rsa: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EINVAL;
 	goto out;
 
@@ -253,6 +257,7 @@ int create_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_dss: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -267,6 +272,7 @@ int create_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_dss: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -276,6 +282,7 @@ int create_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("create_sig_dss: error %s/%s", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -308,6 +315,95 @@ int create_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
 }
 
+int create_sig_ecc(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
+{
+    int success=-1;
+    int algo=gcry_md_map_name((hashname) ? hashname : "sha1");
+    gcry_sexp_t s_data = NULL, s_private = NULL, s_sig = NULL;
+    gcry_error_t err = 0;
+    int len=0;
+    char *curve=NULL;
+
+    if (key->algo->id == SSH_PKALGO_ID_ED25519) {
+
+	curve="Ed25519";
+
+    } else if (key->algo->id & SSH_PKALGO_ID_CURVE25519) {
+
+	curve="Curve25519";
+
+    } else {
+
+	logoutput("create_sig_ecc: error algo %s not supported", key->algo->name);
+	goto out;
+
+    }
+
+    err=gcry_sexp_build(&s_data, NULL, "(data (flags eddsa) (hash-algo %s) (value %b))", gcry_md_algo_name(algo), size, buffer);
+
+    if (err) {
+
+	logoutput("create_sig_ecc: error creating data s-exp %s/%s", gcry_strsource(err), gcry_strerror(err));
+	*error=EIO;
+	goto out;
+
+    }
+
+    /* q is opaque mpint, libgcrypt will handle these */
+
+    if (key->param.ecc.q.lib.mpi) {
+
+	err=gcry_sexp_build(&s_private, NULL, "(private-key(ecc (curve %s)(flags eddsa)(q %m)(d %m)))", curve, key->param.ecc.q.lib.mpi, key->param.ecc.d.lib.mpi);
+
+    } else {
+
+	err=gcry_sexp_build(&s_private, NULL, "(private-key(ecc (curve %s)(flags eddsa)(d %m)))", curve, key->param.ecc.d.lib.mpi);
+
+    }
+
+    if (err) {
+
+	logoutput("create_sig_ecc: error createing private key s-exp %s/%s", gcry_strsource(err), gcry_strerror(err));
+	*error=EIO;
+	goto out;
+
+    }
+
+    err=gcry_pk_sign(&s_sig, s_data, s_private);
+
+    if (err) {
+
+	logoutput("create_sig_ecc: error signing %s/%s", gcry_strsource(err), gcry_strerror(err));
+	*error=EIO;
+	goto out;
+
+    }
+
+    len = write_sig_param_buffer(s_sig, sig, "rs", 2, error);
+
+    if (len>0) {
+
+	success=0;
+
+	if (len<sig->len) {
+
+	    logoutput("create_sig_ecc: %i bytes allocated, but %i used", sig->len, len);
+	    sig->len=len;
+
+	}
+
+    }
+
+    out:
+
+    if (s_data) gcry_sexp_release(s_data);
+    if (s_private) gcry_sexp_release(s_private);
+    if (s_sig) gcry_sexp_release(s_sig);
+
+    return success;
+
+}
+
 #else
 
 int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
@@ -317,6 +413,12 @@ int create_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 }
 
 int create_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
+{
+    *error=EOPNOTSUPP;
+    return -1;
+}
+
+int create_sig_ecc(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
 {
     *error=EOPNOTSUPP;
     return -1;
@@ -335,15 +437,19 @@ int create_sig(struct ssh_key_s *key, char *buffer, unsigned int size, struct ss
 
     }
 
-    switch (algo->id) {
+    switch (algo->scheme) {
 
-    case SSH_PKALGO_ID_RSA:
+    case SSH_PKALGO_SCHEME_RSA:
 
 	return create_sig_rsa(key, buffer, size, sig, hashname, error);
 
-    case SSH_PKALGO_ID_DSS:
+    case SSH_PKALGO_SCHEME_DSS:
 
 	return create_sig_dss(key, buffer, size, sig, hashname, error);
+
+    case SSH_PKALGO_SCHEME_ECC:
+
+	return create_sig_ecc(key, buffer, size, sig, hashname, error);
 
     }
 

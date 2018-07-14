@@ -61,8 +61,6 @@ extern unsigned int get_ssh_interface_info(struct context_interface_s *interface
 extern void *create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
 extern void umount_ssh_session(struct context_interface_s *interface);
 
-static unsigned char done=0;
-
 static int start_ssh_connection(struct context_interface_s *interface, void *data)
 {
     return 0;
@@ -73,13 +71,6 @@ static int start_ssh_connection(struct context_interface_s *interface, void *dat
 void init_ssh_interface(struct context_interface_s *interface)
 {
     struct service_context_s *context=get_service_context(interface);
-
-    if (done==0) {
-
-	init_sshlibrary();
-	done=1;
-
-    }
 
     interface->get_interface_info=get_ssh_interface_info;
     interface->connect=create_ssh_connection;

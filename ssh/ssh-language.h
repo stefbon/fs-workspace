@@ -20,6 +20,6 @@
 #ifndef FS_WORKSPACE_SSH_LANGUAGE_H
 #define FS_WORKSPACE_SSH_LANGUAGE_H
 
-unsigned int ssh_get_languages_list(struct commalist_s *clist);
+unsigned int ssh_get_languages_list(struct ssh_session_s *session, struct commalist_s *clist);
 
 #endif

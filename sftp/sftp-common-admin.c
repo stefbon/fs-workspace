@@ -45,18 +45,10 @@
 #include "utils.h"
 #include "workerthreads.h"
 
-#include "workspace-interface.h"
-
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-#include "ssh-common-list.h"
 #include "ssh-channel.h"
-#include "ssh-channel-utils.h"
-#include "ssh-admin-channel.h"
 #include "ssh-utils.h"
-
-#include "ssh-send-channel.h"
-#include "ssh-receive-channel.h"
 
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"
@@ -69,9 +61,6 @@
 #include "sftp-send-common.h"
 
 #include "sftp-common-admin.h"
-
-extern void set_time_correction_server_behind(struct ssh_session_s *session, struct timespec *delta);
-extern void set_time_correction_server_ahead(struct ssh_session_s *session, struct timespec *delta);
 
 static unsigned int get_sftp_sharedmap_command(struct ssh_session_s *session, char *name, char *buffer)
 {
@@ -105,69 +94,43 @@ static unsigned int get_sftp_sharedmap_command(struct ssh_session_s *session, ch
 static unsigned int get_sftp_userinfo_command(struct ssh_session_s *session, void *data, char *buffer)
 {
     struct sftp_userinfo_s *sftp_userinfo=(struct sftp_userinfo_s *) data;
-    unsigned int size=0;
+    unsigned int pos=0;
 
-    if (buffer) {
+    if (buffer) memcpy(buffer, "echo ", 5);
+    pos+=5;
 
-	memcpy(buffer, "echo ", 5);
-	size+=5;
+    if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GROUP) {
+	unsigned int len=0;
 
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GROUP) {
-	    unsigned int len=0;
-
-	    len=strlen("remotegroup=$(id -gn):");
-	    memcpy(&buffer[size], "remotegroup=$(id -gn):", len);
-	    size+=len;
-
-	}
-
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_UID) {
-	    unsigned int len=0;
-
-	    len=strlen("remoteuid=$(id -u):");
-	    memcpy(&buffer[size], "remoteuid=$(id -u):", len);
-	    size+=len;
-
-	}
-
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GID) {
-	    unsigned int len=0;
-
-	    len=strlen("remotegid=$(id -g):");
-	    memcpy(&buffer[size], "remotegid=$(id -g):", len);
-	    size+=len;
-
-	}
-
-    } else {
-
-	size+=5;
-
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GROUP) {
-
-	    size+=strlen("remotegroup=$(id -gn):");
-
-	}
-
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_UID) {
-
-	    size+=strlen("remoteuid=$(id -u):");
-
-	}
-
-	if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GID) {
-
-	    size+=strlen("remotegid=$(id -g):");
-
-	}
+	len=strlen("remotegroup=$(id -gn):");
+	if (buffer) memcpy(&buffer[pos], "remotegroup=$(id -gn):", len);
+	pos+=len;
 
     }
 
-    return size;
+    if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_UID) {
+	unsigned int len=0;
+
+	len=strlen("remoteuid=$(id -u):");
+	if (buffer) memcpy(&buffer[pos], "remoteuid=$(id -u):", len);
+	pos+=len;
+
+    }
+
+    if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_GID) {
+	unsigned int len=0;
+
+	len=strlen("remotegid=$(id -g):");
+	if (buffer) memcpy(&buffer[pos], "remotegid=$(id -g):", len);
+	pos+=len;
+
+    }
+
+    return pos;
 
 }
 
-unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, unsigned char *buffer, unsigned int len, unsigned int *error)
+unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, char *buffer, unsigned int len, unsigned int *error)
 {
     unsigned int size=get_sftp_sharedmap_command(session, name, NULL);
     char command[size+1];
@@ -181,7 +144,7 @@ unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, unsig
 
 }
 
-unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, unsigned char *buffer, unsigned int len, unsigned int *error)
+unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, char *buffer, unsigned int len, unsigned int *error)
 {
     unsigned int size=get_sftp_userinfo_command(session, data, NULL);
     char command[size+1];
@@ -204,7 +167,7 @@ void get_timeinfo_sftp_server(struct sftp_subsystem_s *sftp)
 
 }
 
-unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int size, unsigned int *error)
+unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, char *buffer, unsigned int size, unsigned int *error)
 {
     struct ssh_session_s *session=NULL;
 

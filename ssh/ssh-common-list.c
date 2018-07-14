@@ -38,7 +38,7 @@
 #include <sys/stat.h>
 
 #include "main.h"
-
+#include "logging.h"
 #include "utils.h"
 #include "simple-hash.h"
 
@@ -70,7 +70,7 @@ struct ssh_session_s *lookup_ssh_session(uint64_t unique)
     void *index=NULL;
     struct ssh_session_s *session=(struct ssh_session_s *) get_next_hashed_value(&group_ssh_sessions, &index, hashvalue);
 
-    while(session) {
+    while (session) {
 
 	if (session->status.unique==unique) break;
 	session=(struct ssh_session_s *) get_next_hashed_value(&group_ssh_sessions, &index, hashvalue);
@@ -90,17 +90,21 @@ void add_ssh_session_group(struct ssh_session_s *s)
 
 void remove_ssh_session_group(struct ssh_session_s *s)
 {
+    // logoutput("remove_ssh_session_group");
     remove_data_from_hash(&group_ssh_sessions, (void *) s);
 }
 
-void lock_group_ssh_sessions()
+void lock_group_ssh_sessions(struct simple_lock_s *wl)
 {
-    writelock_hashtable(&group_ssh_sessions);
+    // logoutput("lock_group_ssh_sessions");
+    init_wlock_hashtable(&group_ssh_sessions, wl);
+    lock_hashtable(wl);
 }
 
-void unlock_group_ssh_sessions()
+void unlock_group_ssh_sessions(struct simple_lock_s *wl)
 {
-    unlock_hashtable(&group_ssh_sessions);
+    // logoutput("unlock_group_ssh_sessions");
+    unlock_hashtable(wl);
 }
 
 struct ssh_session_s *get_next_ssh_session(void **index, unsigned int *hashvalue)
@@ -123,6 +127,8 @@ int initialize_group_ssh_sessions(unsigned int *error)
 {
     int result=0;
 
+    // logoutput("initalize_group_ssh_sessions");
+
     /* create a hashtable with size 8 */
 
     result=initialize_group(&group_ssh_sessions, unique_hashfunction, 8, error);
@@ -134,6 +140,8 @@ int initialize_group_ssh_sessions(unsigned int *error)
 	return -1;
 
     }
+
+    // logoutput("initalize_group_ssh_sessions: ready");
 
     return 0;
 

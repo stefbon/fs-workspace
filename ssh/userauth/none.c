@@ -45,23 +45,12 @@
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
 
-#include "ssh-pubkey.h"
-#include "pk/pk-types.h"
-#include "pk/pk-keys.h"
-#include "pk/pk-keystore.h"
-#include "pk/sign-types.h"
-
 #include "ssh-receive.h"
-#include "ssh-queue-payload.h"
-
 #include "ssh-send.h"
-#include "ssh-send-userauth.h"
 #include "ssh-connection.h"
 
 #include "ssh-utils.h"
 
-#include "userauth/pubkey.h"
-#include "userauth/hostbased.h"
 #include "userauth/utils.h"
 
 int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_userauth_s *userauth)
@@ -72,9 +61,9 @@ int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_use
 
     /* get the list of authemtication 'method name' values
 	see https://tools.ietf.org/html/rfc4252#section-5.2: The "none" Authentication Request
-	note the remote user is set as the local user since the remote user is not known here */
+    */
 
-    logoutput("ssh_userauth_none: send none userauth request");
+    logoutput("send_userauth_none: send none userauth request");
 
     if (send_userauth_none_message(session, user, "ssh-connection", &seq)==0) {
 	struct ssh_payload_s *payload=NULL;
@@ -84,88 +73,41 @@ int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_use
 
 	getresponse:
 
-	payload=get_ssh_payload(session, &expire, &seq, &error);
+	payload=get_ssh_payload(session, userauth->queue, &expire, &seq, &error);
 
 	if (! payload) {
 
-	    /* why not receiving payload ? */
+	    /* why not receiving payload? */
 
-	    if (error==EOPNOTSUPP) {
+	    logoutput("send_userauth_none: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 
-		/* not supported ??
-		    protocol error */
-
-		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
-
-	    } else if (error==ETIMEDOUT) {
-
-		/* why timedout ?
-		    here analyse why */
-
-		userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
-
-	    } else {
-
-		if (error == 0) error=EIO;
-		userauth->status|=SSH_USERAUTH_STATUS_FAILURE;
-
-	    }
-
-	    userauth->error=error;
-	    logoutput("ssh_userauth_none: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
-	    goto finish;
-
-	}
-
-	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
+	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
 	    /* huhh?? which server allows this weak security? */
-	    logoutput("ssh_userauth_none: server accepted none.....");
-	    userauth->required_methods=0;
+	    logoutput("send_userauth_none: server accepted none.....");
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
+	    /* result will always be -1 since "none" will result in success
+		override this */
 	    result=handle_userauth_failure(session, payload, userauth);
-
-	} else if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER) {
-
-	    process_ssh_message(session, payload);
-	    payload=NULL;
-	    goto getresponse;
+	    result=0;
 
 	} else {
 
-	    if (payload->type == SSH_MSG_DISCONNECT) {
-
-		logoutput("ssh_userauth_none: received disconnect message");
-
-	    } else {
-
-		logoutput("ssh_userauth_none: got unexpected reply %i", payload->type);
-		userauth->error=EPROTO;
-
-	    }
-
-	    userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+	    logoutput("send_userauth_none: got unexpected reply %i", payload->type);
 
 	}
 
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
+	if (payload) free_payload(&payload);
 
     } else {
 
 	/* why send error ?*/
 
-	error=(session->status.error==0) ? session->status.error : EIO;
-	logoutput("ssh_userauth_none: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
-	userauth->error=error;
-	userauth->status|=SSH_USERAUTH_STATUS_DISCONNECT;
+	error=EIO;
+	logoutput("send_userauth_none: error %i sending SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
 
     }
 

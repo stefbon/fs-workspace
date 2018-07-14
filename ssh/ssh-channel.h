@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2013, 2014, 2015, 2016 Stef Bon <stefbon@gmail.com>
+  2016, 2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -20,27 +20,16 @@
 #ifndef FS_WORKSPACE_SSH_CHANNEL_H
 #define FS_WORKSPACE_SSH_CHANNEL_H
 
+#include "channel/command.h"
+#include "channel/exec.h"
+#include "channel/init.h"
+#include "channel/payload.h"
+#include "channel/shell.h"
+#include "channel/startclose.h"
+#include "channel/table.h"
+#include "channel/uri.h"
+#include "channel/utils.h"
+
 /* prototypes */
-
-struct ssh_channel_s *get_containing_channel(struct list_element_s *list);
-
-void init_ssh_channel(struct ssh_channel_s *channel);
-void add_admin_channel(struct ssh_session_s *session);
-
-int start_new_channel(struct ssh_channel_s *channel);
-
-struct ssh_channel_s *new_admin_channel(struct ssh_session_s *session);
-void clear_ssh_channel(struct ssh_channel_s *channel);
-void free_ssh_channel(struct ssh_channel_s *channel);
-struct ssh_channel_s *remove_channel_table_locked(struct ssh_session_s *session, struct ssh_channel_s *channel, unsigned int local_channel);
-
-void add_channel_table(struct ssh_channel_s *channel);
-void remove_channel_table(struct ssh_channel_s *channel);
-void clean_ssh_channel_queue(struct ssh_channel_s *channel);
-
-void *create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-
-struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, struct timespec *expire, unsigned int *seq, unsigned int *error);
-void queue_ssh_payload_channel(struct ssh_channel_s *channel, struct ssh_payload_s *payload);
 
 #endif

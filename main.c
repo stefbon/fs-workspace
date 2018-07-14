@@ -82,11 +82,80 @@
 #include "pidfile.h"
 #include "localsocket.h"
 #include "discover/discover-avahi.h"
+#include "discover/discover-staticfile.h"
 #include "discover.h"
 #include "fuse-network.h"
 
-struct fs_options_struct fs_options;
+struct fs_options_s fs_options;
 char *program_name=NULL;
+
+struct finish_script_s {
+    void 			(* finish)(void *ptr);
+    void			*ptr;
+    char			*name;
+    struct finish_script_s	*next;
+};
+
+static struct finish_script_s *finish_scripts=NULL;
+static pthread_mutex_t finish_scripts_mutex=PTHREAD_MUTEX_INITIALIZER;
+
+void add_finish_script(void (* finish_cb)(void *ptr), void *ptr, char *name)
+{
+    struct finish_script_s *script=NULL;
+
+    script=malloc(sizeof(struct finish_script_s));
+
+    if (script) {
+
+	script->finish=finish_cb;
+	script->ptr=ptr;
+	script->name=name;
+	script->next=NULL;
+
+	pthread_mutex_lock(&finish_scripts_mutex);
+
+	script->next=finish_scripts;
+	finish_scripts=script;
+
+	pthread_mutex_unlock(&finish_scripts_mutex);
+
+    } else {
+
+	logoutput_warning("add_finish_script: error allocating memory to add finish script");
+
+    }
+
+}
+
+void run_finish_scripts()
+{
+    struct finish_script_s *script=NULL;
+
+    pthread_mutex_lock(&finish_scripts_mutex);
+
+    script=finish_scripts;
+
+    while (script) {
+
+	finish_scripts=script->next;
+
+	if (script->name) logoutput("run_finish_scripts: run script %s", script->name);
+
+	(* script->finish)(script->ptr);
+	free(script);
+
+	script=finish_scripts;
+
+    }
+
+    pthread_mutex_unlock(&finish_scripts_mutex);
+
+}
+
+void end_finish_scripts()
+{
+    pthread_mutex_destroy(&finish_scripts_mutex);
+}
 
 static void _disconnect_service(struct entry_s *entry, void *ptr)
 {
@@ -317,7 +386,7 @@ static unsigned int get_option_mount(struct context_interface_s *interface, cons
     } else if (strcmp(name, "parallel-dirops")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=1; /* try */
+	option->value.number=0; /* try */
 
     } else if (strcmp(name, "posix-acl")==0) {
 
@@ -496,17 +565,19 @@ static void terminate_fuse_users(void *ptr)
     struct fuse_user_s *user=NULL;
     void *index=NULL;
     unsigned int hashvalue=0;
+    struct simple_lock_s wlock;
 
     logoutput("terminate_fuse_users");
+    init_wlock_users_hash(&wlock);
 
     getuser:
 
     index=NULL;
 
-    lock_users_hash();
+    lock_users_hash(&wlock);
     user=get_next_fuse_user(&index, &hashvalue);
     if (user) remove_fuse_user_hash(user);
-    unlock_users_hash();
+    unlock_users_hash(&wlock);
 
     if (user) {
 	unsigned int error=0;
@@ -582,10 +653,12 @@ static void add_usersession(uid_t uid, char *what)
 static void change_usersession(uid_t uid, char *status)
 {
     struct fuse_user_s *user=NULL;
+    struct simple_lock_s wlock;
 
     logoutput("change_usersession");
 
-    lock_users_hash();
+    init_wlock_users_hash(&wlock);
+    lock_users_hash(&wlock);
 
     user=lookup_fuse_user(uid);
 
@@ -596,7 +669,7 @@ static void change_usersession(uid_t uid, char *status)
 	if (strcmp(status, "active")!=0 && strcmp(user->status, "active")==0) {
 
 	    remove_fuse_user_hash(user);
-	    unlock_users_hash();
+	    unlock_users_hash(&wlock);
 	    work_workerthread(NULL, 0, terminate_fuse_user, NULL, (void *) user);
 	    return;
 
@@ -608,7 +681,7 @@ static void change_usersession(uid_t uid, char *status)
 
     }
 
-    unlock_users_hash();
+    unlock_users_hash(&wlock);
 
     logoutput("change_usersession: done");
 
@@ -687,10 +760,12 @@ static void workspace_signal_handler(struct beventloop_s *bloop, void *data, str
 struct fs_connection_s *accept_client_connection(uid_t uid, gid_t gid, pid_t pid, void *ptr)
 {
     struct fuse_user_s *user=NULL;
+    struct simple_lock_s wlock;
 
     logoutput("accept_client_connection");
+    init_wlock_users_hash(&wlock);
 
-    lock_users_hash();
+    lock_users_hash(&wlock);
 
     user=lookup_fuse_user(uid);
 
@@ -699,7 +774,7 @@ struct fs_connection_s *accept_client_connection(uid_t uid, gid_t gid, pid_t pid
     }
 
     unlock:
-    unlock_users_hash();
+    unlock_users_hash(&wlock);
 
     return NULL;
 }
@@ -750,13 +825,13 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput("MAIN: reading workspaces from %s.", FS_WORKSPACE_BASEMAP);
-	read_workspace_files(FS_WORKSPACE_BASEMAP);
+	logoutput("MAIN: reading workspaces from %s.", _OPTIONS_MAIN_BASEMAP);
+	read_workspace_files(_OPTIONS_MAIN_BASEMAP);
 
     }
 
     init_workerthreads(NULL);
-    set_max_numberthreads(NULL, 6);
+    set_max_numberthreads(NULL, 6); /* depends on the number of users and connected workspaces, 6 is a reasonable amount for this moment */
     init_directory_calls();
     init_special_fs();
 
@@ -879,6 +954,20 @@ int main(int argc, char *argv[])
 
     create_pid_file(&fs_options.socket);
 
+    if (fs_options.network.flags & _OPTIONS_NETWORK_DISCOVER_METHOD_FILE) {
+
+	if (fs_options.network.discover_static_file) {
+
+	    browse_services_staticfile(fs_options.network.discover_static_file);
+
+	} else {
+
+	    browse_services_staticfile(_OPTIONS_NETWORK_DISCOVER_STATIC_FILE_DEFAULT);
+
+	}
+
+    }
+
     browse_services_avahi();
 
     res=init_sessions_monitor(update_usersessions, NULL);
@@ -919,12 +1008,14 @@ int main(int argc, char *argv[])
 
     terminate_workerthreads(NULL, 0);
 
+    run_finish_scripts();
+    end_finish_scripts();
+
     logoutput("MAIN: destroy eventloop");
     clear_beventloop(NULL);
 
     free_fuse_users();
     free_inode_hashtable();
-    end_sshlibrary();
 
     remove_pid_file(&fs_options.socket, getpid());
 

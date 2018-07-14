@@ -51,8 +51,6 @@
 #include "ssh-common.h"
 #include "ssh-utils.h"
 
-#include "ctx-options.h"
-
 /*
     functions to correct the difference in time between server and localhost
 */

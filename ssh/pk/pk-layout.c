@@ -72,7 +72,7 @@ int get_pkey_material_openssh(struct ssh_key_s *key, char *buffer, unsigned int 
     if (sep) {
 	unsigned int len = (unsigned int) (sep - pos);
 
-	algo = get_pkalgo(pos, len);
+	algo = get_pkalgo(pos, len, NULL);
 
 	if (algo == NULL) {
 
@@ -255,7 +255,7 @@ static int get_skey_material_openssh(struct ssh_key_s *key, char *buffer, unsign
 /* key is stored in buffer
    the parameter layout decribes the to be expected layout; openssh stores the keys a specfic way */
 
-int get_pkey_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, char **result, unsigned int *format)
+int get_pkey_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, struct ssh_string_s *result, unsigned int *format)
 {
 
     switch (layout) {
@@ -273,7 +273,7 @@ int get_pkey_material(struct ssh_key_s *key, char *buffer, unsigned int size, un
     return -1;
 }
 
-int get_skey_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, char **result, unsigned int *format)
+int get_skey_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, struct ssh_string_s *result, unsigned int *format)
 {
 
     switch (layout) {
@@ -291,7 +291,7 @@ int get_skey_material(struct ssh_key_s *key, char *buffer, unsigned int size, un
     return -1;
 }
 
-int get_key_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, char **result, unsigned int *format)
+int get_key_material(struct ssh_key_s *key, char *buffer, unsigned int size, unsigned int layout, struct ssh_string_s *result, unsigned int *format)
 {
     logoutput("get_key_material: layout %i secret %i size %i", layout, key->secret, size);
     return (key->secret>0) ? get_skey_material(key, buffer, size, layout, result, format) : get_pkey_material(key, buffer, size, layout, result, format);

@@ -20,19 +20,7 @@
 #ifndef FS_WORKSPACE_SSH_DATA_H
 #define FS_WORKSPACE_SSH_DATA_H
 
-void init_ssh_algo(struct ssh_kexinit_algo *algo);
-
-int store_kexinit_server(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error);
-int store_kexinit_client(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *error);
-
-void free_kexinit_server(struct ssh_session_s *session);
-void free_kexinit_client(struct ssh_session_s *session);
-
-int store_ssh_session_id(struct ssh_session_s *session, unsigned char *id, unsigned int len);
-
-void init_keydata(struct session_keydata_s *keydata);
-void free_keydata(struct session_keydata_s *keydata);
-
+int store_ssh_session_id(struct ssh_session_s *session, char *id, unsigned int len);
 void init_session_data(struct ssh_session_s *session);
 void free_session_data(struct ssh_session_s *session);
 

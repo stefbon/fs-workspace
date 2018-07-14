@@ -22,6 +22,7 @@
 
 int verify_sig_rsa(struct ssh_key_s *key, char *b, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error);
 int verify_sig_dss(struct ssh_key_s *key, char *b, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error);
+int verify_sig_ecc(struct ssh_key_s *key, char *b, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error);
 
 int verify_sig(struct ssh_key_s *key, char *b, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error);
 

@@ -47,7 +47,7 @@
 #include "ssh-common.h"
 #include "ssh-utils.h"
 
-unsigned int ssh_get_languages_list(struct commalist_s *clist)
+unsigned int ssh_get_languages_list(struct ssh_session_s *session, struct commalist_s *clist)
 {
     /* no languages */
 

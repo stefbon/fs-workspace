@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -48,20 +46,10 @@
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
 
-#include "ssh-pubkey.h"
-
 #include "ssh-receive.h"
-#include "ssh-queue-payload.h"
-
 #include "ssh-send.h"
-#include "ssh-send-userauth.h"
 #include "ssh-connection.h"
 #include "ssh-utils.h"
-
-#include "pk/pk-types.h"
-#include "pk/pk-keys.h"
-#include "pk/pk-utils.h"
-#include "pk/pk-keystore.h"
 
 #include "userauth/pubkey.h"
 #include "userauth/hostbased.h"
@@ -72,8 +60,6 @@ static void init_ssh_userauth(struct ssh_userauth_s *userauth)
 {
     memset(userauth, 0, sizeof(struct ssh_userauth_s));
 
-    userauth->status=0;
-    userauth->error=0;
     userauth->required_methods=0;
     userauth->methods_done=0;
 
@@ -82,6 +68,8 @@ static void init_ssh_userauth(struct ssh_userauth_s *userauth)
 
     userauth->r_hostname=NULL;
     userauth->r_ipv4=NULL;
+
+    userauth->queue=NULL;
 
 }
 
@@ -106,7 +94,100 @@ static int userauth_method_supported(unsigned int methods)
     return (methods > 0) ? -1 : 0;
 }
 
-int ssh_authentication(struct ssh_session_s *session)
+static int request_ssh_userauth(struct ssh_session_s *session, struct payload_queue_s *queue)
+{
+    struct timespec expire;
+    unsigned int error=0;
+    struct ssh_payload_s *payload=NULL;
+    unsigned int seq=0;
+    int result=-1;
+
+    logoutput("request_ssh_userauth: request for service ssh-userauth");
+
+    if (send_service_request_message(session, "ssh-userauth", &seq)==-1) {
+
+	error=EIO;
+	logoutput("request_ssh_userauth: error %i sending service request ssh-userauth (%s)", error, strerror(error));
+	goto outrequest;
+
+    }
+
+    get_session_expire_init(session, &expire);
+
+    getrequest:
+
+    payload=get_ssh_payload(session, queue, &expire, &seq, &error);
+
+    if (! payload) {
+
+	if (error==0) error=EIO;
+	logoutput("request_ssh_userauth: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
+	goto outrequest;
+
+    }
+
+    if (payload->type == SSH_MSG_SERVICE_ACCEPT) {
+	unsigned int len=strlen("ssh-userauth");
+
+	if (payload->len==5 + len) {
+	    char buffer[5 + len];
+
+	    buffer[0]=(unsigned char) SSH_MSG_SERVICE_ACCEPT;
+	    store_uint32(&buffer[1], len);
+	    memcpy(&buffer[5], "ssh-userauth", len);
+
+	    if (memcmp(payload->buffer, buffer, len)==0) {
+
+		logoutput("request_ssh_userauth: server accepted service ssh-userauth");
+		result=0;
+
+	    } else {
+		char string[len+1];
+
+		memcpy(string, &payload->buffer[5], len);
+		string[len]='\0';
+
+		logoutput("request_ssh_userauth: server has sent an invalid service accept message (%s)", string);
+		goto outrequest;
+
+	    }
+
+	} else {
+
+	    if (payload->len - 5 <=64) {
+		char string[len+1];
+
+		memcpy(string, &payload->buffer[5], len);
+		string[len]='\0';
+
+		logoutput("request_ssh_userauth: server has sent an invalid service accept message (%s)", string);
+		goto outrequest;
+
+	    } else {
+
+		logoutput("request_ssh_userauth: server has sent an invalid service accept message (length service name > 64)");
+		goto outrequest;
+
+	    }
+
+	}
+
+    } else {
+
+	logoutput("request_ssh_userauth: server send unexpected %i: disconnect", payload->type);
+
+    }
+
+    outrequest:
+
+    if (payload) free_payload(&payload);
+    if (result==-1) logoutput("request_ssh_userauth: userauth failed");
+
+    return result;
+
+}
+
+int start_ssh_userauth(struct ssh_session_s *session, struct payload_queue_s *queue, struct sessionphase_s *sessionphase)
 {
     unsigned int error=0;
     int result=-1;
@@ -116,33 +197,43 @@ int ssh_authentication(struct ssh_session_s *session)
     struct ssh_userauth_s userauth;
 
     init_ssh_userauth(&userauth);
+    userauth.queue=queue;
+    session->userauth=&userauth;
 
     init_list_public_keys(&session->identity.pwd, &pkeys);
+
+    if (request_ssh_userauth(session, queue)==-1) {
+
+	logoutput("start_ssh_userauth: request for ssh userauth failed");
+	goto finish;
+
+    }
 
     /* get the list of authemtication 'method name' values
 	see https://tools.ietf.org/html/rfc4252#section-5.2: The "none" Authentication Request
 	note the remote user is set as the local user since the remote user is not known here */
 
-    result=send_userauth_none(session, session->identity.pwd.pw_name, &userauth);
+    if (send_userauth_none(session, session->identity.pwd.pw_name, &userauth)==-1) {
 
-    if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.error > 0) {
-
-	/* system/fatal error and/or disconnected by server */
-	result=-1;
+	logoutput("start_ssh_userauth: send userauth none failed");
 	goto finish;
 
-    } else if (userauth.required_methods == SSH_USERAUTH_METHOD_NONE || userauth.required_methods == 0) {
+    } else {
 
-	/* no futher methods required */
-	userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
-	result=0;
-	goto finish;
+	if (userauth.required_methods == 0) {
 
-    } else if (userauth_method_supported(userauth.required_methods)==-1) {
+	    /* no futher methods required */
 
-	/* not supported userauth methods requested by server */
-	result=-1;
-	goto finish;
+	    result=0;
+	    goto finish;
+
+	} else if (userauth_method_supported(userauth.required_methods)==-1) {
+
+	    /* not supported userauth methods requested by server */
+	    result=-1;
+	    goto finish;
+
+	}
 
     }
 
@@ -153,6 +244,7 @@ int ssh_authentication(struct ssh_session_s *session)
     */
 
     if (userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
+	unsigned int status=0;
 
 	result = -1;
 
@@ -160,17 +252,17 @@ int ssh_authentication(struct ssh_session_s *session)
 
 	    /* prevent cycles */
 
-	    logoutput("ssh_authentication: publickey auth failed: cycles detected");
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    logoutput("start_ssh_userauth: pk userauth failed: cycles detected");
 	    goto finish;
 
 	}
 
-	logoutput("ssh_authentication: starting publickey userauth");
+	logoutput("start_ssh_userauth: starting pk userauth");
+
+	/* get list of pk keys from local openssh user files */
 
 	if (populate_list_public_keys(&pkeys, PK_IDENTITY_SOURCE_OPENSSH_LOCAL, "user")==0) {
 
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
 	    goto finish;
 
 	}
@@ -179,19 +271,11 @@ int ssh_authentication(struct ssh_session_s *session)
 
 	user_identity=ssh_auth_pubkey(session, &pkeys, &userauth);
 
-	if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.status == SSH_USERAUTH_STATUS_FAILURE || userauth.status == SSH_USERAUTH_STATUS_ERROR) {
-
-	    /* system/fatal error and/or disconnected by server */
-	    goto finish;
-
-	}
-
 	if (user_identity==NULL) {
 
 	    /* pubkey userauth should result in at least one pk identity */
 
-	    logoutput("ssh_authentication: publickey auth failed/no identity found");
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    logoutput("start_ssh_userauth: no pk identity found");
 	    goto finish;
 
 	} else {
@@ -202,11 +286,11 @@ int ssh_authentication(struct ssh_session_s *session)
 
 	    if (file) {
 
-		logoutput("ssh_authentication: publickey userauth success with file %s (user %s)", file, user);
+		logoutput("start_ssh_userauth: pk userauth success with file %s (user %s)", file, user);
 
 	    } else {
 
-		logoutput("ssh_authentication: publickey userauth success with user %s", user);
+		logoutput("start_ssh_userauth: pk userauth success with user %s", user);
 
 	    }
 
@@ -215,21 +299,17 @@ int ssh_authentication(struct ssh_session_s *session)
 	if (userauth.required_methods==0) {
 
 	    /* no more methods required: ready */
-	    userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
 	    result=0;
 	    goto finish;
 
 	} else if (userauth_method_supported(userauth.required_methods)==-1) {
 
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
-	    userauth.error=EPROTO;
+	    /* not supported userauth methods requested by server */
 	    goto finish;
 
-	} else if ( userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
+	} else if (userauth.required_methods & SSH_USERAUTH_METHOD_PUBLICKEY) {
 
 	    /* another publickey or unknown or password is not supported */
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
-	    userauth.error=EPROTO;
 	    goto finish;
 
 	}
@@ -241,63 +321,49 @@ int ssh_authentication(struct ssh_session_s *session)
     if (userauth.required_methods & SSH_USERAUTH_METHOD_HOSTBASED) {
 	char *l_user=NULL;
 	char *r_user=NULL;
+	unsigned int status=0;
 
 	if (userauth.methods_done & SSH_USERAUTH_METHOD_HOSTBASED) {
 
 	    /* prevent cycles */
 
-	    logoutput("ssh_authentication: hostbased auth failed: cycles detected");
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    logoutput("start_ssh_userauth: hostbased auth failed: cycles detected");
 	    goto finish;
 
 	}
 
 	if (populate_list_public_keys(&pkeys, PK_IDENTITY_SOURCE_OPENSSH_LOCAL, "host")==0) {
 
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
 	    goto finish;
 
 	}
 
 	userauth.methods_done|=SSH_USERAUTH_METHOD_HOSTBASED;
-
 	userauth.l_hostname=get_connection_hostname(session->connection.fd, 0, &error);
 
 	if (userauth.l_hostname==NULL) {
 
-	    logoutput("ssh_authentication: failed to get local hostname");
-	    userauth.status|=SSH_USERAUTH_STATUS_ERROR;
-	    userauth.error=error;
+	    logoutput("start_ssh_userauth: failed to get local hostname");
 	    goto finish;
 
 	}
 
-	logoutput("ssh_authentication: using hostname %s for hostbased userauth", userauth.l_hostname);
+	logoutput("start_ssh_userauth: using hostname %s for hb userauth", userauth.l_hostname);
 
 	l_user=session->identity.pwd.pw_name;
 
-	if (user_identity) {
+	if (user_identity) r_user=get_pk_identity_user(user_identity);
+	if (r_user==NULL) r_user=l_user;
 
-	    r_user=get_pk_identity_user(user_identity);
-	    if (r_user==NULL) r_user=l_user;
-
-	}
+	logoutput("start_ssh_userauth: using local user %s amd remote user %s for hb userauth", l_user, r_user);
 
 	host_identity=ssh_auth_hostbased(session, &pkeys, r_user, l_user, &userauth);
-
-	if (userauth.status == SSH_USERAUTH_STATUS_DISCONNECT || userauth.error > 0) {
-
-	    /* system/fatal error and/or disconnected by server */
-	    goto finish;
-
-	}
 
 	if (host_identity==NULL) {
 
 	    /* hostbased userauth should result in at least one pk identity */
 
-	    logoutput("ssh_authentication: hostbased auth failed/no identity found");
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
+	    logoutput("start_ssh_userauth: hostbased auth failed/no identity found");
 	    goto finish;
 
 	}
@@ -305,23 +371,18 @@ int ssh_authentication(struct ssh_session_s *session)
 	if (userauth.required_methods==0) {
 
 	    /* no more methods required: ready */
-	    userauth.status=SSH_USERAUTH_STATUS_SUCCESS;
 	    result=0;
 	    goto finish;
 
 	} else if (userauth.required_methods & SSH_USERAUTH_METHOD_HOSTBASED) {
 
-	    /* another publickey or unknown or password is not supported */
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
-	    userauth.error=EPROTO;
+	    /* another hb userauth is not supported */
 	    result=-1;
 	    goto finish;
 
 	} else if (userauth_method_supported(userauth.required_methods)==-1) {
 
 	    /* another publickey or unknown or password is not supported */
-	    userauth.status|=SSH_USERAUTH_STATUS_FAILURE;
-	    userauth.error=EPROTO;
 	    result=-1;
 	    goto finish;
 
@@ -368,7 +429,6 @@ int ssh_authentication(struct ssh_session_s *session)
 
     if (host_identity) free(host_identity);
     if (user_identity) free(user_identity);
-
     clear_ssh_userauth(&userauth);
     free_lists_public_keys(&pkeys);
 

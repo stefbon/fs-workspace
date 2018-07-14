@@ -47,19 +47,9 @@
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
 
-#include "ssh-pubkey.h"
-#include "pk/pk-types.h"
-#include "pk/pk-keys.h"
-#include "pk/pk-keystore.h"
-#include "pk/sign-types.h"
-
 #include "ssh-receive.h"
-#include "ssh-queue-payload.h"
-
 #include "ssh-send.h"
-#include "ssh-send-userauth.h"
 #include "ssh-hostinfo.h"
-
 #include "ssh-utils.h"
 #include "userauth/utils.h"
 
@@ -84,30 +74,34 @@
 	using the private key
     */
 
+static unsigned int msg_write_pk_signature(struct msg_buffer_s *mb, struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user)
+{
+    msg_write_ssh_string(mb, 's', (void *) &session->data.sessionid);
+    msg_write_userauth_hostbased_request(mb, r_user, service, pkey, l_hostname, l_user);
+    return mb->pos;
+}
+
 static signed char create_hb_signature(struct ssh_session_s *session, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_key_s *skey, struct ssh_string_s *signature)
 {
-    unsigned int len=write_userauth_hostbased_request(NULL, 0, r_user, service, pkey, l_hostname, l_user) + write_ssh_string(NULL, 0, 's', (void *) &session->data.sessionid);
-    unsigned int left = len;
+    struct msg_buffer_s mb=INIT_SSH_MSG_BUFFER;
+    unsigned int len=msg_write_pk_signature(&mb, session, r_user, service, pkey, l_hostname, l_user) + 64;
     char buffer[len];
     unsigned int error=0;
     int result = 0;
-    char *pos = buffer;
+    struct ssh_pksign_s *pksign=NULL;
+    const char *hashname=NULL;
 
-    /* session id */
+    pksign=get_default_pksign(pkey->algo);
+    hashname=get_hashname_sign(pksign);
 
-    result = write_ssh_string(pos, left, 's', (void *) &session->data.sessionid);
-    pos += result;
-    left -= result;
+    logoutput("create_hb_signature: hash %s", hashname);
 
-    /* write the userauth hostbased message */
-
-    result = write_userauth_hostbased_request(pos, left, r_user, service, pkey, l_hostname, l_user);
-    pos += result;
-    left -= result;
+    set_msg_buffer(&mb, buffer, len);
+    len=msg_write_pk_signature(&mb, session, r_user, service, pkey, l_hostname, l_user);
 
     /* create a signature of this data using the private key belonging to the host key */
 
-    if ((* skey->sign)(skey, buffer, (unsigned int)(pos - buffer), signature, NULL, &error)>=0) {
+    if ((* skey->sign)(skey, buffer, len, signature, hashname, &error)>=0) {
 
 	return 0;
 
@@ -127,6 +121,8 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
     int result=-1;
     unsigned int seq=0;
 
+    logoutput("ssh_send_hostbased_signature");
+
     init_ssh_string(&signature);
 
     if (create_hb_signature(session, r_user, "ssh-connection", pkey, l_hostname, l_user, skey, &signature)==-1) {
@@ -135,6 +131,8 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
 	goto out;
 
     }
+
+    logoutput("ssh_send_hostbased_signature: created hash %i bytes", signature.len);
 
     /* send userauth hostbased request to server with signature */
 
@@ -147,49 +145,40 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
 
 	getresponse:
 
-	payload=get_ssh_payload(session, &expire, &seq, &error);
+	payload=get_ssh_payload(session, userauth->queue, &expire, &seq, &error);
 
 	if (! payload) {
 
 	    if (error==0) error=EIO;
 	    logoutput("ssh_send_hb_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
-	    userauth->error=error;
-	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
 	    goto out;
 
 	}
 
-	if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG || payload->type == SSH_MSG_USERAUTH_BANNER ) {
+	if (payload->type == SSH_MSG_USERAUTH_BANNER) {
 
-	    process_ssh_message(session, payload);
+	    process_cb_ssh_payload(session, payload);
 	    payload=NULL;
 	    goto getresponse;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
+	    logoutput("ssh_send_hostbased_signature: success");
 	    userauth->required_methods=0;
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
+	    logoutput("ssh_send_hostbased_signature: failed");
 	    result=handle_userauth_failure(session, payload, userauth);
 
-	} else {
-
-	    userauth->status|=SSH_USERAUTH_STATUS_ERROR;
-
 	}
 
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
+	free_payload(&payload);
 
     } else {
 
-	userauth->status|=SSH_USERAUTH_STATUS_ERROR;
+	logoutput("ssh_send_hb_signature: error sending SSH_MSG_SERVICE_REQUEST packet");
 
     }
 

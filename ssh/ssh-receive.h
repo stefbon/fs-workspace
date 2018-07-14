@@ -1,5 +1,5 @@
 /*
-  2010, 2011, 2012, 2013, 2014, 2015 Stef Bon <stefbon@gmail.com>
+  2017, 2018 Stef Bon <stefbon@gmail.com>
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
@@ -20,17 +20,20 @@
 #ifndef FS_WORKSPACE_SSH_RECEIVE_H
 #define FS_WORKSPACE_SSH_RECEIVE_H
 
-typedef void (* receive_msg_cb_t)(struct ssh_session_s *session, struct ssh_payload_s *payload);
-
-void process_ssh_message(struct ssh_session_s *session, struct ssh_payload_s *payload);
-
-int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_cond_t *cond, unsigned int *error);
-void free_receive(struct ssh_session_s *session);
-
-void register_msg_cb(unsigned char type, receive_msg_cb_t cb);
-
-void switch_receive_process(struct ssh_session_s *session, const char *phase);
-
-int read_incoming_data(int fd, void *ptr, uint32_t events);
+#include "receive/decompress.h"
+#include "receive/decompress-none.h"
+#include "receive/decompressors.h"
+#include "receive/decrypt-chacha20-poly1305.h"
+#include "receive/decrypt-generic.h"
+#include "receive/decrypt.h"
+#include "receive/decryptors.h"
+#include "receive/greeter.h"
+#include "receive/init.h"
+#include "receive/msg-channel.h"
+#include "receive/msg-transport.h"
+#include "receive/msg-userauth.h"
+#include "receive/payload.h"
+#include "receive/read-buffer.h"
+#include "receive/read-socket.h"
 
 #endif

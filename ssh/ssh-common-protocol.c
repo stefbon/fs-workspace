@@ -70,36 +70,8 @@ static struct disconnect_reasons_s d_reasons[] = {
     {SSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE	, "No more authorization methods are available."},
     {SSH_DISCONNECT_ILLEGAL_USER_NAME			, "Illegal user name."}};
 
-unsigned int write_disconnect_reason(unsigned int reason, char *pos, unsigned int size, unsigned int *error)
+const char *get_disconnect_reason(unsigned int reason)
 {
-    unsigned int len=0;
-
-    if (reason>=0 && reason <= SSH_DISCONNECT_ILLEGAL_USER_NAME) {
-
-	len=strlen(d_reasons[reason].description);
-
-	if (pos) {
-
-	    if (4 + len <= size) {
-
-		store_uint32(pos, len);
-		memcpy(pos+4, d_reasons[reason].description, len);
-
-	    } else {
-
-		*error=ENAMETOOLONG;
-		len=0;
-
-	    }
-
-	}
-
-    } else {
-
-	*error=EINVAL;
-
-    }
-
-    return len+4;
-
+    if (reason>=0 && reason <= SSH_DISCONNECT_ILLEGAL_USER_NAME) return d_reasons[reason].description;
+    return NULL;
 }

@@ -32,5 +32,6 @@
 #endif
 
 #define LOGGING
+#define FS_WORKSPACE_DEBUG
 
 #endif

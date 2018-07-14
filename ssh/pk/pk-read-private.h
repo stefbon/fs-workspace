@@ -22,7 +22,12 @@
 
 int read_skey_rsa(struct ssh_key_s *skey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
 int read_skey_dss(struct ssh_key_s *skey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+int read_skey_ecc(struct ssh_key_s *skey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
 
-int read_param_skey(struct ssh_key_s *skey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+void msg_read_skey_rsa(struct msg_buffer_s *mb, struct ssh_key_s *skey, unsigned int format);
+void msg_read_skey_dss(struct msg_buffer_s *mb, struct ssh_key_s *skey, unsigned int format);
+void msg_read_skey_ecc(struct msg_buffer_s *mb, struct ssh_key_s *skey, unsigned int format);
+
+int read_skey(struct ssh_key_s *skey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
 
 #endif

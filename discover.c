@@ -789,63 +789,104 @@ static void start_get_service_thread(struct timespec *since)
 
 }
 
+static void add_net_service_common(unsigned int service, char *hostname, char *ipv4, unsigned int port, unsigned int method)
+{
+    int lock=0;
+
+    /* try to get the lock to add services
+	it is possible the list may be in use for a **long** time
+	and waiting for the lock to release takes too long
+	so if the lock is busy: queue the values to be picked up later */
+
+    lock=pthread_mutex_trylock(&hosts_found.mutex);
+
+    if (lock==0) {
+	struct context_address_s address;
+	unsigned int error=0;
+	unsigned int result=0;
+	struct timespec since;
+
+	get_current_time(&since);
+
+	/* got the lock to the normal list */
+
+	memset(&address, 0, sizeof(struct context_address_s));
+	address.type=_INTERFACE_NETWORK_IPV4;
+	address.target.network.address=ipv4;
+	address.target.network.port=port;
+
+	result=add_net_service_unlocked(method, hostname, service, &address, 0, &error);
+	if (error>0) logoutput_info("add_net_service_avahi: error %i:%s", error, strerror(error));
+
+	/* if service is a new or added but found earlier process futher */
+
+        if (result & (_ADD_NET_SERVICE_SERVICE | _ADD_NET_SERVICE_SERVICE_EXIST)) {
+
+	    /* activate a thread */
+
+	    start_get_service_thread(&since);
+
+	}
+
+	pthread_mutex_unlock(&hosts_found.mutex);
+
+    } else if (lock==EBUSY) {
+
+	/* list is locked: queue it to be processed later */
+
+	queue_service_found(method, hostname, service, ipv4, port);
+
+    } else {
+
+	logoutput_warning("add_net_service_avahi: error %i:%s", lock, strerror(lock));
+
+    }
+
+}
+
 void add_net_service_avahi(const char *type, char *hostname, char *ipv4, unsigned int port)
 {
     unsigned int service=convert_avahi_service_type(type);
 
-    logoutput("add_net_service_avahi: type %s host %s ip %s port %i", type, hostname, ipv4, port);
+    if (service>0) {
+
+	logoutput("add_net_service_avahi: type %s host %s ip %s port %i", type, hostname, ipv4, port);
+	add_net_service_common(service, hostname, ipv4, port, DISCOVER_METHOD_AVAHI);
+
+    } else {
+
+	logoutput("add_net_service_avahi: type %s not reckognized", type);
+
+    }
+
+}
+
+void add_net_service_staticfile(const char *type, char *hostname, char *ipv4, unsigned int port)
+{
+    unsigned int service=0;
+
+    if (strcmp(type, "tcp:sftp")==0) {
+
+	service=WORKSPACE_SERVICE_SFTP;
+
+    } else if (strcmp(type, "tcp:smb")==0) {
+
+	service=WORKSPACE_SERVICE_SMB;
+
+    } else if (strcmp(type, "tcp:nfs")==0) {
+
+	service=WORKSPACE_SERVICE_NFS;
+
+    } else {
+
+	logoutput("add_net_service_staticfile: type %s not reckognized", type);
+
+    }
 
     if (service>0) {
-	int lock=0;
 
-	/* try to get the lock to add services
-	    it is possible the list may be in use for a **long** time
-	    and waiting for the lock to release takes too long
-	    so if the lock is busy: queue the values to be picked up later */
-
-	lock=pthread_mutex_trylock(&hosts_found.mutex);
-
-	if (lock==0) {
-	    struct context_address_s address;
-	    unsigned int error=0;
-	    unsigned int result=0;
-	    struct timespec since;
-
-	    get_current_time(&since);
-
-	    /* got the lock to the normal list */
-
-	    memset(&address, 0, sizeof(struct context_address_s));
-	    address.type=_INTERFACE_NETWORK_IPV4;
-	    address.target.network.address=ipv4;
-	    address.target.network.port=port;
-
-	    result=add_net_service_unlocked(DISCOVER_METHOD_AVAHI, hostname, service, &address, 0, &error);
-	    if (error>0) logoutput_info("add_net_service_avahi: error %i:%s", error, strerror(error));
-
-	    /* if service is a new or added but found earlier process futher */
-
-	    if (result & (_ADD_NET_SERVICE_SERVICE | _ADD_NET_SERVICE_SERVICE_EXIST)) {
-
-		/* activate a thread */
-
-		start_get_service_thread(&since);
-
-	    }
-
-	    pthread_mutex_unlock(&hosts_found.mutex);
-
-	} else if (lock==EBUSY) {
-
-	    /* list is locked: queue it to be processed later */
-
-	    queue_service_found(DISCOVER_METHOD_AVAHI, hostname, service, ipv4, port);
-
-	} else {
-
-	    logoutput_warning("add_net_service_avahi: error %i:%s", lock, strerror(lock));
-
-	}
+	logoutput("add_net_service_staticfile: type %s host %s ip %s port %i", type, hostname, ipv4, port);    
+	add_net_service_common(service, hostname, ipv4, port, DISCOVER_METHOD_STATICFILE);
 
     }
 

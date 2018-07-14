@@ -40,42 +40,28 @@
 #include "main.h"
 #include "logging.h"
 
-#include "utils.h"
+#include "common-utils/utils.h"
 
 #include "workspace-interface.h"
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
 #include "ssh-common-list.h"
 
-#include "ssh-compression.h"
 #include "ssh-connection.h"
-#include "ssh-encryption.h"
 #include "ssh-hostinfo.h"
-#include "ssh-keyx.h"
-#include "ssh-kex.h"
-#include "ssh-mac.h"
-#include "ssh-pubkey.h"
+#include "ssh-keyexchange.h"
 #include "ssh-receive.h"
 #include "ssh-send.h"
 #include "ssh-data.h"
-#include "ssh-channel-table.h"
 #include "ssh-channel.h"
-
 #include "ssh-utils.h"
-
-#include "ssh-send-greeter.h"
-#include "ssh-send-kexinit.h"
-#include "ssh-send-userauth.h"
 #include "ssh-userauth.h"
-#include "ssh-send-transport.h"
-
-#include "ssh-receive-greeter.h"
-#include "ssh-queue-rawdata.h"
-#include "ssh-queue-payload.h"
-#include "ssh-receive-waitreply.h"
 #include "extensions/extension.h"
 
-#include "ssh-kexinit.h"
+#define UINT32_T_MAX		0xFFFFFFFF
+
+static pthread_mutex_t done_mutex=PTHREAD_MUTEX_INITIALIZER;
+static unsigned char initdone=0;
 
 static void init_session_status(struct ssh_session_s *session)
 {
@@ -83,14 +69,16 @@ static void init_session_status(struct ssh_session_s *session)
 
     pthread_mutex_init(&status->mutex, NULL);
     pthread_cond_init(&status->cond, NULL);
-    status->error=0;
     status->max_packet_size=32768;
     status->remote_version_major=0;
     status->remote_version_minor=0;
-    status->status=0;
-    status->substatus=0;
+
+    status->sessionphase.phase=0;
+    status->sessionphase.sub=0;
+    status->sessionphase.status=0;
+    status->sessionphase.error=0;
+
     status->unique=0;
-    status->thread=0;
 
 }
 
@@ -101,62 +89,164 @@ static void free_session_status(struct ssh_session_s *session)
     pthread_cond_destroy(&ssh_status->cond);
 }
 
-void change_session_status(struct ssh_session_s *session, unsigned int status)
+int change_sessionphase(struct ssh_session_s *session, struct sessionphase_s *sessionphase)
 {
-    struct ssh_status_s *ssh_status=&session->status;
+    struct ssh_status_s *status=&session->status;
 
-    pthread_mutex_lock(&ssh_status->mutex);
-    ssh_status->status=status;
-    ssh_status->substatus=0;
-    pthread_mutex_unlock(&ssh_status->mutex);
-}
+    pthread_mutex_lock(&status->mutex);
 
-int check_session_status(struct ssh_session_s *session, unsigned int status, unsigned int substatus)
-{
-    struct ssh_status_s *ssh_status=&session->status;
-    int result=-1;
+    if (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) {
 
-    pthread_mutex_lock(&ssh_status->mutex);
-
-    if (substatus>0) {
-
-	result=(ssh_status->status==status && (ssh_status->substatus & substatus)) ? 0 : -1;
-
-    } else {
-
-	result=(ssh_status->status==status) ? 0 : -1;
+	pthread_mutex_unlock(&status->mutex);
+	return -3;
 
     }
 
-    pthread_mutex_unlock(&ssh_status->mutex);
-    return result;
+    status->sessionphase.phase=sessionphase->phase;
+    status->sessionphase.sub=sessionphase->sub;
+
+    pthread_mutex_unlock(&status->mutex);
+
+    return 0;
+
 }
 
-int check_change_session_substatus(struct ssh_session_s *session, unsigned int status, unsigned int substatus, unsigned int subnew)
+int compare_sessionphase(struct ssh_session_s *session, struct sessionphase_s *sessionphase)
 {
-    struct ssh_status_s *ssh_status=&session->status;
+    struct ssh_status_s *status=&session->status;
     int result=-1;
 
-    pthread_mutex_lock(&ssh_status->mutex);
+    pthread_mutex_lock(&status->mutex);
 
-    if (ssh_status->status==status && (substatus==0 || (ssh_status->substatus & substatus))) {
+    if (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) {
 
-	if (ssh_status->substatus & subnew) {
+	pthread_mutex_unlock(&status->mutex);
+	return -3;
 
-	    /* already set */
-	    result=1;
+    }
 
-	} else {
+    if (status->sessionphase.phase==sessionphase->phase && status->sessionphase.sub==sessionphase->sub) result=0;
 
-	    ssh_status->substatus|=subnew;
+    pthread_mutex_unlock(&status->mutex);
+
+    return result;
+
+}
+
+int change_status_sessionphase(struct ssh_session_s *session, struct sessionphase_s *sessionphase)
+{
+    struct ssh_status_s *status=&session->status;
+    int result=0;
+
+    pthread_mutex_lock(&status->mutex);
+
+    if (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) {
+
+	result=-3;
+
+    } else if (sessionphase->phase == status->sessionphase.phase && sessionphase->sub == status->sessionphase.sub) {
+
+	if ((status->sessionphase.status & SESSION_STATUS_GENERIC_FAILED) && (sessionphase->status & SESSION_STATUS_GENERIC_FAILED)==0) result=-1;
+	status->sessionphase.status |= sessionphase->status;
+	pthread_cond_broadcast(&status->cond);
+
+    } else {
+
+	result=-2;
+
+    }
+
+    pthread_mutex_unlock(&status->mutex);
+    return result;
+
+}
+
+void set_sessionphase_failed(struct sessionphase_s *sessionphase)
+{
+    sessionphase->status |= SESSION_STATUS_GENERIC_FAILED;
+}
+
+void set_sessionphase_success(struct sessionphase_s *sessionphase)
+{
+    sessionphase->status |= SESSION_STATUS_GENERIC_SUCCESS;
+}
+
+void copy_sessionphase(struct ssh_session_s *session, struct sessionphase_s *sessionphase)
+{
+    struct ssh_status_s *status=&session->status;
+
+    pthread_mutex_lock(&status->mutex);
+
+    sessionphase->phase=status->sessionphase.phase;
+    sessionphase->sub=status->sessionphase.sub;
+    sessionphase->status=status->sessionphase.status;
+
+    pthread_mutex_unlock(&status->mutex);
+
+}
+
+int wait_status_sessionphase(struct ssh_session_s *session, struct sessionphase_s *sessionphase, unsigned int s)
+{
+    struct ssh_status_s *status=&session->status;
+    int result=0;
+
+    pthread_mutex_lock(&status->mutex);
+
+    if (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) {
+
+	result=-3;
+	goto out;
+
+    } else if (sessionphase->phase==status->sessionphase.phase && sessionphase->sub == status->sessionphase.sub && (status->sessionphase.status & s)) {
+
+	result=0;
+	goto out;
+
+    } else if (sessionphase->phase != status->sessionphase.phase || sessionphase->sub != status->sessionphase.sub) {
+
+	result=-2;
+	goto out;
+
+    } else if (status->sessionphase.status & SESSION_STATUS_GENERIC_FAILED) {
+
+	result=-1;
+	goto out;
+
+    }
+
+    while (sessionphase->phase==status->sessionphase.phase && sessionphase->sub == status->sessionphase.sub && (status->sessionphase.status & s)==0) {
+
+	pthread_cond_wait(&status->cond, &status->mutex);
+
+	if (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) {
+
+	    result=-3;
+	    break;
+
+	} else if (sessionphase->phase==status->sessionphase.phase && sessionphase->sub == status->sessionphase.sub && (status->sessionphase.status & s)) {
+
 	    result=0;
+	    break;
+
+	} else if (sessionphase->phase != status->sessionphase.phase || sessionphase->sub != status->sessionphase.sub) {
+
+	    result=-2;
+	    break;
+
+	} else if (status->sessionphase.status & SESSION_STATUS_GENERIC_FAILED) {
+
+	    result=-1;
+	    break;
 
 	}
 
     }
 
-    pthread_mutex_unlock(&ssh_status->mutex);
+    out:
+
+    pthread_mutex_unlock(&status->mutex);
     return result;
+
 }
 
 static void free_identity(struct ssh_session_s *session)
@@ -222,68 +312,109 @@ static int init_ssh_identity(struct ssh_session_s *session, uid_t uid, unsigned 
 
 }
 
-
-static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mutex, pthread_cond_t *cond, unsigned int *error)
+void finish_ssh_backend(void *ptr)
 {
-    struct ssh_session_s *ssh_session=NULL;
+    free_group_ssh_sessions();
+}
 
-    ssh_session=malloc(sizeof(struct ssh_session_s));
+int init_ssh_backend(unsigned int *error)
+{
+    int result=0;
 
-    if (ssh_session) {
+    pthread_mutex_lock(&done_mutex);
 
-	memset(ssh_session, 0, sizeof(struct ssh_session_s));
+    if (initdone==0) {
 
-	ssh_session->list.next=NULL;
-	ssh_session->list.prev=NULL;
+	initialize_group_ssh_sessions(error);
 
-	init_session_status(ssh_session);
-	init_channels_table(ssh_session, CHANNELS_TABLE_SIZE);
-	init_session_data(ssh_session);
-	init_ssh_connection(ssh_session);
-	init_hostinfo(ssh_session);
-	init_ssh_extensions(ssh_session);
+	init_send_once();
+	init_receive_once();
+	init_ssh_utils();
+
+	result=init_ssh_backend_library(error);
+
+	initdone=1;
+
+	/* TODO:
+	    add a "free ssh backend" task at the main "end tasks list" */
+
+	add_finish_script(finish_ssh_backend, NULL, "ssh_backend");
+
+
+    }
+
+    pthread_mutex_unlock(&done_mutex);
+
+    return result;
+
+}
+
+static struct ssh_session_s *_create_ssh_session(uid_t uid, struct context_interface_s *interface, pthread_mutex_t *mutex, pthread_cond_t *cond, unsigned int *error)
+{
+    struct ssh_session_s *session=NULL;
+
+    session=malloc(sizeof(struct ssh_session_s));
+
+    if (session) {
+
+	memset(session, 0, sizeof(struct ssh_session_s));
+
+	session->interface=interface;
+
+	session->list.next=NULL;
+	session->list.prev=NULL;
+
+	init_session_status(session);
+	init_channels_table(session, CHANNELS_TABLE_SIZE);
+	init_session_data(session);
+	init_ssh_connection(&session->connection);
+	init_hostinfo(session);
+	init_ssh_extensions(session);
+	init_ssh_pubkey(session);
 
 	/* start without compression, encryption, hmac and publickey */
 
-	init_compression(ssh_session);
-	init_encryption(ssh_session);
-	init_mac(ssh_session);
-	init_send(ssh_session);
+	if (init_send(session, error)==-1) {
 
-	if (init_ssh_identity(ssh_session, uid, error)==-1) {
+	    logoutput("_create_ssh_session: error (%i:%s) init send", *error, strerror(*error));
+	    goto error;
+
+	}
+
+	if (init_ssh_identity(session, uid, error)==-1) {
 
 	    logoutput("_create_ssh_session: error (%i:%s) init identity", *error, strerror(*error));
 	    goto error;
 
 	}
 
-	if (init_receive(ssh_session, mutex, cond, error)==-1) {
+	if (init_receive(session, mutex, cond, error)==-1) {
 
-	    logoutput("_create_ssh_session: error (%i:%s) init receive buffer", *error, strerror(*error));
+	    logoutput("_create_ssh_session: error (%i:%s) init receive", *error, strerror(*error));
 	    goto error;
 
 	}
 
-	return ssh_session;
+	return session;
 
     }
 
     error:
 
-    if (ssh_session) {
+    if (session) {
 
-	free_receive(ssh_session);
-	free_send(ssh_session);
+	free_receive(session);
+	free_send(session);
 
-	free_hostinfo(ssh_session);
-	free_session_data(ssh_session);
+	free_hostinfo(session);
+	free_session_data(session);
 
-	free_session_status(ssh_session);
-	free_channels_table(ssh_session);
-	free_identity(ssh_session);
+	free_session_status(session);
+	free_channels_table(session);
+	free_identity(session);
 
-	free(ssh_session);
-	ssh_session=NULL;
+	free(session);
+	session=NULL;
 
     }
 
@@ -293,180 +424,140 @@ static struct ssh_session_s *_create_ssh_session(uid_t uid, pthread_mutex_t *mut
 
 static int _setup_ssh_session(struct ssh_session_s *session, struct context_interface_s *interface)
 {
+    struct payload_queue_s queue;
+    struct sessionphase_s sessionphase;
+    int result=-1;
 
-    /* send a greeter and wait for greeter from server */
+    init_payload_queue(session, &queue);
+    session->queue=&queue;
 
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, 0, SESSION_SUBSTATUS_GREETER)==0) {
-	struct timespec expire;
+    sessionphase.phase=SESSION_PHASE_SETUP;
+    sessionphase.sub=SESSION_SUBPHASE_INIT;
+    sessionphase.status=0;
+    sessionphase.error=0;
+
+    if (change_sessionphase(session, &sessionphase)==0) {
 	unsigned int error=0;
 
-	if (add_session_eventloop(session, interface, &session->status.error)==-1) {
+	if (add_ssh_connection_eventloop(&session->connection, read_incoming_data, (void *) session, interface, &error)==-1) {
 
-	    if (session->status.error==0) session->status.error=EIO;
-	    logoutput("_setup_ssh_session: error %i adding fd %i to eventloop (%s)", session->status.error, session->connection.fd, strerror(session->status.error));
-	    goto error;
+	    if (error==0) error=EIO;
+	    logoutput("_setup_ssh_session: error %i adding fd %i to eventloop (%s)", error, session->connection.fd, strerror(error));
+	    set_sessionphase_failed(&sessionphase);
 
 	} else {
 
 	    logoutput("_setup_ssh_session: added fd %i to eventloop", session->connection.fd);
+	    set_sessionphase_success(&sessionphase);
 
 	}
 
+    }
+
+    /* send a greeter and wait for greeter from server */
+
+    if (sessionphase.sub==SESSION_SUBPHASE_INIT && (sessionphase.status & SESSION_STATUS_GENERIC_SUCCESS) && compare_sessionphase(session, &sessionphase)==0) {
+	struct timespec expire;
+	int change=0;
+
+	sessionphase.sub=SESSION_SUBPHASE_GREETER;
+	sessionphase.status=0;
+	change=change_sessionphase(session, &sessionphase);
+	if (change<0) goto error;
+
 	if (send_greeter(session)==-1) {
 
-	    if (session->status.error==0) session->status.error=EIO;
-	    logoutput("_setup_ssh_session: error %i sending greeter (%s)", session->status.error, strerror(session->status.error));
+	    logoutput("_setup_ssh_session: error sending greeter");
+	    set_sessionphase_failed(&sessionphase);
 	    goto error;
 
 	} else {
 
 	    logoutput("_setup_ssh_session: greeter send");
+	    sessionphase.status|=SESSION_STATUS_GREETER_C2S;
 
 	}
 
-	/* get/wait for the first packet from the server: greeter */
+	/* wait for the greeter from the server */
 
-	get_session_expire_init(session, &expire);
+	if (wait_status_sessionphase(session, &sessionphase, SESSION_STATUS_GREETER_S2C)==0) {
 
-	if (wait_reply_server_greeter(session, &expire, &error)==-1) {
-
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-	    logoutput("_setup_ssh_session: error %i waiting for server greeter (%s)", session->status.error, strerror(session->status.error));
-	    goto error;
-
-	}
-
-    }
-
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_GREETER, SESSION_SUBSTATUS_KEYEXCHANGE)==0) {
-
-	if (process_key_exchange(session, NULL, 1)==-1) {
-
-	    goto error;
-
-	}
-
-    }
-
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_KEYEXCHANGE, SESSION_SUBSTATUS_REQUEST_USERAUTH)==0) {
-	struct timespec expire;
-	unsigned int error=0;
-	struct ssh_payload_s *payload=NULL;
-	unsigned int seq=0;
-	int result=-1;
-
-	logoutput("_setup_ssh_session: request for service ssh-userauth");
-
-	if (send_service_request_message(session, "ssh-userauth", &seq)==-1) {
-
-	    error=EIO;
-	    logoutput("_setup_ssh_session: error %i sending service request ssh-userauth (%s)", error, strerror(error));
-	    goto outrequest;
-
-	}
-
-	get_session_expire_init(session, &expire);
-
-	getrequest:
-
-	payload=get_ssh_payload(session, &expire, &seq, &error);
-
-	if (! payload) {
-
-	    if (error==0) error=EIO;
-	    logoutput("_setup_ssh_session: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
-	    goto outrequest;
-
-	}
-
-	if (payload->type == SSH_MSG_SERVICE_ACCEPT) {
-	    unsigned int len=strlen("ssh-userauth");
-	    char buffer[5 + len];
-
-	    buffer[0]=(unsigned char) SSH_MSG_SERVICE_ACCEPT;
-	    store_uint32(&buffer[1], len);
-	    memcpy(&buffer[5], "ssh-userauth", len);
-
-	    if (memcmp(payload->buffer, buffer, len)==0) {
-
-		logoutput("_setup_ssh_session: server accepted service ssh-userauth");
-		result=0;
-
-	    } else {
-
-		logoutput("_setup_ssh_session: server has sent an invalid service accept message");
-		goto outrequest;
-
-	    }
+	    logoutput("_setup_ssh_session: greeter received, continue");
+	    set_sessionphase_success(&sessionphase);
 
 	} else {
 
-	    if (payload->type == SSH_MSG_IGNORE || payload->type == SSH_MSG_DEBUG) {
-
-		process_ssh_message(session, payload);
-		free(payload);
-		payload=NULL;
-		goto getrequest;
-
-	    }
-
-	    logoutput("_setup_ssh_session: server send unexpected %i: disconnect", payload->type);
-	    goto outrequest;
-
-	}
-
-	outrequest:
-
-	if (payload) {
-
-	    free(payload);
-	    payload=NULL;
-
-	}
-
-	if (result==-1) {
-
-	    logoutput("_setup_ssh_session: userauth failed");
+	    logoutput("_setup_ssh_session: failed receiving/reading greeter");
+	    set_sessionphase_failed(&sessionphase);
 	    goto error;
+
+	}
+
+    } else {
+
+	goto error;
+
+    }
+
+    if (sessionphase.sub==SESSION_SUBPHASE_GREETER && (sessionphase.status & SESSION_STATUS_GENERIC_SUCCESS) && compare_sessionphase(session, &sessionphase)==0) {
+	int change=0;
+
+	sessionphase.sub=SESSION_SUBPHASE_KEYEXCHANGE;
+	sessionphase.status=0;
+	change=change_sessionphase(session, &sessionphase);
+	if (change<0) goto error;
+
+	if (key_exchange(session, &queue, &sessionphase)==0) {
+
+	    logoutput("_setup_ssh_session: key exchange success");
+	    set_sessionphase_success(&sessionphase);
+
+	} else {
+
+	    logoutput("_setup_ssh_session: key exchange failed");
+	    set_sessionphase_failed(&sessionphase);
 
 	}
 
     }
 
-    if (check_change_session_substatus(session, SESSION_STATUS_SETUP, SESSION_SUBSTATUS_REQUEST_USERAUTH, SESSION_SUBSTATUS_USERAUTH)==0) {
+    if (sessionphase.sub==SESSION_SUBPHASE_KEYEXCHANGE && (sessionphase.status & SESSION_STATUS_GENERIC_SUCCESS) && compare_sessionphase(session, &sessionphase)==0) {
+	int change=0;
 
-	if (ssh_authentication(session)==0) {
+	sessionphase.sub=SESSION_SUBPHASE_USERAUTH;
+	sessionphase.status=0;
+	change=change_sessionphase(session, &sessionphase);
+	if (change<0) goto error;
+
+	if (start_ssh_userauth(session, &queue)==0) {
 
 	    logoutput("_setup_ssh_session: authentication succes");
+	    set_sessionphase_success(&sessionphase);
 
 	} else {
 
 	    logoutput("_setup_ssh_session: authentication failed");
-	    goto error;
+	    set_sessionphase_failed(&sessionphase);
 
 	}
 
     }
 
-    pthread_mutex_lock(&session->status.mutex);
+    if (sessionphase.sub==SESSION_SUBPHASE_USERAUTH && (sessionphase.status & SESSION_STATUS_GENERIC_SUCCESS) && compare_sessionphase(session, &sessionphase)==0) {
 
-    if (session->status.status==SESSION_STATUS_SETUP &&
-	session->status.substatus==(SESSION_SUBSTATUS_GREETER | SESSION_SUBSTATUS_KEYEXCHANGE | SESSION_SUBSTATUS_REQUEST_USERAUTH | SESSION_SUBSTATUS_USERAUTH)) {
+	pthread_mutex_lock(&session->status.mutex);
 
-	session->status.status=SESSION_STATUS_CONNECTION;
-	session->status.substatus=0;
+	logoutput("_setup_ssh_session: completed");
+	result=0;
+	session->status.sessionphase.phase=SESSION_PHASE_CONNECTION;
+	session->status.sessionphase.sub=0;
+	session->status.sessionphase.status=0;
 
 	pthread_mutex_unlock(&session->status.mutex);
 
-	/* do not process the messages from queue anymore but start a seperate thread */
-
-	switch_process_payload_queue(session, "session");
-
-	return 0;
-
     }
 
-    pthread_mutex_unlock(&session->status.mutex);
+    return result;
 
     error:
 
@@ -480,9 +571,6 @@ void _free_ssh_session(struct ssh_session_s *session)
 
     logoutput("_free_ssh_session");
 
-    switch_process_rawdata_queue(session, "none");
-    switch_send_process(session, "none");
-
     free_channels_table(session);
     free_hostinfo(session);
     free_identity(session);
@@ -491,14 +579,10 @@ void _free_ssh_session(struct ssh_session_s *session)
     free_receive(session);
     free_send(session);
 
-    free_s2c_mac(session);
-    free_c2s_mac(session);
-
-    free_encrypt(session);
-    free_decrypt(session);
-
     free_session_status(session);
     free(session);
+    free_ssh_pubkey(session);
+
     session=NULL;
 
 }
@@ -511,20 +595,32 @@ void umount_ssh_session(struct context_interface_s *interface)
 
     if (session) {
 	struct channel_table_s *table=&session->channel_table;
+	struct ssh_channel_s *channel=NULL;
+	struct simple_lock_s wlock;
 
-	lock_group_ssh_sessions();
+
+	lock_group_ssh_sessions(&wlock);
 	remove_ssh_session_group(session);
-	unlock_group_ssh_sessions();
+	unlock_group_ssh_sessions(&wlock);
 
-	if (table->admin) {
-	    struct ssh_channel_s *channel=table->admin;
+	if (table->shell) {
 
-	    /* admin channel still open */
+	    channel=table->shell;
 
-	    channel=remove_channel_table_locked(session, channel, 0);
+	    remove_channel(channel, CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_SERVER_CLOSE);
+	    (* channel->free)(channel);
+	    table->shell=NULL;
 
-	    free_ssh_channel(table->admin);
-	    table->admin=NULL;
+	}
+
+	channel=get_next_channel(session, NULL);
+
+	while (channel) {
+	    struct ssh_channel_s *next=get_next_channel(session, channel);
+
+	    remove_channel(channel, CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_SERVER_CLOSE);
+	    (* channel->free)(channel);
+	    channel=next;
 
 	}
 
@@ -541,121 +637,90 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
     struct ssh_session_s *session=NULL;
     void *index=NULL;
     unsigned int hashvalue=0;
+    unsigned int error=0;
+    pthread_mutex_t *mutex=NULL;
+    pthread_cond_t *cond=NULL;
+    struct context_option_s option;
+    struct simple_lock_s wlock;
 
-    /*
-	test there is already a session for this context
-	session->channel->context == context
-	or
-	address-port(session) == address-port(context)
-    */
+    if (init_ssh_backend(&error)==-1) {
 
-    lock_group_ssh_sessions();
-
-    session=get_next_ssh_session(&index, &hashvalue);
-
-    while (session) {
-
-	pthread_mutex_lock(&session->status.mutex);
-
-	/* look for a session for the same user and to the same server */
-
-	if (session->identity.pwd.pw_uid==uid && compare_session_connection(session, address, port)==0) {
-
-	    /* wait for session to be complete */
-
-	    while (! (session->status.status==SESSION_STATUS_CONNECTION)) {
-
-		pthread_cond_wait(&session->status.cond, &session->status.mutex);
-
-	    }
-
-	    if (session->status.status==SESSION_STATUS_CONNECTION) {
-
-		/* only full working sessions which are not "busy" with another channel */
-
-		pthread_mutex_unlock(&session->status.mutex);
-		break;
-
-	    }
-
-	}
-
-	pthread_mutex_unlock(&session->status.mutex);
-	session=get_next_ssh_session(&index, &hashvalue);
+	logoutput("get_full_session: error (%i:%s) init ssh backend", error, strerror(error));
+	return NULL;
 
     }
+
+    lock_group_ssh_sessions(&wlock);
+
+    memset(&option, 0, sizeof(struct context_option_s));
+
+    if ((* interface->get_interface_option)(interface, "fuse:mount.shared-mutex", &option)>0) {
+
+	mutex=(pthread_mutex_t *) option.value.data;
+
+    }
+
+    
+    memset(&option, 0, sizeof(struct context_option_s));
+
+    if ((* interface->get_interface_option)(interface, "fuse:mount.shared-cond", &option)>0) {
+
+	cond=(pthread_cond_t *) option.value.data;
+
+    }
+
+    session=_create_ssh_session(uid, interface, mutex, cond, &error);
 
     if (! session) {
-	unsigned int error=0;
-	pthread_mutex_t *mutex=NULL;
-	pthread_cond_t *cond=NULL;
-	struct context_option_s option;
 
-	memset(&option, 0, sizeof(struct context_option_s));
-
-	if ((* interface->get_interface_option)(interface, "shared-mutex", &option)>0) {
-
-	    mutex=(pthread_mutex_t *) option.value.data;
-
-	}
-
-	memset(&option, 0, sizeof(struct context_option_s));
-
-	if ((* interface->get_interface_option)(interface, "shared-cond", &option)>0) {
-
-	    cond=(pthread_cond_t *) option.value.data;
-
-	}
-
-	session=_create_ssh_session(uid, mutex, cond, &error);
-
-	if (! session) {
-
-	    unlock_group_ssh_sessions();
-	    return NULL;
-
-	} else {
-
-	    if (connect_ssh_server(session, address, port)>0) {
-
-		logoutput("get_full_session: connected to %s:%i", address, port);
-
-	    } else {
-
-		logoutput("get_full_session: unable to connect to %s:%i", address, port);
-		_free_ssh_session(session);
-		unlock_group_ssh_sessions();
-		return NULL;
-
-	    }
-
-	}
-
-	/* setup the session with encryption, hmac, dh, pk etc. */
-
-	change_session_status(session, SESSION_STATUS_SETUP);
-
-	if (_setup_ssh_session(session, interface)==0) {
-
-	    add_ssh_session_group(session);
-
-	} else {
-
-	    if (session->connection.fd>0) {
-
-		send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
-		remove_session_eventloop(session);
-		disconnect_ssh_server(session);
-
-	    }
-
-	    _free_ssh_session(session);
-	    session=NULL;
-	}
+	unlock_group_ssh_sessions(&wlock);
+	return NULL;
 
     }
 
-    unlock_group_ssh_sessions();
+    if (connect_ssh_connection(&session->connection, address, port)>0) {
+
+	logoutput("get_full_session: connected to %s:%i", address, port);
+
+    } else {
+
+	logoutput("get_full_session: unable to connect to %s:%i", address, port);
+	_free_ssh_session(session);
+	unlock_group_ssh_sessions(&wlock);
+	return NULL;
+
+    }
+
+    memset(&option, 0, sizeof(struct context_option_s));
+
+    if ((* interface->get_interface_option)(interface, "option:ssh.init_timeout", &option)==_INTERFACE_OPTION_INT) {
+
+	session->connection.expire=option.value.number;
+
+    }
+
+    /* setup the session with encryption, hmac, dh, pk etc. */
+
+    if (_setup_ssh_session(session, interface)==0) {
+
+	add_ssh_session_group(session);
+
+    } else {
+
+	if (session->connection.fd>0) {
+
+	    send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
+	    remove_ssh_connection_eventloop(&session->connection);
+	    disconnect_ssh_connection(&session->connection);
+
+	}
+
+	_free_ssh_session(session);
+	session=NULL;
+
+    }
+
+    unlock_group_ssh_sessions(&wlock);
 
     return session;
 }
@@ -663,20 +728,18 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
 void remove_full_session(struct ssh_session_s *session)
 {
 
-    logoutput("remove full session");
-
     /* disconnect and free session */
 
     if (session->connection.fd>0) {
 
-	if (session->status.status==SESSION_STATUS_CONNECTION) {
+	if (session->status.sessionphase.phase==SESSION_PHASE_CONNECTION) {
 
 	    send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
 
 	}
 
-	remove_session_eventloop(session);
-	disconnect_ssh_server(session);
+	remove_ssh_connection_eventloop(&session->connection);
+	disconnect_ssh_connection(&session->connection);
 
     }
 
@@ -687,7 +750,8 @@ void remove_full_session(struct ssh_session_s *session)
 
 unsigned int get_window_size(struct ssh_session_s *session)
 {
-    return (16 * 1024 * 1024);
+    /* 2 ^ 32 - 1*/
+    return (unsigned int)(UINT32_T_MAX - 1);
 }
 
 unsigned int get_max_packet_size(struct ssh_session_s *session)
@@ -729,7 +793,7 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 
 	if (reason>0) {
 
-	    logoutput("disconnect_ssh_session: initiated by server (reason: %i)", reason);
+	    logoutput("disconnect_ssh_session: initiated by server (reason: %i:%s)", reason, get_disconnect_reason(reason));
 
 	} else {
 
@@ -741,13 +805,13 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 
     pthread_mutex_lock(&session->status.mutex);
 
-    if (session->status.status != SESSION_STATUS_DISCONNECT) {
+    if ((session->status.sessionphase.phase && SESSION_PHASE_DISCONNECT)==0 && (session->status.sessionphase.status & SESSION_STATUS_DISCONNECTING)==0) {
 
 	if (session->connection.fd>0) {
 
-	    remove_session_eventloop(session);
+	    remove_ssh_connection_eventloop(&session->connection);
 
-	    if (session->status.status==SESSION_STATUS_CONNECTION && server==0) {
+	    if (session->status.sessionphase.phase==SESSION_PHASE_CONNECTION && server==0) {
 
 		send_disconnect_message(session, SSH_DISCONNECT_BY_APPLICATION);
 
@@ -755,12 +819,11 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 
 	}
 
-	/* disable sending of messages */
+	signal_send_disconnect(&session->send);
+	signal_receive_disconnect(&session->receive);
 
-	switch_send_process(session, "none");
-	disconnect_ssh_server(session);
-
-	session->status.status=SESSION_STATUS_DISCONNECT;
+	disconnect_ssh_connection(&session->connection);
+	session->status.sessionphase.phase=SESSION_PHASE_DISCONNECT;
 
     }
 
@@ -768,14 +831,105 @@ void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server,
 
 }
 
-void init_ssh_payload(struct ssh_payload_s *payload)
+void *create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
 {
-    memset(payload, 0, sizeof(struct ssh_payload_s));
+    struct ssh_session_s *session=NULL;
 
-    payload->type=0;
-    payload->sequence=0;
-    payload->len=0;
-    payload->next=NULL;
-    payload->prev=NULL;
+    /*
+	20161118
+	only IPv4 for now
+    */
+
+    if (!(address->type==_INTERFACE_NETWORK_IPV4)) {
+
+	logoutput("create_ssh_connection: error, only support for ipv4");
+	*error=EINVAL;
+	return NULL;
+
+    } else if (address->target.network.address==NULL || address->target.network.port==0) {
+
+	logoutput("create_ssh_connection: error, address and/or port empty");
+	*error=EINVAL;
+	return NULL;
+
+    }
+
+    /* get ssh session for target and this uid: it may be an existing one */
+
+    session=get_full_session(uid, interface, address->target.network.address, address->target.network.port);
+
+    if (! session) {
+
+	logoutput("create_ssh_connection: no session created for %s:%i", address->target.network.address, address->target.network.port);
+
+    } else {
+	struct channel_table_s *table=&session->channel_table;
+
+	if (! table->shell) add_shell_channel(session);
+
+    }
+
+    return (void *) session;
+
+}
+
+static void analyze_connection_problem(void *ptr)
+{
+    struct ssh_session_s *session=(struct ssh_session_s *) ptr;
+    struct ssh_connection_s *connection=&session->connection;
+
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (connection->status==SSH_CONNECTION_STATUS_INIT || connection->status==SSH_CONNECTION_STATUS_CONNECTING || connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
+	unsigned int error=0;
+
+	error=get_status_ssh_connection(connection);
+
+	/* FOR NOW: also zero */
+
+	if (error>0 || error==0) {
+
+	    connection->error=error;
+	    connection->status=SSH_CONNECTION_STATUS_DISCONNECTED;
+	    disconnect_ssh_session(session, 0, 0);
+	    connection->expire=0; /* prevent waiting */
+
+	}
+
+    }
+
+    session->status.thread=0;
+    pthread_mutex_unlock(&session->status.mutex);
+
+}
+
+void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level)
+{
+    pthread_mutex_lock(&session->status.mutex);
+
+    if (session->status.thread>0) goto unlock;
+
+    if (session->status.sessionphase.phase==SESSION_PHASE_CONNECTION || session->status.sessionphase.phase==SESSION_PHASE_SETUP) {
+
+	if (level==SESSION_LEVEL_SYSTEM) {
+	    struct ssh_connection_s *connection=&session->connection;
+
+	    /* test the connection on low level: socket niveau */
+
+	    if (connection->status==SSH_CONNECTION_STATUS_CONNECTED) {
+		unsigned int error=0;
+
+		work_workerthread(NULL, 0, analyze_connection_problem, (void *) session, &error);
+		session->status.thread=1;
+
+	    }
+
+	}
+
+    }
+
+    unlock:
+
+    pthread_mutex_unlock(&session->status.mutex);
 
 }

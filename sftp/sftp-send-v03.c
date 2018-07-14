@@ -49,7 +49,7 @@
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
 #include "ssh-utils.h"
-#include "ssh-send-channel.h"
+#include "ssh-send.h"
 
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"
@@ -845,7 +845,7 @@ int send_sftp_extension_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp
     memcpy((char *) &data[pos], sftp_r->call.extension.data, sftp_r->call.extension.size);
     pos+=sftp_r->call.extension.size;
 
-    log_message(data, pos, "ext", 0);
+    // log_message(data, pos, "ext", 0);
 
     return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
 

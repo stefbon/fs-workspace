@@ -36,60 +36,9 @@
 #include <glib.h>
 #endif
 
-#if HAVE_LIBGCRYPT
-#include <gcrypt.h>
-#endif
-
 #include <utils.h>
-
 #include "ssh-datatypes.h"
 #include "pk-types.h"
-
-#if HAVE_LIBGCRYPT
-
-unsigned int pk_mpint_get_nbits(struct ssh_mpint_s *mp)
-{
-    if (mp->lib.mpi==NULL) return 0;
-    return gcry_mpi_get_nbits(mp->lib.mpi);
-}
-
-int pk_mpint_cmp(struct ssh_mpint_s *a, struct ssh_mpint_s *b)
-{
-    return gcry_mpi_cmp(a->lib.mpi, b->lib.mpi);
-}
-
-void pk_mpint_swap(struct ssh_mpint_s *a, struct ssh_mpint_s *b)
-{
-    gcry_mpi_swap(a->lib.mpi, b->lib.mpi);
-}
-
-int pk_mpint_invm(struct ssh_mpint_s *x, struct ssh_mpint_s *a, struct ssh_mpint_s *m)
-{
-    return gcry_mpi_invm(x->lib.mpi, a->lib.mpi, m->lib.mpi);
-}
-
-#else
-
-unsigned int pk_mpint_get_nbits(struct ssh_mpint_s *mp)
-{
-    return 0;
-}
-
-int pk_mpint_cmp(struct ssh_mpint_s *a, struct ssh_mpint_s *b)
-{
-    return 0;
-}
-
-void pk_mpint_swap(struct ssh_mpint_s *a, struct ssh_mpint_s *b)
-{
-}
-
-int pk_mpint_invm(struct ssh_mpint_s *x, struct ssh_mpint_s *a, struct ssh_mpint_s *m)
-{
-    return 0;
-}
-
-#endif
 
 #ifdef HAVE_GLIB2
 

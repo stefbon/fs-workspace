@@ -44,6 +44,42 @@
 
 #include <gcrypt.h>
 
+/* create s-exp s_sig build from the param and name like:
+    "(sig-val (dsa (r %m)(s %m)))"*/
+
+static int read_pk_signature_params(gcry_mpi_t *tmp, unsigned int len, struct ssh_string_s *sig, unsigned int *error)
+{
+    gcry_error_t err = 0;
+    char *pos=sig->ptr;
+    unsigned int left=sig->len;
+    size_t size=0;
+
+    for (unsigned int i=0; i<len; i++) {
+
+	tmp[i]=NULL;
+	size=0;
+
+	/* param are unsigned integers without header and padding: STD*/
+
+	err=gcry_mpi_scan(&tmp[i], GCRYMPI_FMT_STD, (const unsigned char *)pos, (size_t)left, &size);
+
+	if (err) {
+
+	    logoutput("read_pk_signature_params: error reading signature (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	    *error=EIO;
+	    return -1;
+
+	}
+
+	pos += size;
+	left -= size;
+
+    }
+
+    return 0;
+
+}
+
 int verify_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
 {
     int algo = (hashname) ? gcry_md_map_name(hashname) : gcry_md_map_name("sha1");
@@ -67,15 +103,17 @@ int verify_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("verify_sig_rsa: error creating data s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
     }
 
-    err=gcry_sexp_build(&s_pkey, NULL, "(public-key(rsa(e%m)(n%m)))", key->param.rsa.e.lib.mpi, key->param.rsa.n.lib.mpi);
+    err=gcry_sexp_build(&s_pkey, NULL, "(public-key (rsa(e %m)(n %m)))", key->param.rsa.e.lib.mpi, key->param.rsa.n.lib.mpi);
 
     if (err) {
 
+	logoutput("verify_sig_rsa: error creating pk s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -83,12 +121,14 @@ int verify_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     /* build s-expression for signature rsa
 	(sig-val (rsa(s)))
-	see: RFC4253 6.6. Public Key Algorithms */
+	see: RFC4253 6.6. Public Key Algorithms
+	no reading of paramaters is required as with dss and ecc */
 
     err=gcry_sexp_build(&s_sig, NULL, "(sig-val (rsa(s %b)))", sig->len, sig->ptr);
 
     if (err) {
 
+	logoutput("verify_sig_rsa: error creating sig-val s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -106,6 +146,7 @@ int verify_sig_rsa(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
 	} else {
 
+	    logoutput("verify_sig_rsa: error verify signature (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	    *error=EIO;
 
 	}
@@ -135,7 +176,7 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
     int verified=-1;
     gcry_error_t err = 0;
     gcry_sexp_t s_pkey = NULL, s_hash = NULL, s_sig = NULL;
-    gcry_mpi_t m_sig_r = NULL, m_sig_s = NULL;
+    gcry_mpi_t m_sig[2];
     size_t len = 0;
 
     if (dlen==0) {
@@ -152,6 +193,7 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("verify_sig_dss: error creating data s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -161,34 +203,17 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
     if (err) {
 
+	logoutput("verify_sig_dss: error creating pk s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
     }
 
-    /* get the r and s from signature */
+    /* get the r and s from signature and store in mpi array */
 
-    err=gcry_mpi_scan(&m_sig_r, GCRYMPI_FMT_SSH, (const unsigned char *)(sig->ptr), (size_t)(sig->len), &len);
+    if (read_pk_signature_params(&m_sig[0], 2, sig, error)==-1) {
 
-    if (err) {
-
-	*error=EIO;
-	goto out;
-
-    }
-
-    if (len>=sig->len) {
-
-	*error=EIO;
-	goto out;
-
-    }
-
-    err=gcry_mpi_scan(&m_sig_s, GCRYMPI_FMT_SSH, (const unsigned char *)(sig->ptr + len), (size_t)(sig->len - len), &len);
-
-    if (err) {
-
-	*error=EIO;
+	logoutput("verify_sig_dss: error reading signature");
 	goto out;
 
     }
@@ -197,10 +222,11 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 	(sig-val (dsa(r)(s)))
 	see: RFC4253 6.6. Public Key Algorithms */
 
-    err=gcry_sexp_build(&s_sig, NULL, "(sig-val (dsa (r %m)(s %m)))", m_sig_r, m_sig_s);
+    err=gcry_sexp_build(&s_sig, NULL, "(sig-val (dsa (r %m)(s %m)))", m_sig[0], m_sig[1]);
 
     if (err) {
 
+	logoutput("verify_sig_dss: error creating sig-val s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	*error=EIO;
 	goto out;
 
@@ -218,6 +244,7 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
 
 	} else {
 
+	    logoutput("verify_sig_dss: error verify signature (%s/%s)", gcry_strsource(err), gcry_strerror(err));
 	    *error=EIO;
 
 	}
@@ -231,8 +258,133 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
     out:
 
     if (s_sig) gcry_sexp_release(s_sig);
-    if (m_sig_r) gcry_mpi_release(m_sig_r);
-    if (m_sig_s) gcry_mpi_release(m_sig_s);
+    if (m_sig[0]) gcry_mpi_release(m_sig[0]);
+    if (m_sig[1]) gcry_mpi_release(m_sig[1]);
+    if (s_pkey) gcry_sexp_release(s_pkey);
+    if (s_hash) gcry_sexp_release(s_hash);
+
+    return verified;
+}
+
+int verify_sig_ecc(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
+{
+    int algo = gcry_md_map_name((hashname) ? hashname : "sha1");
+    gcry_error_t err = 0;
+    gcry_sexp_t s_hash = NULL, s_pkey = NULL, s_sig = NULL;
+    gcry_mpi_t m_sig[2];
+    size_t len=0;
+    int verified=-1;
+    void *ptr=NULL;
+    unsigned int nbits=0;
+    char *curve=NULL;
+
+    if (key->algo->id == SSH_PKALGO_ID_ED25519) {
+
+	curve="Ed25519";
+
+    } else if (key->algo->id == SSH_PKALGO_ID_CURVE25519) {
+
+	curve="Curve25519";
+
+    } else {
+
+	logoutput("create_sig_ecc: error algo %s not supported", key->algo->name);
+	goto out;
+
+    }
+
+    if (algo==GCRY_MAC_NONE) {
+
+	logoutput("verify_sig_ecc: hash %s not supported", hashname);
+	*error=EINVAL;
+	return -1;
+
+    }
+
+    if (sig->len<64) {
+
+	logoutput("verify_sig_ecc: error signature is too short (%i)", sig->len);
+	goto out;
+
+    }
+
+    ptr=gcry_mpi_get_opaque(key->param.ecc.q.lib.mpi, &nbits);
+
+    if (ptr==NULL || nbits==0) {
+
+	logoutput("verify_sig_ecc: error reading q as opaque value");
+	goto out;
+
+    }
+
+    /* building the s-expr for the publickey
+	more flavors are possible: add an if  */
+
+    err=gcry_sexp_build(&s_pkey, NULL, "(public-key (ecc (curve %s) (flags eddsa) (q %b)))", curve, (nbits/8), ptr);
+
+    if (err) {
+
+	logoutput("verify_sig_ecc: error creating pk s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    /* no hashing of data required, here the sign algo does the hashing self, only provide the name */
+
+    err=gcry_sexp_build(&s_hash, NULL, "(data (flags eddsa) (hash-algo %s) (value %b))", gcry_md_algo_name(algo), size, buffer);
+
+    if (err) {
+
+	logoutput("verify_sig_ecc: error creating data s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    /* get the r and s from signature and store in mpi array */
+
+    // if (read_pk_signature_params(&m_sig[0], 2, sig, error)==-1) {
+
+	// logoutput("verify_sig_dss: error reading signature");
+	// goto out;
+
+    // }
+
+    err=gcry_sexp_build(&s_sig, NULL, "(sig-val (eddsa (r %b) (s %b)))", 32, &sig[0], 32, &sig[32]);
+
+    if (err) {
+
+	logoutput("verify_sig_ecc: error creating sig-val s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    err=gcry_pk_verify(s_sig, s_hash, s_pkey);
+
+    if (err) {
+
+	if (err==GPG_ERR_BAD_SIGNATURE) {
+
+	    /* not an error */
+
+	    logoutput("verify_sig_ecc: bad signature");
+
+	} else {
+
+	    logoutput("verify_sig_ecc: error verify signature (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+
+	}
+
+    } else {
+
+	verified=0;
+
+    }
+
+    out:
+
+    if (s_sig) gcry_sexp_release(s_sig);
+    if (m_sig[0]) gcry_mpi_release(m_sig[0]);
+    if (m_sig[1]) gcry_mpi_release(m_sig[1]);
     if (s_pkey) gcry_sexp_release(s_pkey);
     if (s_hash) gcry_sexp_release(s_hash);
 
@@ -253,21 +405,32 @@ int verify_sig_dss(struct ssh_key_s *key, char *buffer, unsigned int size, struc
     return -1;
 }
 
+int verify_sig_ecc(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
+{
+    *error=EOPNOTSUPP;
+    return -1;
+}
+
 #endif
 
 int verify_sig(struct ssh_key_s *key, char *buffer, unsigned int size, struct ssh_string_s *sig, const char *hashname, unsigned int *error)
 {
     struct ssh_pkalgo_s *algo=key->algo;
 
-    switch (algo->id) {
+    switch (algo->scheme) {
 
-    case SSH_PKALGO_ID_RSA:
+    case SSH_PKALGO_SCHEME_RSA:
 
 	return verify_sig_rsa(key, buffer, size, sig, hashname, error);
 
-    case SSH_PKALGO_ID_DSS:
+    case SSH_PKALGO_SCHEME_DSS:
 
 	return verify_sig_dss(key, buffer, size, sig, hashname, error);
+
+    case SSH_PKALGO_SCHEME_ECC:
+
+	return verify_sig_ecc(key, buffer, size, sig, hashname, error);
+
 
     }
 

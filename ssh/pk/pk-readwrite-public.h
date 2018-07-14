@@ -22,8 +22,19 @@
 
 int read_pkey_rsa(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
 int read_pkey_dss(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+int read_pkey_ecc(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+int read_pkey_generic(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+
+void msg_read_pkey_rsa(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
+void msg_read_pkey_dss(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
+void msg_read_pkey_ecc(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
 
 int write_pkey_rsa(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
 int write_pkey_dss(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+int write_pkey_ecc(struct ssh_key_s *pkey, char *buffer, unsigned int size, unsigned int format, unsigned int *error);
+
+void msg_write_pkey_rsa(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
+void msg_write_pkey_dss(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
+void msg_write_pkey_ecc(struct msg_buffer_s *mb, struct ssh_key_s *pkey, unsigned int format);
 
 #endif

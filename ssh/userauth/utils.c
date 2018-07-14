@@ -47,15 +47,9 @@
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
 
-#include "ssh-pubkey.h"
-
 #include "ssh-receive.h"
-#include "ssh-queue-rawdata.h"
-
 #include "ssh-send.h"
-#include "ssh-send-userauth.h"
 #include "ssh-hostinfo.h"
-
 #include "ssh-utils.h"
 
 /*
@@ -125,23 +119,21 @@ static unsigned int get_required_auth_methods(char *namelist, unsigned int len)
 int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_userauth_s *userauth)
 {
     unsigned int result=-1;
-    unsigned int len=0;
 
-    if (payload->len<6) return -1;
+    if (payload->len>6) {
+	unsigned int len=get_uint32(&payload->buffer[1]);
 
-    len=get_uint32(&payload->buffer[1]);
+	if (len>0 && payload->len==6+len) {
+	    unsigned char partial_success=(unsigned char) payload->buffer[5+len];
 
-    if (len>0 && payload->len==6+len) {
-	unsigned char partial_success=(unsigned char) payload->buffer[5+len];
+	    userauth->required_methods=get_required_auth_methods(&payload->buffer[5], len);
+	    result=(partial_success>0) ? 0 : -1;
 
-	userauth->required_methods=get_required_auth_methods(&payload->buffer[5], len);
-	result=(partial_success>0) ? 0 : -1;
-
-    } else {
-
-	userauth->error=EPROTO;
+	}
 
     }
+
+    logoutput("handle_userauth_failure: result %i", result);
 
     return result;
 

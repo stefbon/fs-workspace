@@ -21,8 +21,10 @@
 #define FS_WORKSPACE_SSH_DATATYPES_H
 
 #include "datatypes/ssh-string.h"
-#include "datatypes/ssh-namelist.h"
 #include "datatypes/ssh-uint.h"
+#include "datatypes/ssh-payload.h"
+#include "datatypes/ssh-msg-buffer.h"
+#include "datatypes/ssh-namelist.h"
 #include "datatypes/ssh-mpint.h"
 
 /* prototypes */

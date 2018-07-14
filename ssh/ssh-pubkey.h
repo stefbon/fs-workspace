@@ -20,6 +20,9 @@
 #ifndef FS_WORKSPACE_SSH_PUBKEY_H
 #define FS_WORKSPACE_SSH_PUBKEY_H
 
-unsigned int ssh_get_pubkey_list(struct commalist_s *clist);
+void init_ssh_pubkey(struct ssh_session_s *session);
+void store_algo_pubkey_negotiation(struct ssh_session_s *session, struct ssh_string_s *clist_c, struct ssh_string_s *clist_s);
+int find_pubkey_negotiation(struct ssh_session_s *session, char *name);
+void free_ssh_pubkey(struct ssh_session_s *session);
 
 #endif

@@ -25,8 +25,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/time.h>
@@ -46,13 +44,115 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
-#include "ssh-utils-libgcrypt.h"
 
-extern int initialize_group_ssh_sessions(unsigned int *error);
-extern void free_group_ssh_sessions();
+#if HAVE_LIBGCRYPT
+
+#include <gcrypt.h>
+
+#endif
 
 static struct ssh_utils_s utils;
-static unsigned char done=0;
+
+#ifdef HAVE_LIBGCRYPT
+
+unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error)
+{
+    int algo=gcry_md_map_name(name);
+    unsigned int len=0;
+    gcry_md_hd_t handle;
+
+    if (algo==0) {
+
+	if (error) *error=EINVAL;
+	return 0;
+
+    }
+
+    len=gcry_md_get_algo_dlen(algo);
+    if (out==NULL || in==NULL) return len;
+
+    if (gcry_md_open(&handle, algo, 0)==0) {
+	unsigned char *digest=NULL;
+
+	gcry_md_write(handle, in, size);
+	digest=gcry_md_read(handle, algo);
+	if (out->len < len) len=out->len;
+	memcpy(out->ptr, digest, len);
+	gcry_md_close(handle);
+
+    } else {
+
+	if (error) *error=EIO;
+	len=0;
+
+    }
+
+    return len;
+
+}
+
+#else
+
+unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error)
+{
+    *error=EOPNOTSUPP;
+    return 0;
+
+}
+
+#endif
+
+#ifdef HAVE_LIBGCRYPT
+
+unsigned int fill_random(char *buffer, unsigned int size)
+{
+    gcry_create_nonce((unsigned char *)buffer, (size_t) size);
+    return size;
+}
+
+#else
+
+unsigned int fill_random(char *buffer, unsigned int size)
+{
+    return 0;
+}
+
+#endif
+
+int init_ssh_backend_library(unsigned int *error)
+{
+#ifdef HAVE_LIBGCRYPT
+
+    logoutput("init_ssh_backend_library: libgcrypt %s", GCRYPT_VERSION);
+
+    GCRY_THREAD_OPTION_PTHREAD_IMPL;
+    gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
+
+    /* disable secure memory (for now) */
+
+    gcry_control(GCRYCTL_DISABLE_SECMEM, 0);
+    gcry_control(GCRYCTL_ENABLE_M_GUARD);
+    gcry_control(GCRYCTL_SET_VERBOSITY, 3);
+
+    if ( ! gcry_check_version(GCRYPT_VERSION)) {
+
+
+	*error=ELIBBAD;
+	logoutput_warning("init_ssh_backend_library");
+	return -1;
+
+    }
+
+    gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0);
+    return 0;
+
+#else
+
+    return -1;
+
+#endif
+
+}
 
 /* host specific n to h */
 
@@ -70,93 +170,32 @@ uint64_t ntohll_be(uint64_t nvalue)
     return nvalue;
 }
 
-unsigned int check_add_generic(char *options, const char *name, struct commalist_s *clist)
-{
-    unsigned int error=0;
-
-    if (options) {
-
-	if (string_found_commalist(options, (char *) name)==0) return 0;
-
-    }
-
-    return add_name_to_commalist(name, clist, &error);
-
-}
-
-int init_sshlibrary()
+void init_ssh_utils()
 {
     unsigned int endian_test=1;
     unsigned int error=0;
 
-    if (done==0) {
+    /* determine the ntohll function to use for this host (big or litlle endian) */
 
-	/* determine the ntohll function to use for this host (big or litlle endian) */
+    if (*((char *) &endian_test) == 1) {
 
-	if (*((char *) &endian_test) == 1) {
+	/* little endian */
 
-	    /* little endian */
+	utils.ntohll=ntohll_le;
 
-	    utils.ntohll=ntohll_le;
+    } else {
 
-	} else {
+	/* big endian */
 
-	    /* big endian */
-
-	    utils.ntohll=ntohll_be;
-
-	}
-
-	init_sshutils_libgcrypt(&utils);
-
-	if (initialize_group_ssh_sessions(&error)==-1) {
-
-	    logoutput("init_sshlibrary: failed to initialize hash table for sessions");
-	    return -1;
-
-	}
-
-	done=1;
+	utils.ntohll=ntohll_be;
 
     }
 
-    return (* utils.init_library)(&error);
-
-}
-
-void end_sshlibrary()
-{
-    free_group_ssh_sessions();
-}
-
-unsigned int hash(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error)
-{
-    return (* utils.hash)(name, in, out, error);
-}
-
-unsigned int get_digest_len(const char *name)
-{
-    return (* utils.get_digest_len)(name);
 }
 
 uint64_t ntohll(uint64_t value)
 {
     return (* utils.ntohll)(value);
-}
-
-unsigned int fill_random(char *pos, unsigned int len)
-{
-    return (* utils.fill_random)(pos, len);
-}
-
-unsigned char isvalid_ipv4(char *address)
-{
-    struct in_addr tmp_addr;
-
-    if (inet_pton(AF_INET, address, &tmp_addr)==1) return 1;
-
-    return 0;
-
 }
 
 void replace_cntrl_char(char *buffer, unsigned int size)

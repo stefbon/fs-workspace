@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-int init_sftp_usermapping(struct sftp_subsystem_s *sftp);
+int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_subsystem_s *sftp);
 
 #endif

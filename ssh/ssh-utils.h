@@ -22,17 +22,11 @@
 
 /* prototypes */
 
-unsigned int check_add_generic(char *options, const char *name, struct commalist_s *clist);
-
-int init_sshlibrary();
-void end_sshlibrary();
-
-unsigned int hash(const char *name, struct common_buffer_s *in, struct ssh_string_s *out, unsigned int *error);
-unsigned int get_digest_len(const char *name);
-uint64_t ntohll(uint64_t value);
+unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error);
 unsigned int fill_random(char *pos, unsigned int len);
-
-unsigned char isvalid_ipv4(char *address);
+int init_ssh_backend_library(unsigned int *error);
+void init_ssh_utils();
+uint64_t ntohll(uint64_t value);
 void replace_cntrl_char(char *buffer, unsigned int size);
 void replace_newline_char(char *ptr, unsigned int *size);
 

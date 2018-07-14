@@ -70,13 +70,12 @@
 #define _SFTP_NETWORK_NAME			"SFTP_Network"
 #define _SFTP_HOME_MAP				"home"
 
-extern struct fs_options_struct fs_options;
+extern struct fs_options_s fs_options;
 
 extern void init_ssh_interface(struct context_interface_s *interface);
 extern void init_sftp_subsystem_interface(struct context_interface_s *interface);
 
-/* callback for the ssh/sftp backend to get options from fs-workspace
-*/
+/* callback for the ssh/sftp backend to get options from fs-workspace */
 
 static unsigned int get_option_network_ssh(struct context_interface_s *interface, const char *name, struct context_option_s *option)
 {
@@ -84,43 +83,100 @@ static unsigned int get_option_network_ssh(struct context_interface_s *interface
 
     logoutput("get_option_network_ssh: name %s", name);
 
-    if (strcmp(name, "cipher")==0) {
+    if (strcmp(name, "option:ssh.crypto.cipher.algos")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.ssh_ciphers;
+	option->value.ptr=fs_options.ssh.crypto_cipher_algos;
 
-    } else if (strcmp(name, "hmac")==0) {
-
-	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.ssh_mac;
-
-    } else if (strcmp(name, "compression")==0) {
+    } else if (strcmp(name, "option:ssh.crypto.hmac.algos")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.ssh_compression;
+	option->value.ptr=fs_options.ssh.crypto_mac_algos;
 
-    } else if (strcmp(name, "keyx")==0) {
-
-	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.ssh_keyx;
-
-    } else if (strcmp(name, "pubkey")==0) {
+    } else if (strcmp(name, "option:ssh.compression.algos")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.ssh_pubkeys;
+	option->value.ptr=fs_options.ssh.compression_algos;
 
-    } else if (strcmp(name, "user-unknown")==0) {
-
-	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.user_unknown;
-
-    } else if (strcmp(name, "user-nobody")==0) {
+    } else if (strcmp(name, "option:ssh.keyx.algos")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.user_nobody;
+	option->value.ptr=fs_options.ssh.keyx_algos;
 
-    } else if (strcmp(name, "shared-mutex")==0) {
-	struct service_context_s *context=get_service_context(interface);
+    } else if (strcmp(name, "option:ssh.pubkey.algos")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.ssh.pubkey_algos;
+
+    } else if (strcmp(name, "option:ssh.init_timeout")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=(unsigned int) fs_options.ssh.init_timeout;
+
+    } else if (strcmp(name, "option:ssh.session_timeout")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=(unsigned int) fs_options.ssh.session_timeout;
+
+    } else if (strcmp(name, "option:ssh.exec_timeout")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=(unsigned int) fs_options.ssh.exec_timeout;
+
+    } else if (strcmp(name, "option:sftp.usermapping.user-unknown")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.usermapping_user_unknown;
+
+    } else if (strcmp(name, "option:sftp.usermapping.user-nobody")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.usermapping_user_nobody;
+
+    } else if (strcmp(name, "option:sftp.usermapping.type")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+
+	if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_NONE) {
+
+	    option->value.ptr="none";
+
+	} else if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_MAP) {
+
+	    option->value.ptr="map";
+
+	} else if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_FILE) {
+
+	    option->value.ptr="file";
+
+	}
+
+    } else if (strcmp(name, "option:sftp.usermapping.file")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.usermapping_file;
+
+    } else if (strcmp(name, "option:sftp.packet.maxsize")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=fs_options.sftp.packet_maxsize;
+
+    } else if (strcmp(name, "option:sftp.show_domainname")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=(fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME) ? 1 : 0;
+
+    } else if (strcmp(name, "option:sftp.home_use_remotename")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=(fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME) ? 1 : 0;
+
+    } else if (strcmp(name, "option:sftp.network_name")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.network_name;
+
+    } else if (strcmp(name, "fuse:mount.shared-mutex")==0) {
 	struct service_context_s *root_context=get_root_context(context);
 
 	/* get the "root" shared mutex from fuse */
@@ -128,8 +184,7 @@ static unsigned int get_option_network_ssh(struct context_interface_s *interface
 	option->type=_INTERFACE_OPTION_PVOID;
 	option->value.data=(void *) get_fuse_pthread_mutex(&root_context->interface);
 
-    } else if (strcmp(name, "shared-cond")==0) {
-	struct service_context_s *context=get_service_context(interface);
+    } else if (strcmp(name, "fuse:mount.shared-cond")==0) {
 	struct service_context_s *root_context=get_root_context(context);
 
 	/* get the "root" shared cond from fuse */
@@ -173,14 +228,44 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
     struct inode_s *inode=NULL;
     struct name_s xname;
     unsigned int error=0;
+    struct simple_lock_s wlock;
 
-    logoutput("add_shared_map_sftp: directory %s", name);
+    if (strcmp(name, "home")==0 && (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME)) {
+	char buffer[256];
+	int size=(* ssh_context->interface.get_interface_info)(&ssh_context->interface, "remoteusername", NULL, buffer, 256, &error);
 
-    xname.name=name;
-    xname.len=strlen(name);
-    calculate_nameindex(&xname);
+	if (size>0) {
 
-    entry=create_network_map_entry(workspace, directory, &xname, &error);
+	    xname.name=buffer;
+	    xname.len=strlen(buffer);
+	    calculate_nameindex(&xname);
+
+	    entry=create_network_map_entry(workspace, directory, &xname, &error);
+
+	    if (entry) {
+
+		logoutput("add_shared_map_sftp: created shared map %s", entry->name.name);
+
+	    } else {
+
+		logoutput("add_shared_map_sftp: failed to create map %s, error %i (%s)", buffer, error, strerror(error));
+
+	    }
+
+	}
+
+    }
+
+    if (entry==NULL) {
+
+	xname.name=name;
+	xname.len=strlen(name);
+	calculate_nameindex(&xname);
+
+	entry=create_network_map_entry(workspace, directory, &xname, &error);
+	if (entry) logoutput("add_shared_map_sftp: created shared map %s", name);
+
+    }
 
     /* entry created and no error (no EEXIST!) */
 
@@ -188,7 +273,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 
 	/* TODO: when entry already exists (error==EEXIST) continue */
 
-	if (error==EEXIST) {
+	if (entry && error==EEXIST) {
 
 	    logoutput("add_shared_map_sftp: directory %s does already exist", name);
 
@@ -205,10 +290,18 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 
     inode=entry->inode;
 
-    if (lock_directory_excl(inode)==-1) {
+    if (wlock_directory(inode, &wlock)==-1) {
 
 	logoutput("add_shared_map_sftp: error locking directory");
 	return;
+
+    }
+
+    if (fs_options.network.share_icon & (_OPTIONS_NETWORK_ICON_OVERRULE)) {
+
+	/* create a desktp entry only if it does not exist on the server/share */
+
+	create_desktopentry_file("/etc/fs-workspace/desktopentry.sharedmap", entry, workspace);
 
     }
 
@@ -232,6 +325,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
     init_sftp_subsystem_interface(&context->interface);
 
     context->interface.get_parent=get_sftp_parent_interface;
+    context->interface.get_interface_option=get_option_network_ssh;
     context->interface.ptr=(* context->interface.connect)(workspace->user->uid, &context->interface, &address, &error);
 
     if (context->interface.ptr==NULL) {
@@ -252,7 +346,10 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 
 	logoutput("add_shared_map_sftp: added sftp directory %s", name);
 
-	// create_desktopentry_file("/etc/fs-workspace/desktopentry.sharedmap", entry, context->workspace);
+
+
+
+	// | _OPTIONS_NETWORK_ICON_OVERRULE)) {
 
     } else {
 
@@ -261,7 +358,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 
     }
 
-    unlock_directory_excl(inode);
+    unlock_directory(inode, &wlock);
     return;
 
     errorunlock:
@@ -280,7 +377,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, char *nam
 
     }
 
-    unlock_directory_excl(inode);
+    unlock_directory(inode, &wlock);
 
 }
 
@@ -343,6 +440,8 @@ static void get_remote_supported_services(struct service_context_s *context)
     unsigned char buffer[1024];
     unsigned int error=0;
     unsigned int size=0;
+
+    logoutput("get_remote_supported_services");
 
     size=(* context->interface.get_interface_info)(&context->interface, "services", NULL, buffer, 1024, &error);
 
@@ -429,6 +528,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
     char *domain=NULL;
     union datalink_u link;
     int result=-1;
+    struct simple_lock_s wlock;
 
     logoutput("install_ssh_server");
 
@@ -436,7 +536,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
     if (! context) return -1;
     strcpy(context->name, "ssh");
 
-    /* get full name including domain*/
+    /* get full name including domain */
 
     memset(servername, '\0', 128);
     size=(* context->interface.get_interface_info)(&context->interface, "servername", context->xdata.data, servername, 127, error);
@@ -452,18 +552,18 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 
 	    *sep='\0';
 	    domain=sep+1;
-	    logoutput("install_sftp_server: found domain %s", domain);
+	    logoutput("install_ssh_server: found domain %s", domain);
 
 	}
 
     }
 
-    if (domain) {
+    if ((fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME) && domain) {
+	struct simple_lock_s wlock1;
 
 	/* install the domain name */
 
-	lock_directory_excl(parent->inode);
-
+	wlock_directory(parent->inode, &wlock1);
 	directory=get_directory(parent->inode);
 
 	xname.name=domain;
@@ -471,32 +571,40 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 	xname.index=0;
 	calculate_nameindex(&xname);
 
-	parent=find_entry_batch(directory, &xname, error);
+	entry=find_entry_batch(directory, &xname, error);
 
-	if (! parent) {
+	if (! entry) {
+	    struct simple_lock_s wlock2;
 
-	    parent=create_network_map_entry(workspace, directory, &xname, error);
+	    entry=create_network_map_entry(workspace, directory, &xname, error);
 
-	    if (! parent) {
+	    if (! entry) {
 
-		logoutput("install_sftp_server: unable to create server map %s", domain);
-		unlock_directory_excl(directory->inode);
+		logoutput("install_ssh_server: unable to create server map %s", domain);
+		unlock_directory(parent->inode, &wlock1);
 		return -1;
 
 	    }
 
-	    create_desktopentry_file("/etc/fs-workspace/desktopentry.netgroup", parent, workspace);
+	    if (fs_options.network.domain_icon & (_OPTIONS_NETWORK_ICON_SHOW | _OPTIONS_NETWORK_ICON_OVERRULE)) {
+
+		wlock_directory(entry->inode, &wlock2);
+		create_desktopentry_file("/etc/fs-workspace/desktopentry.netgroup", entry, workspace);
+		unlock_directory(entry->inode, &wlock2);
+
+	    }
+
+	    parent=entry;
 
 	}
 
-	unlock_directory_excl(directory->inode);
+	unlock_directory(directory->inode, &wlock1);
 
     }
 
     /* install the server map */
 
-    lock_directory_excl(parent->inode);
-
+    wlock_directory(parent->inode, &wlock);
     directory=get_directory(parent->inode);
 
     xname.name=NULL;
@@ -520,23 +628,32 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 
     if (! entry) {
 	union datalink_u link;
+	struct simple_lock_s wlock1;
 
 	entry=create_network_map_entry(workspace, directory, &xname, error);
 
 	if (! entry) {
 
 	    logoutput("install_sftp_servershare: unable to create server map %s", xname.name);
-	    unlock_directory_excl(directory->inode);
+	    unlock_directory(directory->inode, &wlock1);
 	    return -1;
 
 	}
+
+	wlock_directory(entry->inode, &wlock1);
 
 	link.data=(void *) context;
 	set_datalink(entry->inode, &link);
 	context->inode=entry->inode;
 	result=0;
 
-	create_desktopentry_file("/etc/fs-workspace/desktopentry.netserver", entry, context->workspace);
+	if (fs_options.network.server_icon & (_OPTIONS_NETWORK_ICON_SHOW | _OPTIONS_NETWORK_ICON_OVERRULE)) {
+
+	    create_desktopentry_file("/etc/fs-workspace/desktopentry.netserver", entry, workspace);
+
+	}
+
+	unlock_directory(entry->inode, &wlock1);
 
     } else {
 	union datalink_u *link=get_datalink(entry->inode);
@@ -547,14 +664,14 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 		TODO: check what it's pointing to.... */
 
 	    logoutput("install_ssh_server: server %s already created", xname.name);
-	    unlock_directory_excl(directory->inode);
+	    unlock_directory(directory->inode, &wlock);
 	    return 0;
 
 	}
 
     }
 
-    unlock_directory_excl(directory->inode);
+    unlock_directory(directory->inode, &wlock);
 
     /* create home map in server map */
 
@@ -577,20 +694,30 @@ int install_ssh_server_context(struct workspace_mount_s *workspace, struct entry
 
 	/* create sftp network */
 
-	xname.name=_SFTP_NETWORK_NAME;
+	if (fs_options.sftp.network_name) {
+
+	    xname.name=fs_options.sftp.network_name;
+
+	} else {
+
+	    xname.name=_OPTIONS_SFTP_NETWORK_NAME_DEFAULT;
+
+	}
+
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
 
 	entry=create_network_map_entry(workspace, root_directory, &xname, error);
 
 	if (entry) {
+	    struct simple_lock_s wlock;
 
 	    inode=entry->inode;
 
-	    if (lock_directory_excl(inode)==0) {
+	    if (wlock_directory(inode, &wlock)==0) {
 		struct directory_s *net_directory=get_directory(inode);
 
-		unlock_directory_excl(inode);
+		unlock_directory(inode, &wlock);
 
 		return install_ssh_server(workspace, entry, address, port, error);
 

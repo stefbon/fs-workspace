@@ -170,6 +170,7 @@ struct sftp_send_hash_s {
 #define SFTP_STATUS_UP			2
 
 struct sftp_subsystem_s {
+    pthread_mutex_t			mutex;
     unsigned int			status;
     unsigned int			refcount;
     struct ssh_string_s			remote_home;

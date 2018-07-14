@@ -50,14 +50,14 @@
 
 #include "logging.h"
 
-extern struct fs_options_struct fs_options;
+extern struct fs_options_s fs_options;
 
 static void print_help(const char *progname) {
 
     fprintf(stdout, "General options:\n");
     fprintf(stdout, "    --help                print help\n");
     fprintf(stdout, "    --version             print version\n");
-    fprintf(stdout, "    --configfile=PATH     (default: %s)\n" , FS_WORKSPACE_CONFIGFILE);
+    fprintf(stdout, "    --configfile=PATH     (default: %s)\n" , _OPTIONS_MAIN_CONFIGFILE);
 
     fprintf(stdout, "\n");
     fprintf(stdout, "\n");
@@ -69,185 +69,426 @@ static void print_version()
     printf("fs-workspace version %s\n", PACKAGE_VERSION);
 }
 
+static void parse_network_discover_option(struct network_options_s *network, char *value)
+{
+    char *sep=NULL;
+    char *start=value;
+
+    findmethod:
+
+    sep=strchr(value, ',');
+    if (sep) *sep='\0';
+
+    if (strcmp(start, "avahi")==0) {
+
+	network->flags |= _OPTIONS_NETWORK_DISCOVER_METHOD_AVAHI;
+
+    } else if (strcmp(start, "static-file")==0) {
+
+	network->flags |= _OPTIONS_NETWORK_DISCOVER_METHOD_FILE;
+
+    } else {
+
+	fprintf(stderr, "parse_network_discover_option: %s not reckognized\n", start);
+
+    }
+
+    if (sep) {
+
+	*sep=',';
+	start=sep+1;
+	goto findmethod;
+
+    }
+
+}
+
+static void convert_double_to_timespec(struct timespec *timeout, double tmp)
+{
+    timeout->tv_sec=(uint64_t) tmp;
+    timeout->tv_nsec=(uint64_t) ((tmp - timeout->tv_sec) * 1000000000);
+}
+
+static void parse_fuse_timeout_option(struct timespec *timeout, char *value)
+{
+    double tmp=strtod(value, NULL);
+    convert_double_to_timespec(timeout, tmp);
+}
+
 static int read_config(char *path)
 {
     FILE *fp;
     int result=0;
+    char *line=NULL;
+    char *sep;
+    size_t size=0;
+    unsigned int len=0;
+
+    fprintf(stdout, "read_config: open %s\n", path);
 
     fp=fopen(path, "r");
+    if ( fp ==NULL ) return 0;
 
-    if ( fp ) {
-        char line[512];
-        char *sep;
+    while (getline(&line, &size, fp)>0) {
 
-	while( ! feof(fp)) {
+	sep=memchr(line, '\n', size);
+	if (sep) *sep='\0';
+	len=strlen(line);
+	if (len==0) continue;
 
-	    if ( ! fgets(line, 512, fp)) continue;
+	sep=memchr(line, '=', len);
 
-	    sep=strchr(line, '\n');
-	    if (sep) *sep='\0';
+	if (sep) {
+	    char option[sep - line + 1];
+	    char *value=sep + 1;
 
-	    sep=strchr(line, '=');
-	    if ( sep ) {
-		char *option=line;
-		char *value=sep+1;
+	    memcpy(option, line, (unsigned int)(sep - line));
+	    option[(unsigned int)(sep - line + 1)]='\0';
+	    convert_to(option, UTILS_CONVERT_SKIPSPACE | UTILS_CONVERT_TOLOWER);
 
-		*sep='\0';
+	    if (strlen(option)==0 || option[0]== '#') continue;
 
-		convert_to(option, UTILS_CONVERT_SKIPSPACE | UTILS_CONVERT_TOLOWER);
+	    if (strcmp(option, "fuse.fuse_attr_timeout")==0) {
 
-		logoutput("read_config: read option %s value %s", option, value);
+		if (strlen(value)>0) parse_fuse_timeout_option(&fs_options.fuse.attr_timeout, value);
 
-		if (strcmp(option, "fuse.attr_timeout")==0) {
+	    } else if (strcmp(option, "fuse.fuse_entry_timeout")==0) {
 
-		    if (strlen(value)>0) {
+		if (strlen(value)>0) parse_fuse_timeout_option(&fs_options.fuse.entry_timeout, value);
 
-			fs_options.attr_timeout=strtod(value, NULL);
+	    } else if (strcmp(option, "fuse.fuse_negative_timeout")==0) {
 
-		    }
+		if (strlen(value)>0) parse_fuse_timeout_option(&fs_options.fuse.negative_timeout, value);
 
-		} else if (strcmp(option, "fuse.entry_timeout")==0) {
+	    } else if ( strcmp(option, "main.server.socket")==0 ) {
 
-		    if (strlen(value)>0) {
+		if ( strlen(value)>0 ) {
 
-			fs_options.entry_timeout=strtod(value, NULL);
+		    fs_options.socket.path=strdup(value); /* check it does exist is later */
 
-		    }
+		    if ( ! fs_options.socket.path) {
 
-		} else if (strcmp(option, "fuse.negative_timeout")==0) {
-
-		    if (strlen(value)>0) {
-
-			fs_options.negative_timeout=strtod(value, NULL);
-
-		    }
-
-		} else if ( strcmp(option, "server.socket")==0 ) {
-
-		    if ( strlen(value)>0 ) {
-
-			fs_options.socket.path=strdup(value); /* check it does exist is later */
-
-			if ( ! fs_options.socket.path) {
-
-			    result=-1;
-			    fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
-			    goto out;
-
-			} else {
-
-			    fs_options.socket.len=strlen(fs_options.socket.path);
-			    fs_options.socket.flags=PATHINFO_FLAGS_ALLOCATED;
-
-			}
+			result=-1;
+			fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
+			goto out;
 
 		    } else {
 
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+			fs_options.socket.len=strlen(fs_options.socket.path);
+			fs_options.socket.flags=PATHINFO_FLAGS_ALLOCATED;
+
+		    }
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if (strcmp(option, "network.discover_methods")==0) {
+
+		if ( strlen(value)>0 ) {
+
+		    parse_network_discover_option(&fs_options.network, value);
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if ( strcmp(option, "network.discover_static_file")==0 ) {
+
+		if ( strlen(value)>0 ) {
+
+		    fs_options.network.discover_static_file=strdup(value); /* check it does exist is later */
+
+		    if ( ! fs_options.network.discover_static_file) {
+
+			result=-1;
+			fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
+			goto out;
+
+		    }
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if (strcmp(option, "ssh.support.ext-info")==0) {
+
+		if ( strlen(value)>0 ) {
+
+		    if (strcmp(value, "1")==0 || strcmp(value, "yes")==0) {
+
+			fs_options.ssh.flags |= _OPTIONS_SSH_FLAG_SUPPORT_EXT_INFO;
+
+		    }
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if (strcmp(option, "ssh.extensions")==0) {
+
+		/* if extensions are defined in config that overrides the default
+		    note that these extensions are only used when ext-info is enabled */
+
+		if (strlen(value)>0) {
+		    char *start=value;
+		    char *sep=NULL;
+
+		    fs_options.ssh.extensions=0;
+
+		    searchextension:
+
+		    sep=strchr(start, ',');
+		    if (sep) *sep='\0';
+
+		    if (strcmp(start, "server-sig-algs")==0) {
+
+			fs_options.ssh.extensions|=(1 << (_OPTIONS_SSH_EXTENSION_SERVER_SIG_ALGS - 1));
+
+		    } else if (strcmp(start, "delay-compression")==0) {
+
+			fs_options.ssh.extensions|=(1 << (_OPTIONS_SSH_EXTENSION_DELAY_COMPRESSION - 1));
+
+		    } else if (strcmp(start, "no-flow-control")==0) {
+
+			fs_options.ssh.extensions|=(1 << (_OPTIONS_SSH_EXTENSION_NO_FLOW_CONTROL - 1));
+
+		    } else if (strcmp(start, "elevation")==0) {
+
+			fs_options.ssh.extensions|=(1 << (_OPTIONS_SSH_EXTENSION_ELEVATION - 1));
+
+		    }
+
+		    if (sep) {
+
+			*sep=',';
+			start=sep+1;
+			goto searchextension;
+
+		    }
+
+		}
+
+	    } else if (strcmp(option, "ssh.crypto_cipher_algos")==0 || strcmp(option, "ssh.crypto_mac_algos")==0 ||
+			strcmp(option, "ssh.pubkey_algos")==0 || strcmp(option, "ssh.compression_algos")==0 || strcmp(option, "ssh.keyx_algos")==0) {
+
+		if ( strlen(value)>0 ) {
+		    char *tmp=strdup(value);
+
+		    if ( ! tmp) {
+
+			result=-1;
+			fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
+			goto out;
+
+		    }
+
+		    if (strcmp(option, "ssh.crypto_cipher_algos")==0) {
+
+			fs_options.ssh.crypto_cipher_algos=tmp;
+
+		    } else if (strcmp(option, "ssh.crypto_mac_algos")==0) {
+
+			fs_options.ssh.crypto_mac_algos=tmp;
+
+		    } else if (strcmp(option, "ssh.pubkey_algos")==0) {
+
+			fs_options.ssh.pubkey_algos=tmp;
+
+		    } else if (strcmp(option, "ssh.compression_algos")==0) {
+
+			fs_options.ssh.compression_algos=tmp;
+
+		    } else if (strcmp(option, "ssh.keyx_algos")==0) {
+
+			fs_options.ssh.keyx_algos=tmp;
+
+		    }
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if ( strcmp(option, "ssh.init.timeout")==0 ) {
+
+		if ( strlen(value)>0 ) {
+
+		    fs_options.ssh.init_timeout=atoi(value);
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if ( strcmp(option, "ssh.session.timeout")==0 ) {
+
+		if ( strlen(value)>0 ) {
+
+		    fs_options.ssh.session_timeout=atoi(value);
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if ( strcmp(option, "ssh.exec.timeout")==0 ) {
+
+		if ( strlen(value)>0 ) {
+
+		    fs_options.ssh.exec_timeout=atoi(value);
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
+
+		}
+
+	    } else if ( strcmp(option, "sftp.usermapping.type")==0 ) {
+
+		if ( strlen(value)>0 ) {
+
+		    if (strcmp(value, "file")==0) {
+
+			fs_options.sftp.usermapping_type=_OPTIONS_SFTP_USERMAPPING_FILE;
+
+		    } else if (strcmp(value, "none")==0) {
+
+			fs_options.sftp.usermapping_type=_OPTIONS_SFTP_USERMAPPING_NONE;
+
+		    } else if (strcmp(value, "map")==0) {
+
+			fs_options.sftp.usermapping_type=_OPTIONS_SFTP_USERMAPPING_MAP;
+
+		    } else {
+
+			fprintf(stderr, "read_config: value %s for options %s not reckognized. Cannot continue.\n", value, option);
 			result=-1;
 			goto out;
 
 		    }
 
-		} else if ( strcmp(option, "ssh.ciphers")==0 ) {
+		} else {
 
-		    if ( strlen(value)>0 ) {
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
 
-			fs_options.ssh_ciphers=strdup(value);
+		}
 
-			if ( ! fs_options.ssh_ciphers) {
+	    } else if (strcmp(option, "sftp.usermapping.user.unknown")==0 || strcmp(option, "sftp.usermapping.user.nobody")==0) {
 
-			    result=-1;
-			    fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
-			    goto out;
+		if ( strlen(value)>0 ) {
+		    char *tmp=strdup(value);
 
-			}
+		    if (! tmp) {
 
-		    } else {
-
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
 			result=-1;
+			fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
 			goto out;
 
 		    }
 
-		} else if ( strcmp(option, "ssh.usermapping")==0 ) {
+		    if (strcmp(option, "sftp.usermapping.user.unknown")==0) {
 
-		    if ( strlen(value)>0 ) {
-			unsigned int mapping=0;
+			fs_options.sftp.usermapping_user_unknown=tmp;
 
-			mapping=atoi(value);
+		    } else if (strcmp(option, "sftp.usermapping.user.nobody")==0) {
 
-			if (mapping==FS_WORKSPACE_SSH_USERMAPPING_MAP || mapping==FS_WORKSPACE_SSH_USERMAPPING_NONE) {
+			fs_options.sftp.usermapping_user_nobody=tmp;
 
-			    fs_options.ssh_usermapping=mapping;
+		    }
 
-			}
+		} else {
 
-		    } else {
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
 
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		}
+
+	    } else if (strcmp(option, "sftp.network.name")==0) {
+
+		if ( strlen(value)>0 ) {
+
+		    fs_options.sftp.network_name=strdup(value);
+
+		    if (fs_options.sftp.network_name==NULL) {
+
 			result=-1;
+			fprintf(stderr, "read_config: option %s with value %s cannot be parsed (error %i). Cannot continue.\n", option, value, errno);
 			goto out;
 
 		    }
 
-		} else if ( strcmp(option, "ssh.init.timeout")==0 ) {
+		} else {
 
-		    if ( strlen(value)>0 ) {
-			unsigned int timeout=0;
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
 
-			timeout=atoi(value);
+		}
 
-			/* only allow sane values */
+	    } else if (strcmp(option, "sftp.network.show_domainname")==0) {
 
-			if (timeout>0 && timeout<20) fs_options.ssh_init_timeout=timeout;
+		if ( strlen(value)>0 ) {
 
-		    } else {
+		    if (strcmp(value, "1")==0 || strcmp(value, "yes")==0) {
 
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n");
-			result=-1;
-			goto out;
-
-		    }
-
-		} else if ( strcmp(option, "ssh.session.timeout")==0 ) {
-
-		    if ( strlen(value)>0 ) {
-			unsigned int timeout=0;
-
-			timeout=atoi(value);
-
-			/* only allow sane values */
-
-			if (timeout>0 && timeout<20) fs_options.ssh_session_timeout=timeout;
-
-		    } else {
-
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
-			result=-1;
-			goto out;
+			fs_options.sftp.flags |= _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME;
 
 		    }
 
-		} else if ( strcmp(option, "ssh.exec.timeout")==0 ) {
+		} else {
 
-		    if ( strlen(value)>0 ) {
-			unsigned int timeout=0;
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
 
-			timeout=atoi(value);
+		}
 
-			/* only allow sane values */
+	    } else if (strcmp(option, "sftp.network.home_use_remotename")==0) {
 
-			if (timeout>0 && timeout<20) fs_options.ssh_exec_timeout=timeout;
+		if ( strlen(value)>0 ) {
 
-		    } else {
+		    if (strcmp(value, "1")==0 || strcmp(value, "yes")==0) {
 
-			fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
-			result=-1;
-			goto out;
+			fs_options.sftp.flags |= _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME;
 
 		    }
+
+		} else {
+
+		    fprintf(stderr, "read_config: option %s requires an argument. Cannot continue.\n", option);
+		    result=-1;
+		    goto out;
 
 		}
 
@@ -255,11 +496,13 @@ static int read_config(char *path)
 
 	}
 
-	out:
-
-	fclose(fp);
 
     }
+
+    out:
+
+    fclose(fp);
+    if (line) free(line);
 
     return result;
 
@@ -276,36 +519,58 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
     int res, long_options_index=0, result=0;
     struct stat st;
 
-    memset(&fs_options, 0, sizeof(struct fs_options_struct));
+    memset(&fs_options, 0, sizeof(struct fs_options_s));
 
     /* set defaults */
 
-    fs_options.configfile.path=NULL;
-    fs_options.configfile.len=0;
-    fs_options.configfile.flags=0;
+    init_pathinfo(&fs_options.configfile);
+    init_pathinfo(&fs_options.basemap);
+    init_pathinfo(&fs_options.socket);
 
-    fs_options.basemap.path=NULL;
-    fs_options.basemap.len=0;
-    fs_options.basemap.flags=0;
+    /* fuse */
 
-    fs_options.discovermap.path=NULL;
-    fs_options.discovermap.len=0;
-    fs_options.discovermap.flags=0;
+    convert_double_to_timespec(&fs_options.fuse.attr_timeout, _OPTIONS_FUSE_ATTR_TIMEOUT);
+    convert_double_to_timespec(&fs_options.fuse.entry_timeout, _OPTIONS_FUSE_ENTRY_TIMEOUT);
+    convert_double_to_timespec(&fs_options.fuse.negative_timeout, _OPTIONS_FUSE_NEGATIVE_TIMEOUT);
 
-    fs_options.attr_timeout=1.0;
-    fs_options.entry_timeout=1.0;
-    fs_options.negative_timeout=1.0;
+    /* network */
 
-    fs_options.ssh_ciphers=NULL;
-    fs_options.ssh_compression=NULL;
-    fs_options.ssh_pubkeys=NULL;
-    fs_options.ssh_keyx=NULL;
-    fs_options.ssh_mac=NULL;
+    fs_options.network.flags=0;
+    fs_options.network.discover_static_file=NULL;
+    fs_options.network.domain_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
+    fs_options.network.server_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
+    fs_options.network.share_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
 
-    fs_options.user_unknown=NULL;
-    fs_options.user_nobody=NULL;
+    /* ssh */
 
-    fs_options.ssh_usermapping=FS_WORKSPACE_SSH_USERMAPPING_DEFAULT;
+    fs_options.ssh.flags=_OPTIONS_SSH_FLAG_SUPPORT_EXT_INFO;
+
+    /* default support all extensions mentioned in RFC 8308
+	are there more ? */
+
+    fs_options.ssh.extensions=(1 << (_OPTIONS_SSH_EXTENSION_SERVER_SIG_ALGS - 1)) | (1 << (_OPTIONS_SSH_EXTENSION_DELAY_COMPRESSION - 1)) |
+				(1 << (_OPTIONS_SSH_EXTENSION_NO_FLOW_CONTROL - 1)) | (1 << (_OPTIONS_SSH_EXTENSION_ELEVATION - 1));
+
+    fs_options.ssh.crypto_cipher_algos=NULL;
+    fs_options.ssh.compression_algos=NULL;
+    fs_options.ssh.pubkey_algos=NULL;
+    fs_options.ssh.keyx_algos=NULL;
+    fs_options.ssh.crypto_mac_algos=NULL;
+    fs_options.ssh.init_timeout=_OPTIONS_SSH_INIT_TIMEOUT_DEFAULT;
+    fs_options.ssh.session_timeout=_OPTIONS_SSH_SESSION_TIMEOUT_DEFAULT;
+    fs_options.ssh.exec_timeout=_OPTIONS_SSH_EXEC_TIMEOUT_DEFAULT;
+    fs_options.ssh.backend=_OPTIONS_SSH_BACKEND_OPENSSH;
+    fs_options.ssh.trustdb=_OPTIONS_SSH_TRUSTDB_OPENSSH;
+
+    /* sftp */
+
+    fs_options.sftp.usermapping_user_unknown=NULL;
+    fs_options.sftp.usermapping_user_nobody=NULL;
+    fs_options.sftp.usermapping_type=_OPTIONS_SFTP_USERMAPPING_DEFAULT;
+    fs_options.sftp.usermapping_file=NULL;
+    fs_options.sftp.flags=_OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME | _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME;
+    fs_options.sftp.packet_maxsize=_OPTIONS_SFTP_PACKET_MAXSIZE;
+    fs_options.sftp.network_name=NULL;
 
     while(1) {
 
@@ -389,18 +654,21 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
     } else {
 
-	result=read_config(FS_WORKSPACE_CONFIGFILE);
+	result=read_config(_OPTIONS_MAIN_CONFIGFILE);
 
     }
 
+    if (result==-1) goto finish;
+
     if (! fs_options.socket.path) {
 
-	fs_options.socket.path=strdup(FS_WORKSPACE_SOCKET);
+	fs_options.socket.path=strdup(_OPTIONS_MAIN_SOCKET);
 
 	if ( ! fs_options.socket.path) {
 
 	    result=-1;
-	    fprintf(stderr, "parse_arguments: socket path %s cannot be parsed (error %i). Cannot continue.\n", FS_WORKSPACE_SOCKET, errno);
+	    fprintf(stderr, "parse_arguments: socket path %s cannot be parsed (error %i). Cannot continue.\n", _OPTIONS_MAIN_SOCKET, errno);
+	    goto finish;
 
 	} else {
 
@@ -411,6 +679,38 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
     }
 
+    if (fs_options.network.flags & _OPTIONS_NETWORK_DISCOVER_METHOD_FILE) {
+
+	if (! fs_options.network.discover_static_file) {
+
+	    /* take default */
+
+	    fs_options.network.discover_static_file=strdup(_OPTIONS_NETWORK_DISCOVER_STATIC_FILE_DEFAULT);
+	    if (fs_options.network.discover_static_file==NULL) {
+
+		result=-1;
+		fprintf(stderr, "parse_arguments: error %i allocating memory. Cannot continue.\n", errno);
+		goto finish;
+
+	    }
+
+	}
+
+    } else {
+
+	if (fs_options.network.discover_static_file) {
+
+	    /* not used */
+
+	    free(fs_options.network.discover_static_file);
+	    fs_options.network.discover_static_file=NULL;
+
+	}
+
+    }
+
+    if (fs_options.sftp.flags==0) fs_options.sftp.flags|=_OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME;
+
     finish:
 
     return result;
@@ -419,8 +719,22 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
 void free_options()
 {
+
     free_path_pathinfo(&fs_options.configfile);
     free_path_pathinfo(&fs_options.basemap);
-    free_path_pathinfo(&fs_options.discovermap);
     free_path_pathinfo(&fs_options.socket);
+
+    if (fs_options.ssh.crypto_cipher_algos) free(fs_options.ssh.crypto_cipher_algos);
+    if (fs_options.ssh.crypto_mac_algos) free(fs_options.ssh.crypto_mac_algos);
+    if (fs_options.ssh.pubkey_algos) free(fs_options.ssh.pubkey_algos);
+    if (fs_options.ssh.compression_algos) free(fs_options.ssh.compression_algos);
+    if (fs_options.ssh.keyx_algos) free(fs_options.ssh.keyx_algos);
+
+    if (fs_options.sftp.network_name) free(fs_options.sftp.network_name);
+    if (fs_options.sftp.usermapping_file) free(fs_options.sftp.usermapping_file);
+    if (fs_options.sftp.usermapping_user_nobody) free(fs_options.sftp.usermapping_user_nobody);
+    if (fs_options.sftp.usermapping_user_unknown) free(fs_options.sftp.usermapping_user_unknown);
+
+    if (fs_options.network.discover_static_file) free(fs_options.network.discover_static_file);
+
 }
