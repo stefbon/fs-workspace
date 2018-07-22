@@ -193,7 +193,7 @@ static int ecdh_calc_shared_K(struct ssh_keyx_s *keyx)
     struct ssh_key_s *skey_c=&keyx->method.ecdh.skey_c;
     struct ssh_mpint_s *d=&skey_c->param.ecc.d;
     unsigned int len=0;
-    void *ptr=gcry_mpi_get_opaque(mp->lib.mpi, &len);
+    void *ptr=gcry_mpi_get_opaque(q->lib.mpi, &len);
     unsigned int size=gcry_mpi_get_nbits(d->lib.mpi);
     char buffer[size/8];
     size_t written=0;
@@ -241,7 +241,7 @@ static int ecdh_calc_shared_K(struct ssh_keyx_s *keyx)
 
     if (mpi_sharedK_comp) {
 
-	ecdh->K=CurveDecompress(mpi_sharedK_comp);
+	ecdh->K.lib.mpi=CurveDecompress(mpi_sharedK_comp);
 	result=0;
 
     }
@@ -275,6 +275,7 @@ static void ecdh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *
     struct ssh_mpint_s *mp=&keyx->method.ecdh.K;
     unsigned int size=gcry_mpi_get_nbits(mp->lib.mpi);
     char buffer[size/8];
+    size_t written=0;
 
     size=size/8;
 
