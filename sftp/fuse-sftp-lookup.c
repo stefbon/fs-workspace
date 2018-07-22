@@ -61,7 +61,7 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 /*
@@ -185,7 +185,7 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_ATTRS) {
 		    struct fuse_sftp_attr_s fuse_attr;
@@ -271,7 +271,7 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_ATTRS) {
 		    struct fuse_sftp_attr_s fuse_attr;
@@ -327,4 +327,18 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
     out:
     reply_VFS_error(f_request, error);
 
+}
+
+void _fs_sftp_lookup_existing_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s *entry, struct pathinfo_s *pathinfo)
+{
+    struct inode_s *inode=entry->inode;
+
+    inode->nlookup++;
+    get_current_time(&inode->stim);
+    _fs_common_cached_lookup(context, f_request, inode);
+}
+
+void _fs_sftp_lookup_new_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct inode_s *inode, struct name_s *xname, struct pathinfo_s *pathinfo)
+{
+    reply_VFS_error(f_request, ENOENT);
 }

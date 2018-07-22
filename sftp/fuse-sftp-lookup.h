@@ -23,4 +23,7 @@
 void _fs_sftp_lookup_new(struct service_context_s *c, struct fuse_request_s *r, struct inode_s *inode, struct name_s *xname, struct pathinfo_s *pathinfo);
 void _fs_sftp_lookup_existing(struct service_context_s *c, struct fuse_request_s *r, struct entry_s *entry, struct pathinfo_s *pathinfo);
 
+void _fs_sftp_lookup_new_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct inode_s *inode, struct name_s *xname, struct pathinfo_s *pathinfo);
+void _fs_sftp_lookup_existing_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s *entry, struct pathinfo_s *pathinfo);
+
 #endif

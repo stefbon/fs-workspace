@@ -21,5 +21,6 @@
 #define FS_WORKSPACE_SFTP_FS_INIT_H
 
 void init_sftp_subsystem_interface(struct context_interface_s *interface);
+void set_sftp_subsystem_interface_disconnected(struct context_interface_s *interface);
 
 #endif

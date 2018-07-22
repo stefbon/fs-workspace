@@ -109,6 +109,9 @@ struct sftp_options_s {
 struct network_options_s {
     unsigned int 			flags;
     char 				*discover_static_file;
+    char				*path_icon_domain;
+    char				*path_icon_server;
+    char				*path_icon_share;
     unsigned int			domain_icon;
     unsigned int			server_icon;
     unsigned int			share_icon;

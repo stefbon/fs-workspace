@@ -58,7 +58,7 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 static void set_local_attributes(struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
@@ -134,7 +134,7 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -213,7 +213,7 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -250,5 +250,15 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
     out:
     reply_VFS_error(f_request, error);
 
+}
+
+void _fs_sftp_setattr_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct inode_s *inode, struct pathinfo_s *pathinfo, struct stat *st, unsigned int set)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+
+void _fs_sftp_fsetattr_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, struct stat *st, unsigned int set)
+{
+    reply_VFS_error(f_request, ENOTCONN);
 }
 

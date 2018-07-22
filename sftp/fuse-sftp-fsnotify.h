@@ -21,5 +21,6 @@
 #define FS_WORKSPACE_SFTP_FSNOTIFY_H
 
 void _fs_sftp_fsnotify(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask);
+void _fs_sftp_fsnotify_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask);
 
 #endif

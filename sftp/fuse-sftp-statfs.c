@@ -65,7 +65,7 @@
 #define UINT32_T_MAX		0xFFFFFFFF
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 extern unsigned int get_uint32(unsigned char *buf);
@@ -140,7 +140,7 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_EXTENDED_REPLY) {
 		    struct fuse_statfs_out statfs_out;
@@ -250,4 +250,9 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 void set_fallback_statfs_sftp(struct statfs *fallback)
 {
     memcpy(&fallback_statfs, fallback, sizeof(struct statfs));
+}
+
+void _fs_sftp_statfs_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo)
+{
+    _fs_sftp_statfs_unsupp(context, f_request, pathinfo);
 }

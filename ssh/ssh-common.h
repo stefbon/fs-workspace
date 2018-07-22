@@ -267,6 +267,7 @@ struct ssh_ecdh_s {
     void				(* free)(struct ssh_ecdh_s *ecdh);
     struct ssh_key_s			skey_c;
     struct ssh_key_s			pkey_s;
+    struct ssh_mpint_s			K;
 };
 
 struct ssh_keyx_s {

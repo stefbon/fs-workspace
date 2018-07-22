@@ -336,7 +336,7 @@ int signal_sftp_received_id(struct sftp_subsystem_s *sftp_subsystem, void *r)
     a timeout is used
 */
 
-static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)
+static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, struct context_interface_s *interface, unsigned int *error)
 {
     struct ssh_channel_s *channel=&sftp_subsystem->channel;
     struct ssh_signal_s *signal=channel->payload_queue.signal;
@@ -424,6 +424,8 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 		remove_list_element(&table[hash].head, &table[hash].tail, &request->h_list);
 		remove_list_element(&send_hash->t_head, &send_hash->t_tail, &request->t_list);
 
+		set_sftp_subsystem_interface_disconnected(interface);
+
 		free(request);
 		*error=ENOTCONN;
 		break;
@@ -439,10 +441,10 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 
 }
 
-unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error)
+unsigned char wait_sftp_response_ctx(struct context_interface_s *interface, void *r, struct timespec *timeout, unsigned int *error)
 {
-    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
-    return wait_sftp_response(sftp_subsystem, r, timeout, error);
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
+    return wait_sftp_response(sftp_subsystem, r, timeout, interface, error);
 }
 
 static unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)

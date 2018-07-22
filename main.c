@@ -361,7 +361,7 @@ static unsigned int get_option_mount(struct context_interface_s *interface, cons
     } else if (strcmp(name, "do-readdirplus")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=0;
+	option->value.number=1;
 
     } else if (strcmp(name, "readdirplus-auto")==0) {
 

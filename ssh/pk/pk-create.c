@@ -508,24 +508,26 @@ static int read_key_sexp_param_ecc(gcry_sexp_t s_keydata, struct ssh_key_s *key)
 		    key->param.ecc.q.lib.mpi=gcry_mpi_set_opaque(NULL, (void *) data, (8 * len));
 
 		} else if (key->algo->id == SSH_PKALGO_ID_CURVE25519) {
-		    gcry_mpi_t mpi_q_compr=NULL;
-		    gcry_mpi_point_t mpoint_q=gcry_mpi_point_new(0);
-		    gcry_ctx_t ctx;
+		    // gcry_mpi_t mpi_q_compr=NULL;
+		    // gcry_mpi_point_t mpoint_q=gcry_mpi_point_new(0);
+		    // gcry_ctx_t ctx;
 
 		    /* decompress the data
 			store the q-value first in a tmp opaque mpi */
 
-		    mpi_q_compr=gcry_mpi_set_opaque(NULL, (void *) data, (8 * len));
-		    gcry_mpi_ec_new(&ctx, NULL, "Curve25519");
-		    gcry_mpi_ec_decode_point(mpoint_q, mpi_q_compr, ctx);
+		    // mpi_q_compr=gcry_mpi_set_opaque(NULL, (void *) data, (8 * len));
+		    // gcry_mpi_ec_new(&ctx, NULL, "Curve25519");
+		    // gcry_mpi_ec_decode_point(mpoint_q, mpi_q_compr, ctx);
 
 		    /* get the x coordinate
 			the result is in little-endian format */
 
-		    key->param.ecc.q.lib.mpi=gcry_mpi_new(0);
-		    gcry_mpi_point_snatch_get(key->param.ecc.q.lib.mpi, NULL, NULL, mpoint_q);
+		    // key->param.ecc.q.lib.mpi=gcry_mpi_new(0);
+		    // gcry_mpi_point_snatch_get(key->param.ecc.q.lib.mpi, NULL, NULL, mpoint_q);
 
-		    if (mpi_q_compr) gcry_mpi_release(mpi_q_compr);
+		    // if (mpi_q_compr) gcry_mpi_release(mpi_q_compr);
+
+		    key->param.ecc.q.lib.mpi=gcry_mpi_set_opaque(NULL, (void *) data, (8 * len));
 
 		}
 
@@ -640,7 +642,8 @@ static int create_ssh_key_ecc(struct ssh_pkalgo_s *algo, struct ssh_key_s *pkey,
 
     } else if (algo->id == SSH_PKALGO_ID_CURVE25519) {
 
-	err=gcry_sexp_build(&s_genkey, NULL, "(genkey (ecc (curve Curve25519) (flags djb-tweak comp))");
+	// err=gcry_sexp_build(&s_genkey, NULL, "(genkey (ecc (curve Curve25519) (flags djb-tweak comp))");
+	err=gcry_sexp_build(&s_genkey, NULL, "(genkey (ecc (curve Curve25519) (flags djb-tweak))");
 
     } else {
 

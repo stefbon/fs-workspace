@@ -51,6 +51,7 @@
 #include "ssh-send.h"
 #include "createkeys.h"
 #include "dh.h"
+#include "ecdh.h"
 #include "ssh-data.h"
 
 extern struct fs_options_s fs_options;
@@ -73,7 +74,6 @@ static int keyx_calc_shared_K(struct ssh_keyx_s *keyx)
 
 static unsigned int write_kexdh_init_message(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
 
     msg_write_byte(mb, SSH_MSG_KEXDH_INIT);
     (* keyx->msg_write_client_key)(mb, keyx);

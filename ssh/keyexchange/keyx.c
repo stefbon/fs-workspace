@@ -145,7 +145,10 @@ static unsigned int build_keyx_list(struct ssh_session_s *session, struct algo_l
 
     }
 
-    return populate_keyx_dh(session, alist, start);
+    start=populate_keyx_dh(session, alist, start);
+    start=populate_keyx_ecdh(session, alist, start);
+
+    return start;
 
 }
 

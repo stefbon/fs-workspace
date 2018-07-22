@@ -63,11 +63,7 @@ ssh/datatypes/fs_workspace-ssh-payload.o: ssh/datatypes/ssh-payload.c \
  /usr/include/bits/sigthread.h /usr/include/bits/param.h \
  /usr/include/linux/param.h /usr/include/asm/param.h \
  /usr/include/asm-generic/param.h /usr/include/sys/stat.h \
- /usr/include/bits/stat.h ssh/datatypes/ssh-payload.h \
- common-utils/logging.h /usr/include/syslog.h /usr/include/sys/syslog.h \
- /usr/include/bits/syslog-path.h /usr/include/sys/syscall.h \
- /usr/include/asm/unistd.h /usr/include/asm/unistd_64.h \
- /usr/include/bits/syscall.h
+ /usr/include/bits/stat.h ssh/datatypes/ssh-payload.h
 
 /usr/include/stdc-predef.h:
 
@@ -308,19 +304,3 @@ config.h:
 /usr/include/bits/stat.h:
 
 ssh/datatypes/ssh-payload.h:
-
-common-utils/logging.h:
-
-/usr/include/syslog.h:
-
-/usr/include/sys/syslog.h:
-
-/usr/include/bits/syslog-path.h:
-
-/usr/include/sys/syscall.h:
-
-/usr/include/asm/unistd.h:
-
-/usr/include/asm/unistd_64.h:
-
-/usr/include/bits/syscall.h:

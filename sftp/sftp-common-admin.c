@@ -126,6 +126,15 @@ static unsigned int get_sftp_userinfo_command(struct ssh_session_s *session, voi
 
     }
 
+    if (sftp_userinfo->wanted & SFTP_USERINFO_REMOTE_HOME) {
+	unsigned int len=0;
+
+	len=strlen("remotehome=$HOME:");
+	if (buffer) memcpy(&buffer[pos], "remotehome=$HOME:", len);
+	pos+=len;
+
+    }
+
     return pos;
 
 }

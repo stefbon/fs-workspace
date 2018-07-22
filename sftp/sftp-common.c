@@ -393,6 +393,7 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
 
     memset(sftp, 0, sizeof(struct sftp_subsystem_s));
     pthread_mutex_init(&sftp->mutex, NULL);
+    init_ssh_string(&sftp->remote_home);
     channel=&sftp->channel;
     init_ssh_channel(session, channel, _CHANNEL_TYPE_SFTP_SUBSYSTEM);
     channel->free=remove_sftp_channel;
@@ -713,6 +714,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_home;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_home;
+	    interface->backend.sftp.prefix.type=CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME;
 	    interface->backend.sftp.prefix.path=NULL;
 	    interface->backend.sftp.prefix.len=0;
 
@@ -727,6 +729,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_root;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_root;
+	    interface->backend.sftp.prefix.type=CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT;
 	    interface->backend.sftp.prefix.path=NULL;
 	    interface->backend.sftp.prefix.len=0;
 
@@ -741,6 +744,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_custom;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_custom;
+	    interface->backend.sftp.prefix.type=CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM;
 	    interface->backend.sftp.prefix.path=prefix;
 	    interface->backend.sftp.prefix.len=strlen(prefix);
 

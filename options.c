@@ -537,6 +537,9 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
 
     fs_options.network.flags=0;
     fs_options.network.discover_static_file=NULL;
+    fs_options.network.path_icon_domain=NULL;
+    fs_options.network.path_icon_server=NULL;
+    fs_options.network.path_icon_share=NULL;
     fs_options.network.domain_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
     fs_options.network.server_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
     fs_options.network.share_icon=_OPTIONS_NETWORK_ICON_OVERRULE;

@@ -23,4 +23,7 @@
 void _fs_sftp_unlink(struct service_context_s *context, struct fuse_request_s *r, struct entry_s **entry, struct pathinfo_s *pathinfo);
 void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *r, struct entry_s **entry, struct pathinfo_s *pathinfo);
 
+void _fs_sftp_unlink_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s **pentry, struct pathinfo_s *pathinfo);
+void _fs_sftp_rmdir_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s **pentry, struct pathinfo_s *pathinfo);
+
 #endif

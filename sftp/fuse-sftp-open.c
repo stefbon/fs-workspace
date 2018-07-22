@@ -62,7 +62,7 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 /* OPEN a file */
@@ -105,7 +105,7 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_HANDLE) {
 		    struct fuse_open_out open_out;
@@ -209,7 +209,7 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_HANDLE) {
 
@@ -291,7 +291,7 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_DATA) {
 
@@ -368,7 +368,7 @@ void _fs_sftp_write(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -444,7 +444,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -535,7 +535,7 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 		    struct entry_s *entry=openfile->inode->alias;
@@ -577,4 +577,33 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
     openfile->handle.name.name=NULL;
     openfile->handle.name.len=0;
 
+}
+
+void _fs_sftp_open_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, unsigned int flags)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_create_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, struct stat *st, unsigned int flags)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_read_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, size_t size, off_t off, unsigned int flags, uint64_t lock_owner)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_write_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, const char *buff, size_t size, off_t off, unsigned int flags, uint64_t lock_owner)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_fsync_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, unsigned char datasync)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_flush_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, uint64_t lockowner)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+void _fs_sftp_release_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request, unsigned int flags, uint64_t lock_owner)
+{
+    reply_VFS_error(f_request, ENOTCONN);
 }

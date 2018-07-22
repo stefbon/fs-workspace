@@ -361,18 +361,7 @@ static void dh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *ke
     msg_write_ssh_mpint(mb, mp);
 }
 
-static unsigned int write_kexdh_init_message(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
-{
-    struct ssh_dh_s *dh=&keyx->method.dh;
-
-    msg_write_byte(mb, SSH_MSG_KEXDH_INIT);
-    (* keyx->msg_write_client_key)(mb, keyx);
-
-    return mb->pos;
-
-}
-
-void dh_free_keyx(struct ssh_keyx_s *keyx)
+static void dh_free_keyx(struct ssh_keyx_s *keyx)
 {
     struct ssh_dh_s *dh=&keyx->method.dh;
 

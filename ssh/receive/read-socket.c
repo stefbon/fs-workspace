@@ -61,6 +61,8 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
     unsigned int error=0;
     int bytesread=0;
 
+    pthread_mutex_lock(&receive->mutex);
+
     /* read the first data coming from the remote server */
 
     readbuffer:
@@ -71,6 +73,8 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
     // logoutput("read_ssh_data: bytesread %i", bytesread);
 
     if (bytesread<=0) {
+
+	pthread_mutex_unlock(&receive->mutex);
 
 	logoutput_warning("read_ssh_data: bytesread %i", bytesread);
 
@@ -102,11 +106,10 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	if (bytesread + receive->read >= receive->size) {
 
+	    pthread_mutex_unlock(&receive->mutex);
 	    goto disconnect;
 
 	} else {
-
-	    pthread_mutex_lock(&receive->mutex);
 
 	    receive->read+=bytesread;
 

@@ -104,7 +104,8 @@ ssh/keyexchange/fs_workspace-key-exchange.o: \
  ssh/send/encrypt.h ssh/send/encryptors.h ssh/send/greeter.h \
  ssh/send/init.h ssh/send/msg-channel.h ssh/send/msg-transport.h \
  ssh/send/msg-userauth.h ssh/send/send.h ssh/send/write-socket.h \
- ssh/keyexchange/createkeys.h ssh/keyexchange/dh.h ssh/ssh-data.h
+ ssh/keyexchange/createkeys.h ssh/keyexchange/dh.h ssh/keyexchange/ecdh.h \
+ ssh/ssh-data.h
 
 /usr/include/stdc-predef.h:
 
@@ -545,5 +546,7 @@ ssh/send/write-socket.h:
 ssh/keyexchange/createkeys.h:
 
 ssh/keyexchange/dh.h:
+
+ssh/keyexchange/ecdh.h:
 
 ssh/ssh-data.h:

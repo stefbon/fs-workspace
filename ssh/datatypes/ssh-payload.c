@@ -38,8 +38,8 @@
 
 #include "ssh-payload.h"
 
-#define LOGGING
-#include "logging.h"
+//#define LOGGING
+//#include "logging.h"
 
 static struct ssh_payload_s *realloc_payload_static(struct ssh_payload_s *payload, unsigned int size)
 {
@@ -120,7 +120,7 @@ static char *isolate_payload_buffer_dynamic(struct ssh_payload_s **p_payload, un
 
     if (pos + size <= payload->len) {
 
-	logoutput("isolate_payload_buffer_dynamic: resize buffer from %i to %i", payload->len, size);
+	// logoutput("isolate_payload_buffer_dynamic: resize buffer from %i to %i", payload->len, size);
 
 	buffer=(char *) payload;
 	memmove(buffer, &payload->buffer[pos], size);

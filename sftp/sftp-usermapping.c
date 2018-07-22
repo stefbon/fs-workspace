@@ -142,6 +142,8 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
     unsigned int size=1024;
     unsigned int error=0;
 
+    logoutput("get_remote_sftp_userinfo");
+
     size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, buffer, size, &error);
 
     if (size>0) {
@@ -159,6 +161,8 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
 	if (strncmp((char *)output, "remotegroup=", 12)==0) {
 
+	    logoutput("get_remote_sftp_userinfo: remotegroup");
+
 	    output+=12;
 	    size-=12;
 	    len-=12;
@@ -166,7 +170,6 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    if (len>0) {
 
 		if (sftp_userinfo->remote_group) {
-		    unsigned char group[len+1];
 
 		    sftp_userinfo->remote_group->ptr=malloc(len);
 
@@ -183,10 +186,7 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
 		    }
 
-		    memcpy(group, output, len);
-		    group[len]='\0';
-
-		    logoutput("get_remote_sftp_userinfo: found remote group '%s'", group);
+		    logoutput("get_remote_sftp_userinfo: found remote group '%.*s'", sftp_userinfo->remote_group->len, sftp_userinfo->remote_group->ptr);
 
 		}
 
@@ -205,6 +205,8 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    output+=10;
 	    size-=10;
 	    len-=10;
+
+	    logoutput("get_remote_sftp_userinfo: remoteuid");
 
 	    if (len>0) {
 
@@ -235,6 +237,8 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    size-=10;
 	    len-=10;
 
+	    logoutput("get_remote_sftp_userinfo: remotegid");
+
 	    if (len>0) {
 
 		if (sftp_userinfo->remote_gid) {
@@ -254,6 +258,47 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    } else {
 
 		logoutput("get_remote_sftp_userinfo: error: remotegid no value");
+		goto error;
+
+	    }
+
+	} else if (strncmp((char *)output, "remotehome=", 11)==0) {
+
+	    output+=11;
+	    size-=11;
+	    len-=11;
+
+	    logoutput("get_remote_sftp_userinfo: remotehome");
+
+	    if (len>0) {
+
+		if (sftp_userinfo->remote_home) {
+
+		    sftp_userinfo->remote_home->ptr=malloc(len);
+
+		    if (sftp_userinfo->remote_home->ptr) {
+
+			memcpy(sftp_userinfo->remote_home->ptr, output, len);
+			sftp_userinfo->remote_home->len=len;
+			sftp_userinfo->received|=SFTP_USERINFO_REMOTE_HOME;
+
+		    } else {
+
+			logoutput("get_remote_sftp_userinfo: unable to alloc %i bytes", len);
+			goto error;
+
+		    }
+
+		    logoutput("get_remote_sftp_userinfo: found remote home '%.*s'", sftp_userinfo->remote_home->len, sftp_userinfo->remote_home->ptr);
+
+		}
+
+		output+=len+1;
+		size-=(unsigned int) (len + 1);
+
+	    } else {
+
+		logoutput("get_remote_sftp_userinfo: error: remotehome no value");
 		goto error;
 
 	    }
@@ -340,6 +385,7 @@ int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_sub
     unsigned char mapping=_SFTP_USER_MAPPING_NONSHARED;
     gid_t *local_gid=NULL;
     struct ssh_string_s *remote_group=NULL;
+    struct ssh_string_s *remote_home=&sftp->remote_home;
     uid_t *remote_uid=NULL;
     gid_t *remote_gid=NULL;
 
@@ -397,17 +443,19 @@ int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_sub
 
     }
 
-    if (remote_group || remote_uid || remote_gid) {
+    if (remote_group || remote_uid || remote_gid || remote_home) {
 	struct sftp_userinfo_s sftp_userinfo;
 
 	sftp_userinfo.wanted=0;
 	sftp_userinfo.remote_group=remote_group;
 	sftp_userinfo.remote_uid=remote_uid;
 	sftp_userinfo.remote_gid=remote_gid;
+	sftp_userinfo.remote_home=remote_home;
 
 	if (remote_group) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GROUP;
 	if (remote_uid) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_UID;
 	if (remote_gid) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_GID;
+	if (remote_home) sftp_userinfo.wanted|=SFTP_USERINFO_REMOTE_HOME;
 
 	sftp_userinfo.received=0;
 	get_remote_sftp_userinfo(sftp, &sftp_userinfo);

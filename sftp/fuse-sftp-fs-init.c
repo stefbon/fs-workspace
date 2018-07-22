@@ -119,6 +119,52 @@ static struct service_fs_s sftp_fs = {
 
 };
 
+static struct service_fs_s sftp_fs_disconnected = {
+
+    .lookup_existing		= _fs_sftp_lookup_existing_disconnected,
+    .lookup_new			= _fs_sftp_lookup_new_disconnected,
+
+    .getattr			= _fs_sftp_getattr_disconnected,
+    .setattr			= _fs_sftp_setattr_disconnected,
+
+    .mkdir			= _fs_sftp_mkdir_disconnected,
+    .mknod			= _fs_sftp_mknod_disconnected,
+    .symlink			= _fs_sftp_symlink_disconnected,
+    .symlink_validate		= _fs_sftp_symlink_validate_disconnected,
+    .readlink			= _fs_sftp_readlink_disconnected,
+
+    .unlink			= _fs_sftp_unlink_disconnected,
+    .rmdir			= _fs_sftp_rmdir_disconnected,
+
+    .create			= _fs_sftp_create_disconnected,
+    .open			= _fs_sftp_open_disconnected,
+    .read			= _fs_sftp_read_disconnected,
+    .write			= _fs_sftp_write_disconnected,
+    .fsync			= _fs_sftp_fsync_disconnected,
+    .flush			= _fs_sftp_flush_disconnected,
+    .fgetattr			= _fs_sftp_fgetattr_disconnected,
+    .fsetattr			= _fs_sftp_fsetattr_disconnected,
+    .release			= _fs_sftp_release_disconnected,
+
+    .getlock			= _fs_sftp_getlock_disconnected,
+    .setlock			= _fs_sftp_setlock_disconnected,
+    .setlockw			= _fs_sftp_setlockw_disconnected,
+    .flock			= _fs_sftp_flock_disconnected,
+
+    .opendir			= _fs_sftp_opendir_disconnected,
+    .readdir			= _fs_sftp_readdir_disconnected,
+    .readdirplus		= _fs_sftp_readdirplus_disconnected,
+    .fsyncdir			= _fs_sftp_fsyncdir_disconnected,
+    .releasedir			= _fs_sftp_releasedir_disconnected,
+
+    .fsnotify			= _fs_sftp_fsnotify_disconnected,
+
+    .statfs			= _fs_sftp_statfs_disconnected,
+
+};
+
+
+
 /* initialize a sftp subsystem interface using sftp fs */
 
 void init_sftp_subsystem_interface(struct context_interface_s *interface)
@@ -132,4 +178,10 @@ void init_sftp_subsystem_interface(struct context_interface_s *interface)
     context->fscount=get_workspace_fs_count(context->workspace);
     context->fs=&sftp_fs;
 
+}
+
+void set_sftp_subsystem_interface_disconnected(struct context_interface_s *interface)
+{
+    struct service_context_s *context=get_service_context(interface);
+    context->fs=&sftp_fs_disconnected;
 }

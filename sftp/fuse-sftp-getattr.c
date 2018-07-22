@@ -58,7 +58,7 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 /* GETATTR */
@@ -101,7 +101,7 @@ void _fs_sftp_getattr(struct service_context_s *context, struct fuse_request_s *
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_ATTRS) {
 		    struct fuse_sftp_attr_s fuse_attr;
@@ -179,7 +179,7 @@ void _fs_sftp_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_ATTRS) {
 		    struct fuse_sftp_attr_s fuse_attr;
@@ -221,3 +221,15 @@ void _fs_sftp_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
     reply_VFS_error(f_request, error);
 
 }
+
+void _fs_sftp_getattr_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct inode_s *inode, struct pathinfo_s *pathinfo)
+{
+    _fs_common_getattr(get_root_context(context), f_request, inode);
+}
+
+void _fs_sftp_fgetattr_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request)
+{
+    struct service_context_s *context=(struct service_context_s *) openfile->context;
+    _fs_common_getattr(get_root_context(context), f_request, openfile->inode);
+}
+

@@ -61,7 +61,7 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
 /* REMOVE a file and a directory */
@@ -101,7 +101,7 @@ void _fs_sftp_unlink(struct service_context_s *context, struct fuse_request_s *f
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -179,7 +179,7 @@ void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *f_
 
 	    get_sftp_request_timeout(&timeout);
 
-	    if (wait_sftp_response_ctx(context->interface.ptr, request, &timeout, &error)==1) {
+	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_STATUS) {
 
@@ -220,4 +220,14 @@ void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *f_
     out:
     reply_VFS_error(f_request, error);
 
+}
+
+void _fs_sftp_unlink_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s **pentry, struct pathinfo_s *pathinfo)
+{
+    reply_VFS_error(f_request, ENOTCONN);
+}
+
+void _fs_sftp_rmdir_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s **pentry, struct pathinfo_s *pathinfo)
+{
+    reply_VFS_error(f_request, ENOTCONN);
 }

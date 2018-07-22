@@ -23,9 +23,11 @@
 #define SFTP_USERINFO_REMOTE_GROUP		1
 #define SFTP_USERINFO_REMOTE_UID		2
 #define SFTP_USERINFO_REMOTE_GID		4
+#define SFTP_USERINFO_REMOTE_HOME		8
 
 struct sftp_userinfo_s {
     struct ssh_string_s				*remote_group;
+    struct ssh_string_s				*remote_home;
     uid_t					*remote_uid;
     gid_t					*remote_gid;
     unsigned int				wanted;

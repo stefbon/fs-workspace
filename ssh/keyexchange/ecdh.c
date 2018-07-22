@@ -68,131 +68,259 @@ unsigned int populate_keyx_ecdh(struct ssh_session_s *session, struct algo_list_
 
 }
 
-static int dh_create_client_key(struct ssh_keyx_s *keyx)
+static int ecdh_create_client_key(struct ssh_keyx_s *keyx)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
-    unsigned int bits = get_nbits_ssh_mpint(&dh->p);
+    struct ssh_ecdh_s *ecdh=&keyx->method.ecdh;
+    struct ssh_pkalgo_s *pkalgo=NULL;
 
-    if (create_ssh_mpint(&dh->x)==-1) return -1;
-    if (create_ssh_mpint(&dh->e)==-1) return -1;
+    /* create a secret key using curve25519 */
 
-    /* size of subgroup is (q = (p - 1)/2) which results in a number of (bits(p) - 1) bits
-	TODO: is this always the case ??? also with another generator ??? */
+    pkalgo=get_pkalgo_byid(SSH_PKALGO_ID_CURVE25519, NULL);
+    if (pkalgo==NULL) return -1;
+    if (create_ssh_key(pkalgo, NULL, &ecdh->skey_c)==-1) return -1;
 
-    bits--;
-
-    if (randomize_ssh_mpint(&dh->x, bits)==-1) return -1;
-
-    /* TODO: here a check 1 < x < q */
-
-    power_modulo_ssh_mpint(&dh->e, &dh->g, &dh->x, &dh->p);
     return 0;
+}
+
+static void ecdh_msg_write_client_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+{
+    struct ssh_key_s *skey_c=&keyx->method.ecdh.skey_c;
+    struct ssh_mpoint_s *q=&skey_c->param.ecc.q;
+
+    msg_write_ssh_mpoint(mb, q);
 
 }
 
-static void dh_msg_write_client_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void ecdh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.e;
-    unsigned int pos=mb->pos;
+    struct ssh_key_s *pkey_s=&keyx->method.ecdh.pkey_s;
+    struct ssh_pkalgo_s *pkalgo=NULL;
+    struct ssh_mpoint_s *q=&pkey_s->param.ecc.q;
 
-    msg_write_ssh_mpint(mb, mp);
+    pkalgo=get_pkalgo_byid(SSH_PKALGO_ID_CURVE25519, NULL);
+    if (pkalgo==NULL) return -1;
+    init_ssh_key(pkey_s, 1, pkalgo);
 
-    logoutput("dh_msg_write_client_key: len %i", (mb->pos - pos));
-}
-
-static void dh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
-{
-    struct ssh_mpint_s *mp=&keyx->method.dh.f;
-    unsigned int pos=mb->pos;
-
-    msg_read_ssh_mpint(mb, mp, NULL);
-
-    logoutput("dh_msg_read_server_key: len %i", (mb->pos - pos));
-}
-
-static void dh_msg_write_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
-{
-    struct ssh_mpint_s *mp=&keyx->method.dh.f;
-    msg_write_ssh_mpint(mb, mp);
-}
-
-static int dh_calc_shared_K(struct ssh_keyx_s *keyx)
-{
-    struct ssh_dh_s *dh=&keyx->method.dh;
-
-    if (create_ssh_mpint(&dh->K)==-1) return -1;
-    power_modulo_ssh_mpint(&dh->K, &dh->f, &dh->x, &dh->p);
-    return 0;
+    msg_read_ssh_mpoint(mb, q, NULL);
 
 }
 
-static void dh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void ecdh_msg_write_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.K;
-    msg_write_ssh_mpint(mb, mp);
+    struct ssh_key_s *pkey_s=&keyx->method.ecdh.pkey_s;
+    struct ssh_mpoint_s *q=&pkey_s->param.ecc.q;
+
+    msg_write_ssh_mpoint(mb, q);
 }
 
-static unsigned int write_kexdh_init_message(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+void ReverseBuffer(char *buffer, unsigned int size)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
+    char tmp[size];
 
-    msg_write_byte(mb, SSH_MSG_KEXDH_INIT);
-    (* keyx->msg_write_client_key)(mb, keyx);
-
-    return mb->pos;
+    memcpy(tmp, buffer, size);
+    for (unsigned int i=0; i<size; i++) buffer[i] = tmp[size - i];
 
 }
 
-void dh_free_keyx(struct ssh_keyx_s *keyx)
-{
-    struct ssh_dh_s *dh=&keyx->method.dh;
 
-    free_ssh_mpint(&dh->p);
-    free_ssh_mpint(&dh->g);
-    free_ssh_mpint(&dh->x);
-    free_ssh_mpint(&dh->e);
-    free_ssh_mpint(&dh->f);
-    free_ssh_mpint(&dh->K);
+
+    /* HOW do scalar multiplication? see:
+    https://git.libssh.org/projects/libssh.git/tree/doc/curve25519-sha256@libssh.org.txt */
+
+    /* use gcry_pk_encrypt like:
+
+	gcry_error_t gcry_pk_encrypt(gcry_sexp_t *r_ciph, gcry_sexp_t data, gcry_sexp_t pkey)
+	where gcry_sexp_t data is the private key like:
+	gcry_sexp_t data=NULL;
+	gcry_error_t gcry_sexp_build(&data, NULL, "%b", length secret key, secret key reversed)
+	where secret key is the d of the local curve25519
+
+	and gcry_sexp_build(&pkey, NULL, "(public key (ecc (curve Curve25519 (flags djb-tweak) (q%m))))" using remote public key->d
+
+
+	the result in r_ciph is the shared key and compressed (?)
+	extract the "s" value:
+
+	gcry_mpi_t mpi_comp=NULL;
+	gcry_sexp_extract_param(r_ciph, NULL, "s", &mpi_comp, NULL);
+
+	gcry_mpi_t k=CurveDecompress(mpi_comp);
+
+	gcry_mpi_aprint(GCRYMPI_FMT_USG, **buffer, *size, k);
+
+	reversebuffer(*buffer, size)
+
+	result is on buffer with size
+	and see:
+	https://code.videolan.org/GSoC2018/arlyon/vlc/blob/airplay-auth/modules/stream_out/airplay/airplay.c#L911
+
+
+    */
+
+#if HAVE_LIBGCRYPT
+
+#include <gcrypt.h>
+
+static gcry_mpi_t CurveDecompress(gcry_mpi_t mpi_sharedK_comp)
+{
+    gcry_mpi_t mpi_sharedK=NULL;
+    gcry_ctx_t ctx;
+    gcry_mpi_point_t mpoint_sharedK=gcry_mpi_point_new(0);
+    gcry_mpi_t mpi_sharedK_x=gcry_mpi_new(0);
+    gcry_mpi_t mpi_sharedK_y=gcry_mpi_new(0);
+    gcry_mpi_t mpi_sharedK_z=gcry_mpi_new(0);
+
+    gcry_mpi_ec_new(&ctx, NULL, "Curve25519");
+    gcry_mpi_ec_decode_point(mpoint_sharedK, mpi_sharedK_comp, ctx);
+
+    gcry_mpi_point_snatch_get(mpi_sharedK_x, mpi_sharedK_y, mpi_sharedK_z, mpoint_sharedK);
+
+    if (mpi_sharedK_y) gcry_mpi_release(mpi_sharedK_y);
+    if (mpi_sharedK_z) gcry_mpi_release(mpi_sharedK_z);
+
+    return mpi_sharedK_x;
+}
+
+static int ecdh_calc_shared_K(struct ssh_keyx_s *keyx)
+{
+    struct ssh_ecdh_s *ecdh=&keyx->method.ecdh;
+    gcry_sexp_t sexp_pk=NULL;
+    gcry_sexp_t sexp_sk=NULL;
+    gcry_sexp_t sexp_sharedK=NULL;
+    gcry_error_t err = 0;
+    struct ssh_key_s *pkey_s=&keyx->method.ecdh.pkey_s;
+    struct ssh_mpoint_s *q=&pkey_s->param.ecc.q;
+    struct ssh_key_s *skey_c=&keyx->method.ecdh.skey_c;
+    struct ssh_mpint_s *d=&skey_c->param.ecc.d;
+    unsigned int len=0;
+    void *ptr=gcry_mpi_get_opaque(mp->lib.mpi, &len);
+    unsigned int size=gcry_mpi_get_nbits(d->lib.mpi);
+    char buffer[size/8];
+    size_t written=0;
+    gcry_mpi_t mpi_sharedK_comp=NULL;
+    gcry_mpi_t mpi_sharedK=NULL;
+    int result=-1;
+
+    size=size/8;
+
+    /* build data sexp from the private key (d) of the local key*/
+
+    gcry_mpi_print(GCRYMPI_FMT_USG, buffer, size, &written, d->lib.mpi);
+    ReverseBuffer(buffer, size);
+
+    err=gcry_sexp_build(&sexp_sk, NULL, "%b", size, buffer);
+
+    if (err) {
+
+	logoutput("ecdh_calc_shared_K: error creating sk s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    err=gcry_sexp_build(&sexp_pk, NULL, "(public-key (ecc (curve Curve25519) (flags djb-tweak) (q %b)))", len/8, ptr);
+
+    if (err) {
+
+	logoutput("ecdh_calc_shared_K: error creating pk s-exp (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    err=gcry_pk_encrypt(&sexp_sharedK, sexp_sk, sexp_pk);
+
+    if (err) {
+
+	logoutput("ecdh_calc_shared_K: error encrypting shared K (%s/%s)", gcry_strsource(err), gcry_strerror(err));
+	goto out;
+
+    }
+
+    /* get the s value */
+
+    gcry_sexp_extract_param( sexp_sharedK, NULL, "s", &mpi_sharedK_comp, NULL);
+
+    if (mpi_sharedK_comp) {
+
+	ecdh->K=CurveDecompress(mpi_sharedK_comp);
+	result=0;
+
+    }
+
+    out:
+
+    if (mpi_sharedK_comp) gcry_mpi_release(mpi_sharedK_comp);
+    if (sexp_sharedK) gcry_sexp_release(sexp_sharedK);
+    if (sexp_sk) gcry_sexp_release(sexp_sk);
+    if (sexp_pk) gcry_sexp_release(sexp_pk);
+
+    return result;
+
+}
+
+#else
+
+static int ecdh_calc_shared_K(struct ssh_keyx_s *keyx)
+{
+    return -1;
+}
+
+#endif
+
+#if HAVE_LIBGCRYPT
+
+#include <gcrypt.h>
+
+static void ecdh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+{
+    struct ssh_mpint_s *mp=&keyx->method.ecdh.K;
+    unsigned int size=gcry_mpi_get_nbits(mp->lib.mpi);
+    char buffer[size/8];
+
+    size=size/8;
+
+    gcry_mpi_print(GCRYMPI_FMT_USG, buffer, size, &written, mp->lib.mpi);
+    ReverseBuffer(buffer, size);
+
+    msg_write_bytes(mb, buffer, size);
+}
+
+#else
+
+static void ecdh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+{
+}
+
+#endif
+
+static void ecdh_free_keyx(struct ssh_keyx_s *keyx)
+{
+    struct ssh_ecdh_s *ecdh=&keyx->method.ecdh;
+
+    free_ssh_key(&ecdh->skey_c);
+    free_ssh_key(&ecdh->pkey_s);
+    free_ssh_mpint(&ecdh->K);
 
 }
 
 static int ecdh_init_keyx(struct ssh_keyx_s *keyx, unsigned int *error)
 {
-    struct ssh_dh_s *ecdh=&keyx->method.ecdh;
+    struct ssh_ecdh_s *ecdh=&keyx->method.ecdh;
+    struct ssh_pkalgo_s *pkalgo=NULL;
 
-    init_ssh_key(&ecdh->pkey_s, 0, );
-    
-    init_ssh_mpint(&dh->g);
-    init_ssh_mpint(&dh->x);
-    init_ssh_mpint(&dh->e);
-    init_ssh_mpint(&dh->f);
-    init_ssh_mpint(&dh->K);
+    pkalgo=get_pkalgo_byid(SSH_PKALGO_ID_CURVE25519, NULL);
+    if (pkalgo==NULL) return -1;
 
-    if (create_ssh_mpint(&dh->p)==-1) {
+    init_ssh_key(&ecdh->pkey_s, 0, pkalgo);
+    init_ssh_key(&ecdh->skey_c, 1, pkalgo);
+    init_ssh_mpint(&ecdh->K);
 
-	*error=ENOMEM;
-	return -1;
-
-    }
-
-    if (read_ssh_mpint(&dh->p, p, lenp, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
-
-    if (create_ssh_mpint(&dh->p)==-1) {
-
-	*error=ENOMEM;
-	return -1;
-
-    }
-
-    if (read_ssh_mpint(&dh->g, g, leng, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
-
-    keyx->create_client_key 		= dh_create_client_key;
-    keyx->msg_write_client_key		= dh_msg_write_client_key;
-    keyx->msg_read_server_key		= dh_msg_read_server_key;
-    keyx->msg_write_server_key		= dh_msg_write_server_key;
-    keyx->calc_shared_K			= dh_calc_shared_K;
-    keyx->msg_write_shared_K		= dh_msg_write_shared_K;
-    keyx->free				= dh_free_keyx;
+    keyx->create_client_key 		= ecdh_create_client_key;
+    keyx->msg_write_client_key		= ecdh_msg_write_client_key;
+    keyx->msg_read_server_key		= ecdh_msg_read_server_key;
+    keyx->msg_write_server_key		= ecdh_msg_write_server_key;
+    keyx->calc_shared_K			= ecdh_calc_shared_K;
+    keyx->msg_write_shared_K		= ecdh_msg_write_shared_K;
+    keyx->free				= ecdh_free_keyx;
     *error=0;
 
     return 0;

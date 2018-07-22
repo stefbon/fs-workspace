@@ -26,4 +26,10 @@ void _fs_sftp_readdirplus(struct fuse_opendir_s *opendir, struct fuse_request_s 
 void _fs_sftp_fsyncdir(struct fuse_opendir_s *opendir, struct fuse_request_s *r, unsigned char datasync);
 void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *r);
 
+void _fs_sftp_opendir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, unsigned int flags);
+void _fs_sftp_readdir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *f_request, size_t size, off_t offset);
+void _fs_sftp_readdirplus_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *r, size_t size, off_t offset);
+void _fs_sftp_fsyncdir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *r, unsigned char datasync);
+void _fs_sftp_releasedir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *f_request);
+
 #endif

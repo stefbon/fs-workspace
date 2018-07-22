@@ -23,4 +23,6 @@
 void _fs_sftp_statfs(struct service_context_s *c, struct fuse_request_s *r, struct pathinfo_s *pathinfo);
 void set_fallback_statfs_sftp(struct statfs *fallback);
 
+void _fs_sftp_statfs_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo);
+
 #endif

@@ -42,7 +42,7 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/datatypes/ssh-namelist.c ssh/datatypes/ssh-payload.c ssh/datatypes/ssh-string.c ssh/datatypes/ssh-mpint.c ssh/datatypes/ssh-uint.c ssh/datatypes/ssh-msg-buffer.c \
 			ssh/extensions/extension.c \
 			ssh/ssh-hostinfo.c \
-			ssh/keyexchange/algo-exchange.c ssh/keyexchange/compare.c ssh/keyexchange/createkeys.c ssh/keyexchange/dh.c ssh/keyexchange/key-exchange.c ssh/keyexchange/keyx.c \
+			ssh/keyexchange/algo-exchange.c ssh/keyexchange/compare.c ssh/keyexchange/createkeys.c ssh/keyexchange/dh.c ssh/keyexchange/ecdh.c ssh/keyexchange/key-exchange.c ssh/keyexchange/keyx.c \
 			ssh/ssh-language.c \
 			ssh/ssh-pubkey.c \
 			ssh/pk/asn1.c ssh/pk/openssh-localdb.c ssh/pk/openssh-utils.c ssh/pk/openssh-cert.c ssh/pk/pk-create.c \
