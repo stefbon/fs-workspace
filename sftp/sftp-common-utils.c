@@ -127,7 +127,7 @@ unsigned int get_complete_pathlen_custom(struct context_interface_s *interface, 
 int check_realpath_sftp(struct context_interface_s *interface, char *path, char **remote_target)
 {
 
-    if (get_realpath_sftp(interface, path, remote_target)) {
+    if (get_realpath_sftp(interface, (unsigned char *)path, (unsigned char **)remote_target)) {
 	struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
 	char *result=*remote_target;
 	struct ssh_session_s *session=sftp_subsystem->channel.session;
@@ -180,4 +180,20 @@ void sftp_fsnotify_event(struct sftp_subsystem_s *sftp, uint64_t unique, uint32_
 
     }
 
+}
+
+unsigned int get_sftp_remote_home(void *ptr, struct ssh_string_s *home)
+{
+    struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
+
+    logoutput("get_sftp_remote_home: %.*s", sftp->remote_home.len, sftp->remote_home.ptr);
+
+    if (home) {
+
+	home->ptr=sftp->remote_home.ptr;
+	home->len=sftp->remote_home.len;
+
+    }
+
+    return sftp->remote_home.len;
 }

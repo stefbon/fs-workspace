@@ -80,7 +80,7 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
     struct timespec recv_client;
     struct timespec set_server;
     unsigned int error=0;
-    char buffer[1024];
+    struct common_buffer_s buffer;
     int size=0;
     unsigned int done=0;
     char *sep=NULL;
@@ -106,9 +106,8 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
     recv_client.tv_sec=0;
     recv_client.tv_nsec=0;
 
-    memset(buffer, '\0', 1024);
-
-    size=get_timeinfo_server(session, buffer, 1024, &send_client, &recv_client, &error);
+    init_common_buffer(&buffer);
+    size=get_timeinfo_server(session, &buffer, &send_client, &recv_client);
     if (size==0) goto finish;
 
     searchoutput:
@@ -116,12 +115,12 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
     /* output is like:
 	remotetime=1524159292.579901450:*/
 
-    sep=memmem(buffer, size, "remotetime=", 11);
+    sep=memmem(buffer.ptr, size, "remotetime=", 11);
 
     if (sep) {
 	char *start=sep + 11;
 
-	size-=(start - buffer);
+	size-=(start - buffer.ptr);
 	sep=memchr(start, '.', size);
 
 	if (sep) {
@@ -174,6 +173,8 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
 
     finish:
 
+    if (buffer.ptr) free(buffer.ptr);
+
     pthread_mutex_lock(&session->status.mutex);
 
     if (done==1) {
@@ -190,3 +191,43 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
 
 }
 
+unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buffer, unsigned int size)
+{
+    unsigned int result=0;
+
+    if (size>=4) {
+
+	memset(buffer, '\0', size);
+
+	if (channel->flags & CHANNEL_FLAG_OPENFAILURE) {
+
+	    store_uint32(buffer, EFAULT);
+	    result=4;
+
+	} else if (channel->flags & (CHANNEL_FLAG_SERVER_EOF | CHANNEL_FLAG_CLIENT_EOF)) {
+
+	    store_uint32(buffer, ENODEV); /* connected with server but backend on server not */
+	    result=4;
+
+	} else if (channel->flags & (CHANNEL_FLAG_SERVER_EOF | CHANNEL_FLAG_CLIENT_EOF)) {
+
+	    store_uint32(buffer, ENOTCONN); /* not connected with server */
+	    result=4;
+
+	} else {
+	    struct fs_connection_s *connection=&channel->session->connection;
+
+	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED || connection->status & FS_CONNECTION_FLAG_DISCONNECTING) {
+
+		store_uint32(buffer, ENOTCONN); /* not connected with server */
+		result=4;
+
+	    }
+
+	}
+
+    }
+
+    return result;
+
+}

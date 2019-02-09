@@ -48,7 +48,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -78,7 +78,7 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
     logoutput("_fs_sftp_open");
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -93,7 +93,7 @@ void _fs_sftp_open(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
     sftp_r.call.open.path=(unsigned char *) pathinfo->path;
     sftp_r.call.open.len=pathinfo->len;
     sftp_r.call.open.posix_flags=flags;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_open_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -172,12 +172,12 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
     struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, FATTR_MODE | FATTR_SIZE | FATTR_UID | FATTR_GID, &fuse_attr); /* uid and gid by server ?*/
-    unsigned char buffer[size];
+    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, FATTR_MODE | FATTR_SIZE | FATTR_UID | FATTR_GID, &fuse_attr, 0); /* uid and gid by server ?*/
+    char buffer[size];
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -196,8 +196,8 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
     sftp_r.call.create.len=pathinfo->len;
     sftp_r.call.create.posix_flags=flags;
     sftp_r.call.create.size=size;
-    sftp_r.call.create.buff=buffer; /* buffer should be filled with attr by calling process */
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.call.create.buff=(unsigned char *)buffer;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_create_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -219,7 +219,7 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
 		    openfile->handle.name.len=sftp_r.response.handle.len;
 		    sftp_r.response.handle.name=NULL;
 		    sftp_r.response.handle.len=0;
-		    fill_inode_attr_sftp(context->interface.ptr, openfile->inode, &fuse_attr);
+		    fill_inode_attr_sftp(context->interface.ptr, &openfile->inode->st, &fuse_attr);
 		    add_inode_context(context, openfile->inode);
 
 		    /* note: how the entry is created on the remote server does not have to be the same .... */
@@ -262,7 +262,7 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -275,7 +275,7 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
     sftp_r.call.read.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.read.len=openfile->handle.name.len;
     sftp_r.call.read.offset=(uint64_t) off;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
     sftp_r.call.read.size=(uint64_t) size;
 
     /* ignore flags and lockowner */
@@ -297,7 +297,7 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
 
 		    logoutput("_fs_sftp_read: received %i bytes", sftp_r.response.data.size);
 
-		    reply_VFS_data(f_request, sftp_r.response.data.data, sftp_r.response.data.size);
+		    reply_VFS_data(f_request, (char *)sftp_r.response.data.data, sftp_r.response.data.size);
 		    free(sftp_r.response.data.data);
 		    sftp_r.response.data.data=NULL;
 		    return;
@@ -341,7 +341,7 @@ void _fs_sftp_write(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -355,8 +355,8 @@ void _fs_sftp_write(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     sftp_r.call.write.len=openfile->handle.name.len;
     sftp_r.call.write.offset=(uint64_t) off;
     sftp_r.call.write.size=(uint64_t) size;
-    sftp_r.call.write.data=buff;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.call.write.data=(char *)buff;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_write_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -413,7 +413,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -432,7 +432,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     sftp_r.id=0;
     sftp_r.call.fsync.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.fsync.len=openfile->handle.name.len;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_fsync_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -505,7 +505,7 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((*f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -517,7 +517,7 @@ void _fs_sftp_release(struct fuse_openfile_s *openfile, struct fuse_request_s *f
     sftp_r.id=0;
     sftp_r.call.close.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.close.len=openfile->handle.name.len;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     /*
 	TODO:

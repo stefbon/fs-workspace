@@ -77,6 +77,8 @@ static int decompress_packet(struct ssh_decompressor_s *d, struct ssh_packet_s *
 
 	*p_payload=payload;
 
+	memset(payload, '\0', sizeof(struct ssh_payload_s) + len);
+
 	payload->flags=SSH_PAYLOAD_FLAG_ALLOCATED;
 	payload->len=len;
 	memcpy(payload->buffer, &packet->buffer[5], len);

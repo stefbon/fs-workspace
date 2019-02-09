@@ -54,7 +54,7 @@
 #include "sftp-request-hash.h"
 #include "sftp-protocol-v03.h"
 
-static struct ssh_string_s ext_fsnotify={0, strlen(SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL), SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL};
+static struct ssh_string_s ext_fsnotify={strlen(SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL), SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL};
 
 /*
     SFTP callbacks
@@ -239,12 +239,12 @@ void receive_sftp_name_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 	char *buffer=sftp_header->buffer;
 
 	sftp_r->type=sftp_header->type;
-	sftp_r->response.names.left=get_uint32(&buffer[pos]);
+	sftp_r->response.names.count=get_uint32(&buffer[pos]);
 	pos+=4;
 	sftp_r->response.names.size=sftp_header->len - pos; /* minus the count field */
 
-	memmove(buffer, &buffer[pos], sftp_r->response.names.size);
 	buffer=realloc(buffer, sftp_r->response.names.size);
+	memmove(buffer, &buffer[pos], sftp_r->response.names.size);
 
 	/* let the processing of this into names, attr to the receiving (FUSE) thread */
 	sftp_r->response.names.buff=buffer;
@@ -272,10 +272,14 @@ void receive_sftp_attr_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     unsigned int pos=0;
     void *req=NULL;
 
+    logoutput("receive_sftp_attr");
+
     req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
 	char *buffer=sftp_header->buffer;
+
+	logoutput("receive_sftp_attr: req id %i", sftp_header->id);
 
 	sftp_r->type=sftp_header->type;
 	sftp_r->response.attr.size=sftp_header->len;

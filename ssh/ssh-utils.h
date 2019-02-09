@@ -20,6 +20,13 @@
 #ifndef FS_WORKSPACE_SSH_UTILS_H
 #define FS_WORKSPACE_SSH_UTILS_H
 
+#define SKIPSPACE_FLAG_REPLACEBYZERO		1
+
+#define REPLACE_CNTRL_FLAG_TEXT			1
+#define REPLACE_CNTRL_FLAG_BINARY		2
+
+#include "datatypes/ssh-string.h"
+
 /* prototypes */
 
 unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error);
@@ -27,7 +34,12 @@ unsigned int fill_random(char *pos, unsigned int len);
 int init_ssh_backend_library(unsigned int *error);
 void init_ssh_utils();
 uint64_t ntohll(uint64_t value);
-void replace_cntrl_char(char *buffer, unsigned int size);
-void replace_newline_char(char *ptr, unsigned int *size);
+
+void replace_cntrl_char(char *buffer, unsigned int size, unsigned char flag);
+void replace_newline_char(char *ptr, unsigned int size);
+unsigned int skip_trailing_spaces(char *ptr, unsigned int size, unsigned int flags);
+unsigned int skip_heading_spaces(char *ptr, unsigned int size);
+
+void logoutput_base64encoded(char *prefix, char *buffer, unsigned int size);
 
 #endif

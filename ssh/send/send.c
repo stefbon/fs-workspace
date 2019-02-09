@@ -43,14 +43,18 @@
 #include "utils.h"
 
 #include "ssh-common.h"
+#include "ssh-common-protocol.h"
 #include "ssh-utils.h"
 #include "ssh-send.h"
+#include "ssh/receive/payload.h"
 
 static int queue_sender_default(struct ssh_send_s *send, struct ssh_sender_s *sender, unsigned int *error)
 {
+    logoutput("queue_sender_default");
+
     /* add at tail of senders list default: more senders are allowed */
     pthread_mutex_lock(&send->mutex);
-    add_list_element_last(&send->senders.head, &send->senders.tail, &sender->list);
+    add_list_element_last(&send->senders, &sender->list);
     send->sending++;
     sender->sequence=send->sequence_number;
     sender->listed=1;
@@ -64,6 +68,8 @@ static int queue_sender_default(struct ssh_send_s *send, struct ssh_sender_s *se
 static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sender, unsigned int *error)
 {
     int success=0;
+
+    logoutput("queue_sender_serial");
 
     /* add at tail of senders list serialized: only one sender is allowed */
 
@@ -93,12 +99,11 @@ static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sen
 
     }
 
-    send->senders.head=&sender->list;
-    send->senders.tail=&sender->list;
-    send->sending=1;
+    add_list_element_last(&send->senders, &sender->list);
     sender->sequence=send->sequence_number;
     sender->listed=1;
     send->sequence_number++;
+    send->sending++;
 
     out:
 
@@ -174,10 +179,9 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
     unsigned int error=0;
     int written=-1;
 
-    // logoutput("_write_ssh_packet");
+    logoutput("_write_ssh_packet");
 
-    sender.list.next=NULL;
-    sender.list.prev=NULL;
+    init_list_element(&sender.list, NULL);
     sender.sequence=0;
     sender.listed=0;
 
@@ -185,8 +189,12 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 	struct ssh_compressor_s *compressor=NULL;
 	unsigned char type=payload->type;
 
+	// logoutput("_write_ssh_packet: A");
+
 	*seq=sender.sequence;
 	compressor=get_compressor(send, &error);
+
+	// logoutput("_write_ssh_packet: B");
 
 	if ((*compressor->compress_payload)(compressor, &payload, &error)==0) {
 	    struct ssh_encryptor_s *encryptor=get_encryptor(send, &error);
@@ -258,17 +266,7 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 			(* post_send)(session, written);
 
-			if (sender.list.next) {
-
-			    send->senders.head=sender.list.next;
-
-			} else {
-
-			    send->senders.head=NULL;
-			    send->senders.tail=NULL;
-
-			}
-
+			remove_list_element(&sender.list);
 			sender.listed=0;
 			send->sending--;
 			pthread_cond_broadcast(&send->cond);
@@ -321,7 +319,8 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 	if (sender.listed) {
 
 	    pthread_mutex_lock(&send->mutex);
-	    remove_list_element(&send->senders.head, &send->senders.tail, &sender.list);
+	    remove_list_element(&sender.list);
+	    send->sending--;
 	    pthread_cond_broadcast(&send->cond);
 	    pthread_mutex_unlock(&send->mutex);
 	    sender.listed=0;
@@ -386,3 +385,97 @@ int write_ssh_packet_newkeys(struct ssh_session_s *session, struct ssh_payload_s
 {
     return _write_ssh_packet(session, payload, post_send_newkeys, seq);
 }
+
+int request_ssh_service(struct ssh_session_s *session, const char *service, struct payload_queue_s *queue)
+{
+    struct timespec expire;
+    unsigned int error=0;
+    struct ssh_payload_s *payload=NULL;
+    unsigned int seq=0;
+    int result=-1;
+
+    logoutput("request_ssh_service: request for service %s", service);
+
+    if (send_service_request_message(session, service, &seq)==-1) {
+
+	error=EIO;
+	logoutput("request_ssh_service: error %i sending service request (%s)", error, strerror(error));
+	goto outrequest;
+
+    }
+
+    get_session_expire_init(session, &expire);
+
+    getrequest:
+
+    payload=get_ssh_payload(session, queue, &expire, &seq, &error);
+
+    if (! payload) {
+
+	if (error==0) error=EIO;
+	logoutput("request_ssh_service: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
+	goto outrequest;
+
+    }
+
+    if (payload->type == SSH_MSG_SERVICE_ACCEPT) {
+	unsigned int len=strlen(service);
+
+	if (payload->len==5 + len) {
+	    char buffer[5 + len];
+
+	    buffer[0]=(unsigned char) SSH_MSG_SERVICE_ACCEPT;
+	    store_uint32(&buffer[1], len);
+	    memcpy(&buffer[5], service, len);
+
+	    if (memcmp(payload->buffer, buffer, len)==0) {
+
+		logoutput("request_ssh_service: server accepted service");
+		result=0;
+
+	    } else {
+		char string[len+1];
+
+		memcpy(string, &payload->buffer[5], len);
+		string[len]='\0';
+
+		logoutput("request_ssh_service: server has sent an invalid service accept message (%s)", string);
+		goto outrequest;
+
+	    }
+
+	} else {
+
+	    if (payload->len - 5 <=64) {
+		char string[len+1];
+
+		memcpy(string, &payload->buffer[5], len);
+		string[len]='\0';
+
+		logoutput("request_ssh_service: server has sent an invalid service accept message (%s)", string);
+		goto outrequest;
+
+	    } else {
+
+		logoutput("request_ssh_service: server has sent an invalid service accept message (length service name > 64)");
+		goto outrequest;
+
+	    }
+
+	}
+
+    } else {
+
+	logoutput("request_ssh_service: server send unexpected %i: disconnect", payload->type);
+
+    }
+
+    outrequest:
+
+    if (payload) free_payload(&payload);
+    if (result==-1) logoutput("request_ssh_service: failed");
+
+    return result;
+
+}
+

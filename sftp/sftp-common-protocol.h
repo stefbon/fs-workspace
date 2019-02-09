@@ -53,17 +53,33 @@
 #define SSH_FXP_EXTENDED 			200
 #define SSH_FXP_EXTENDED_REPLY 			201
 
-#define SFTP_EXTENSION_STATVFS_OPENSSH_COM			"statvfs@openssh.com"
-#define SFTP_EXTENSION_FSTATVFS_OPENSSH_COM			"fstatvfs@openssh.com"
-#define SFTP_EXTENSION_FSYNC_OPENSSH_COM			"fsync@openssh.com"
-#define SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL			"fsnotify@bononline.nl"
+#define SFTP_EXTENSION_STATVFS_OPENSSH_COM						"statvfs@openssh.com"
+#define SFTP_EXTENSION_FSTATVFS_OPENSSH_COM						"fstatvfs@openssh.com"
+#define SFTP_EXTENSION_FSYNC_OPENSSH_COM						"fsync@openssh.com"
+#define SFTP_EXTENSION_HARDLINK_OPENSSH_COM						"hardlink@openssh.com"
+#define SFTP_EXTENSION_POSIXRENAME_OPENSSH_COM						"posix-rename@openssh.com"
 
-#define FUSE_SFTP_EXT_STATVFS_OPENSSH_COM			1
-#define FUSE_SFTP_EXT_FSTATVFS_OPENSSH_COM			2
-#define FUSE_SFTP_EXT_POSIXRENAME_OPENSSH_COM			4
-#define FUSE_SFTP_EXT_HARDLINK_OPENSSH_COM			8
-#define FUSE_SFTP_EXT_FSYNC_OPENSSH_COM				16
-#define FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL			32
+#define SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL					"fsnotify@system.bononline.nl"
+
+#define SFTP_EXTENSION_CREATEBACKUP_BACKUP_BONONLINE_NL					"createbackup@backup.bononline.nl"
+#define SFTP_EXTENSION_COMPAREBACKUP_BACKUP_BONONLINE_NL				"comparebackup@backup.bononline.nl"
+#define SFTP_EXTENSION_GETMIMETYPES_BACKUP_BONONLINE_NL					"getmimetypes@backup.bononline.nl"
+#define SFTP_EXTENSION_CREATEFILE_BACKUP_BONONLINE_NL					"createfile@backup.bononline.nl"
+#define SFTP_EXTENSION_WRITEFILE_BACKUP_BONONLINE_NL					"writefile@backup.bononline.nl"
+#define SFTP_EXTENSION_RELEASEFILE_BACKUP_BONONLINE_NL					"releasefile@backup.bononline.nl"
+
+#define FUSE_SFTP_EXT_STATVFS_OPENSSH_COM						( 1 << 0 )
+#define FUSE_SFTP_EXT_FSTATVFS_OPENSSH_COM						( 1 << 1 )
+#define FUSE_SFTP_EXT_POSIXRENAME_OPENSSH_COM						( 1 << 2 )
+#define FUSE_SFTP_EXT_HARDLINK_OPENSSH_COM						( 1 << 3 )
+#define FUSE_SFTP_EXT_FSYNC_OPENSSH_COM							( 1 << 4 )
+#define FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL					( 1 << 5 )
+#define FUSE_SFTP_EXT_CREATEBACKUP_BACKUP_BONONLINE_NL					( 1 << 6 )
+#define FUSE_SFTP_EXT_COMPAREBACKUP_BACKUP_BONONLINE_NL					( 1 << 7 )
+#define FUSE_SFTP_EXT_GETMIMETYPES_BACKUP_BONONLINE_NL					( 1 << 8 )
+#define FUSE_SFTP_EXT_CREATEFILE_BACKUP_BONONLINE_NL					( 1 << 9 )
+#define FUSE_SFTP_EXT_WRITEFILE_BACKUP_BONONLINE_NL					( 1 << 10 )
+#define FUSE_SFTP_EXT_RELEASEFILE_BACKUP_BONONLINE_NL					( 1 << 11 )
 
 #define FUSE_SFTP_INDEX_TYPE			0
 #define FUSE_SFTP_ATTR_TYPE			1 << FUSE_SFTP_INDEX_TYPE
@@ -182,7 +198,7 @@ struct data_response_s {
 };
 
 struct name_response_s {
-    unsigned int		left;
+    unsigned int		count;
     unsigned int		size;
     signed char			eof; /* optional end-of-data, only supported version >= 6 */
     char			*buff; /* list of names (name, attr) as send by server, leave it to the receiving (FUSE) thread to process */
@@ -317,6 +333,32 @@ struct sftp_fsnotify_s {
     uint32_t			mask;
 };
 
+struct sftp_data_s {
+    unsigned char		*data;
+    unsigned int		len;
+};
+
+struct sftp_createfile_s {
+    uint64_t			id;
+    char			*name;
+    unsigned int		len;
+    unsigned int		size;
+    unsigned char		*buffer;
+};
+
+struct sftp_writefile_s {
+    unsigned char		*handle;
+    unsigned int		len;
+    uint64_t			offset;
+    uint64_t			size;
+    char			*bytes;
+};
+
+struct sftp_releasefile_s {
+    unsigned char		*handle;
+    unsigned int		size;
+};
+
 struct sftp_extension_s {
     unsigned char		*name;
     unsigned int		len;
@@ -325,41 +367,48 @@ struct sftp_extension_s {
 };
 
 struct sftp_request_s {
-    unsigned int		id;
+    unsigned int			id;
     union {
-	struct sftp_path_s	stat;
-	struct sftp_path_s	lstat;
-	struct sftp_handle_s	fstat;
-	struct sftp_setstat_s	setstat;
-	struct sftp_fsetstat_s	fsetstat;
-	struct sftp_open_s	open;
-	struct sftp_create_s	create;
-	struct sftp_path_s	opendir;
-	struct sftp_read_s	read;
-	struct sftp_write_s	write;
-	struct sftp_handle_s	fsync;
-	struct sftp_handle_s	readdir;
-	struct sftp_handle_s	close;
-	struct sftp_path_s	remove;
-	struct sftp_rename_s	rename;
-	struct sftp_mkdir_s	mkdir;
-	struct sftp_path_s	rmdir;
-	struct sftp_path_s	readlink;
-	struct sftp_link_s 	link;
-	struct sftp_symlink_s 	symlink;
-	struct sftp_block_s	block;
-	struct sftp_unblock_s	unblock;
-	struct sftp_path_s	statvfs;
-	struct sftp_handle_s	fstatvfs;
-	struct sftp_path_s	realpath;
-	struct sftp_fsnotify_s	fsnotify;
-	struct sftp_extension_s extension;
+	struct sftp_path_s		stat;
+	struct sftp_path_s		lstat;
+	struct sftp_handle_s		fstat;
+	struct sftp_setstat_s		setstat;
+	struct sftp_fsetstat_s		fsetstat;
+	struct sftp_open_s		open;
+	struct sftp_create_s		create;
+	struct sftp_path_s		opendir;
+	struct sftp_read_s		read;
+	struct sftp_write_s		write;
+	struct sftp_handle_s		fsync;
+	struct sftp_handle_s		readdir;
+	struct sftp_handle_s		close;
+	struct sftp_path_s		remove;
+	struct sftp_rename_s		rename;
+	struct sftp_mkdir_s		mkdir;
+	struct sftp_path_s		rmdir;
+	struct sftp_path_s		readlink;
+	struct sftp_link_s 		link;
+	struct sftp_symlink_s 		symlink;
+	struct sftp_block_s		block;
+	struct sftp_unblock_s		unblock;
+	struct sftp_path_s		statvfs;
+	struct sftp_handle_s		fstatvfs;
+	struct sftp_path_s		realpath;
+	struct sftp_fsnotify_s		fsnotify;
+	struct sftp_path_s		createbackup;
+	struct sftp_data_s		comparebackup;
+	struct sftp_data_s		getmime;
+	struct sftp_createfile_s 	createfile;
+	struct sftp_writefile_s 	writefile;
+	struct sftp_releasefile_s 	releasefile;
+	struct sftp_extension_s 	extension;
     } call;
     unsigned char		type;
     union sftp_response_u 	response;
     unsigned int		sequence;
-    unsigned int		*fusedata_flags;
+    struct fuse_request_s	*fuse_request;
     unsigned int		error;
 };
 
 #endif
+

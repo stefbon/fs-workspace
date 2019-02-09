@@ -98,7 +98,7 @@ static void ecdh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s 
     struct ssh_mpoint_s *q=&pkey_s->param.ecc.q;
 
     pkalgo=get_pkalgo_byid(SSH_PKALGO_ID_CURVE25519, NULL);
-    if (pkalgo==NULL) return -1;
+    if (pkalgo==NULL) return;
     init_ssh_key(pkey_s, 1, pkalgo);
 
     msg_read_ssh_mpoint(mb, q, NULL);
@@ -121,8 +121,6 @@ void ReverseBuffer(char *buffer, unsigned int size)
     for (unsigned int i=0; i<size; i++) buffer[i] = tmp[size - i];
 
 }
-
-
 
     /* HOW do scalar multiplication? see:
     https://git.libssh.org/projects/libssh.git/tree/doc/curve25519-sha256@libssh.org.txt */
@@ -205,7 +203,7 @@ static int ecdh_calc_shared_K(struct ssh_keyx_s *keyx)
 
     /* build data sexp from the private key (d) of the local key*/
 
-    gcry_mpi_print(GCRYMPI_FMT_USG, buffer, size, &written, d->lib.mpi);
+    gcry_mpi_print(GCRYMPI_FMT_USG, (unsigned char *)buffer, size, &written, d->lib.mpi);
     ReverseBuffer(buffer, size);
 
     err=gcry_sexp_build(&sexp_sk, NULL, "%b", size, buffer);
@@ -274,13 +272,13 @@ static void ecdh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *
 {
     struct ssh_mpint_s *mp=&keyx->method.ecdh.K;
     unsigned int size=gcry_mpi_get_nbits(mp->lib.mpi);
-    char buffer[size/8];
+    unsigned char buffer[size/8];
     size_t written=0;
 
     size=size/8;
 
     gcry_mpi_print(GCRYMPI_FMT_USG, buffer, size, &written, mp->lib.mpi);
-    ReverseBuffer(buffer, size);
+    ReverseBuffer((char *)buffer, size);
 
     msg_write_bytes(mb, buffer, size);
 }

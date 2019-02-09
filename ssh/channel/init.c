@@ -76,15 +76,6 @@ void clear_ssh_channel(struct ssh_channel_s *channel)
 
 	}
 
-    } else if (channel->type==_CHANNEL_TYPE_DIRECT_TCPIP) {
-
-	if (channel->target.tcpip.host) {
-
-	    free(channel->target.tcpip.host);
-	    channel->target.tcpip.host=NULL;
-
-	}
-
     }
 
     pthread_mutex_destroy(&channel->mutex);
@@ -99,7 +90,7 @@ void free_ssh_channel(struct ssh_channel_s *channel)
 
 static void process_incoming_bytes_default(struct ssh_channel_s *channel, unsigned int size)
 {
-    logoutput("process_incoming_bytes_default: local window %u len %i", channel->local_window, size);
+    // logoutput("process_incoming_bytes_default: local window %u len %i", channel->local_window, size);
     /* decrease local window */
     channel->local_window-=size;
 

@@ -19,6 +19,6 @@
 #ifndef FUSE_FUSE_SSH_H
 #define FUSE_FUSE_SSH_H
 
-int install_ssh_server_context(struct workspace_mount_s *workspace, struct entry_s *parent, char *address, unsigned int port, unsigned int *error);
+int install_ssh_server_context(struct workspace_mount_s *workspace, struct entry_s *parent, struct host_address_s *host, struct service_address_s *service, unsigned int *error);
 
 #endif

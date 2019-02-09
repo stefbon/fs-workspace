@@ -49,7 +49,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -90,7 +90,7 @@ void _fs_sftp_fsnotify(struct service_context_s *context, struct fuse_request_s 
     sftp_r.call.fsnotify.len=pathinfo->len;
     sftp_r.call.fsnotify.unique=unique;
     sftp_r.call.fsnotify.mask=mask;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_fsnotify_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;

@@ -45,9 +45,9 @@
 #include "pathinfo.h"
 #include "beventloop.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"
@@ -57,11 +57,11 @@
 #include "fuse-fs-common.h"
 #include "fuse-fs-virtual.h"
 
-extern unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int size, unsigned int *error);
-extern void *create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-extern void umount_ssh_session(struct context_interface_s *interface);
+extern unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
+extern int create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
+extern void signal_ssh_interface(struct context_interface_s *interface);
 
-static int start_ssh_connection(struct context_interface_s *interface, void *data)
+static int start_ssh_connection(struct context_interface_s *interface, int fd, void *data)
 {
     return 0;
 }
@@ -75,7 +75,7 @@ void init_ssh_interface(struct context_interface_s *interface)
     interface->get_interface_info=get_ssh_interface_info;
     interface->connect=create_ssh_connection;
     interface->start=start_ssh_connection;
-    interface->free=umount_ssh_session;
+    interface->signal_interface=signal_ssh_interface;
 
     context->fscount=0;
 

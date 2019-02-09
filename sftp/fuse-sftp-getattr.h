@@ -22,6 +22,7 @@
 
 void _fs_sftp_getattr(struct service_context_s *context, struct fuse_request_s *request, struct inode_s *inode, struct pathinfo_s *pathinfo);
 void _fs_sftp_fgetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *request);
+int _fs_sftp_getattr_root(struct context_interface_s *i, void *ptr);
 
 void _fs_sftp_getattr_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct inode_s *inode, struct pathinfo_s *pathinfo);
 void _fs_sftp_fgetattr_disconnected(struct fuse_openfile_s *openfile, struct fuse_request_s *f_request);

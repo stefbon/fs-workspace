@@ -21,5 +21,6 @@
 #define FS_WORKSPACE_FUSE_BACKUP_H
 
 void start_backup_service(struct service_context_s *context);
+void start_backupscript_service(struct service_context_s *context);
 
 #endif

@@ -20,7 +20,7 @@
 #ifndef FS_WORKSPACE_FUSE_NETWORK_H
 #define FS_WORKSPACE_FUSE_NETWORK_H
 
-struct entry_s *create_network_map_entry(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, unsigned int *error);
-void install_net_services_cb(unsigned int service, struct context_address_s *address, struct timespec *found, unsigned long hostid, unsigned long serviceid, void *ptr);
+struct entry_s *create_network_map_entry(struct service_context_s *context, struct directory_s *directory, struct name_s *xname, unsigned int *error);
+void install_net_services_cb(struct host_address_s *host, struct service_address_s *s, unsigned int code, struct timespec *found, unsigned long hostid, unsigned long serviceid, void *ptr);
 
 #endif

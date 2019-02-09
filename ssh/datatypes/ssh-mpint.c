@@ -626,7 +626,7 @@ void init_ssh_mpint(struct ssh_mpint_s *mp)
 {
 }
 
-void msg_read_ssh_mpoint(struct msg_buffer_s *mb, struct ssh_mpoint_s *mp)
+void msg_read_ssh_mpoint(struct msg_buffer_s *mb, struct ssh_mpoint_s *mp, unsigned int *plen)
 {
 }
 

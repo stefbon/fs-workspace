@@ -60,6 +60,8 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
 
     }
 
+    logoutput("get_ssh_payload_channel");
+
     pthread_mutex_lock(signal->mutex);
 
     while (queue->list.head==NULL) {
@@ -71,11 +73,11 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
 	    break;
 
 	} else if (result==ETIMEDOUT) {
-	    struct ssh_connection_s *connection=&channel->session->connection;
+	    struct fs_connection_s *connection=&channel->session->connection;
 
 	    pthread_mutex_unlock(signal->mutex);
 	    *error=ETIMEDOUT;
-	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+	    if (connection->status & (FS_CONNECTION_FLAG_DISCONNECTED | FS_CONNECTION_FLAG_DISCONNECTING)) {
 
 		*error=(connection->error>0) ? connection->error : ENOTCONN;
 
@@ -90,9 +92,9 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
 	    return NULL;
 
 	} else {
-	    struct ssh_connection_s *connection=&channel->session->connection;
+	    struct fs_connection_s *connection=&channel->session->connection;
 
-	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED) {
 
 		*error=(connection->error>0) ? connection->error : ENOTCONN;
 		pthread_mutex_unlock(signal->mutex);
@@ -144,6 +146,8 @@ void queue_ssh_payload_channel(struct ssh_channel_s *channel, struct ssh_payload
 
     payload->next=NULL;
     payload->prev=NULL;
+
+    logoutput("queue_ssh_payload_channel");
 
     pthread_mutex_lock(signal->mutex);
 

@@ -25,5 +25,7 @@ void signal_send_disconnect(struct ssh_send_s *send);
 int write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq);
 int write_ssh_packet_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq);
 int write_ssh_packet_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq);
+int write_ssh_packet_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq);
+int request_ssh_service(struct ssh_session_s *session, const char *service, struct payload_queue_s *queue);
 
 #endif

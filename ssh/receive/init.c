@@ -76,6 +76,7 @@ void register_msg_cb(unsigned char type, receive_msg_cb_t cb)
 
 void process_cb_ssh_payload(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
+    logoutput("process_cb_ssh_payload (type=%i)", payload->type);
     (* ssh_msg_cb[payload->type]) (session, payload);
 }
 
@@ -319,13 +320,10 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
     decrypt->flags=0;
     memset(decrypt->ciphername, '\0', sizeof(decrypt->ciphername));
     memset(decrypt->hmacname, '\0', sizeof(decrypt->hmacname));
-    decrypt->decryptors.head=NULL;
-    decrypt->decryptors.tail=NULL;
+    init_list_header(&decrypt->decryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     decrypt->count=0;
     decrypt->max_count=0;
-    decrypt->waiters.head=NULL;
-    decrypt->waiters.tail=NULL;
-    decrypt->waiting=0;
+    init_simple_locking(&decrypt->waiters);
     decrypt->ops=NULL;
 
     init_ssh_string(&decrypt->cipher_key);
@@ -340,13 +338,10 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
 
     decompress->flags=0;
     memset(decompress->name, '\0', sizeof(decompress->name));
-    decompress->decompressors.head=NULL;
-    decompress->decompressors.tail=NULL;
+    init_list_header(&decompress->decompressors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     decompress->count=0;
     decompress->max_count=0;
-    decompress->waiters.head=NULL;
-    decompress->waiters.tail=NULL;
-    decompress->waiting=0;
+    init_simple_locking(&decompress->waiters);
     decompress->ops=NULL;
 
     set_decompress_none(session);

@@ -191,9 +191,9 @@ int send_sftp_fsync_ctx(void *ptr, struct sftp_request_s *sftp_r)
     store_uint32(data, len);
     memcpy(data+4, sftp_r->call.fsync.handle, len);
 
-    sftp_r->call.extension.name=SFTP_EXTENSION_FSYNC_OPENSSH_COM;
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_FSYNC_OPENSSH_COM;
     sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
-    sftp_r->call.extension.data=data;
+    sftp_r->call.extension.data=(unsigned char *)data;
     sftp_r->call.extension.size=len+4;
 
     return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
@@ -209,9 +209,9 @@ int send_sftp_statvfs_ctx(void *ptr, struct sftp_request_s *sftp_r)
     store_uint32(data, len);
     if (len>0) memcpy(data+4, sftp_r->call.statvfs.path, len);
 
-    sftp_r->call.extension.name=SFTP_EXTENSION_STATVFS_OPENSSH_COM;
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_STATVFS_OPENSSH_COM;
     sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
-    sftp_r->call.extension.data=data;
+    sftp_r->call.extension.data=(unsigned char *)data;
     sftp_r->call.extension.size=len+4;
 
     return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
@@ -227,9 +227,9 @@ int send_sftp_fstatvfs_ctx(void *ptr, struct sftp_request_s *sftp_r)
     store_uint32(data, len);
     memcpy(data+4, sftp_r->call.fstatvfs.handle, len);
 
-    sftp_r->call.extension.name=SFTP_EXTENSION_FSTATVFS_OPENSSH_COM;
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_FSTATVFS_OPENSSH_COM;
     sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
-    sftp_r->call.extension.data=data;
+    sftp_r->call.extension.data=(unsigned char *)data;
     sftp_r->call.extension.size=4+len;
 
     return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
@@ -239,12 +239,10 @@ int send_sftp_fstatvfs_ctx(void *ptr, struct sftp_request_s *sftp_r)
 int send_sftp_fsnotify_ctx(void *ptr, struct sftp_request_s *sftp_r)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
-    unsigned int len=sftp_r->call.fsnotify.len;
-    char data[len+20];
+    unsigned int len=sftp_r->call.fsnotify.len + 16;
+    char data[len+4];
     unsigned int pos=0;
 
-    //store_uint32(&data[pos], len + 12);
-    //pos+=4;
     store_uint32(&data[pos], len);
     pos+=4;
 
@@ -258,14 +256,156 @@ int send_sftp_fsnotify_ctx(void *ptr, struct sftp_request_s *sftp_r)
     store_uint32(&data[pos], sftp_r->call.fsnotify.mask);
     pos+=4;
 
+    store_uint32(&data[0], pos-4);
+    // pos+=4;
+
     logoutput("send_sftp_fsnotify_ctx: len %i path %s pos %i unique %lli mask %i", len, sftp_r->call.fsnotify.path, pos, sftp_r->call.fsnotify.unique, sftp_r->call.fsnotify.mask);
 
-    sftp_r->call.extension.name=SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL;
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL;
     sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
-    sftp_r->call.extension.data=data;
+    sftp_r->call.extension.data=(unsigned char *)data;
     sftp_r->call.extension.size=pos;
 
     return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+}
+
+int send_sftp_createbackup_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.createbackup.len;
+    char data[len+4];
+
+    store_uint32(data, len);
+    if (len>0) memcpy(data+4, sftp_r->call.createbackup.path, len);
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_CREATEBACKUP_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=len+4;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
+}
+
+int send_sftp_comparebackup_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.comparebackup.len;
+    char data[len+4];
+
+    store_uint32(data, len);
+    if (len>0) memcpy(data+4, sftp_r->call.comparebackup.data, len);
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_COMPAREBACKUP_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=len+4;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
+}
+
+int send_sftp_getmime_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.getmime.len;
+    char data[len+4];
+
+    store_uint32(data, len);
+    if (len>0) memcpy(data+4, sftp_r->call.getmime.data, len);
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_GETMIMETYPES_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=len+4;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
+}
+
+int send_sftp_createfile_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.createfile.size + sftp_r->call.createfile.len + 16;
+    char data[len+4];
+    unsigned int pos=0;
+
+    logoutput("send_sftp_createfile_ctx: id %lli name %.*s buffer size %lli", sftp_r->call.createfile.id, sftp_r->call.createfile.len, sftp_r->call.createfile.name, sftp_r->call.createfile.size);
+
+    memset(data, '\0', len+4);
+
+    store_uint64(&data[pos], sftp_r->call.createfile.id);
+    pos+=8;
+    store_uint32(&data[pos], sftp_r->call.createfile.len);
+    pos+=4;
+    memcpy(&data[pos], sftp_r->call.createfile.name, sftp_r->call.createfile.len);
+    pos+=sftp_r->call.createfile.len;
+    store_uint32(&data[pos], sftp_r->call.createfile.size);
+    pos+=4;
+    memcpy(&data[pos], sftp_r->call.createfile.buffer, sftp_r->call.createfile.size);
+    pos+=sftp_r->call.createfile.size;
+
+    logoutput_base64encoded("send_sftp_createfile_ctx", data, pos);
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_CREATEFILE_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=pos;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
+}
+
+int send_sftp_writefile_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.writefile.size + 20 + sftp_r->call.writefile.len;
+    char data[len+4];
+    unsigned int pos=0;
+
+    memset(data, '\0', len+4);
+
+    store_uint32(&data[pos], sftp_r->call.writefile.len);
+    pos+=4;
+    memcpy(&data[pos], sftp_r->call.writefile.handle, sftp_r->call.writefile.len);
+    pos+=sftp_r->call.writefile.len;
+    store_uint64(&data[pos], sftp_r->call.writefile.offset);
+    pos+=8;
+    store_uint64(&data[pos], sftp_r->call.writefile.size);
+    pos+=8;
+    memcpy(&data[pos], sftp_r->call.writefile.bytes, sftp_r->call.writefile.size);
+    pos+=sftp_r->call.writefile.size;
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_WRITEFILE_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=pos;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
+}
+
+int send_sftp_releasefile_ctx(void *ptr, struct sftp_request_s *sftp_r)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    unsigned int len=sftp_r->call.releasefile.size + 4;
+    char data[len+4];
+    unsigned int pos=0;
+
+    memset(data, '\0', len+4);
+
+    store_uint32(&data[pos], sftp_r->call.releasefile.size);
+    pos+=4;
+    memcpy(&data[pos], sftp_r->call.writefile.handle, sftp_r->call.releasefile.size);
+    pos+=sftp_r->call.writefile.size;
+
+    sftp_r->call.extension.name=(unsigned char *)SFTP_EXTENSION_CREATEFILE_BACKUP_BONONLINE_NL;
+    sftp_r->call.extension.len=strlen((char*)sftp_r->call.extension.name);
+    sftp_r->call.extension.data=(unsigned char *)data;
+    sftp_r->call.extension.size=pos;
+
+    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
+
 }
 
 int get_support_sftp_ctx(void *ptr, const char *name)
@@ -285,9 +425,13 @@ int get_support_sftp_ctx(void *ptr, const char *name)
 
 	return (supported->extensions & FUSE_SFTP_EXT_FSYNC_OPENSSH_COM) ? 0 : -1;
 
-    } else if (strcmp(name, SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL)==0) {
+    } else if (strcmp(name, SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL)==0) {
 
-	return (supported->extensions & FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL) ? 0 : -1;
+	return (supported->extensions & FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL) ? 0 : -1;
+
+    } else if (strcmp(name, SFTP_EXTENSION_CREATEBACKUP_BACKUP_BONONLINE_NL)==0) {
+
+	return (supported->extensions & FUSE_SFTP_EXT_CREATEBACKUP_BACKUP_BONONLINE_NL) ? 0 : -1;
 
     }
 
@@ -336,15 +480,27 @@ void set_support_sftp_ctx(void *ptr, const char *name, int flag)
 
 	}
 
-    } else if (strcmp(name, SFTP_EXTENSION_FSNOTIFY_BONONLINE_NL)==0) {
+    } else if (strcmp(name, SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL)==0) {
 
 	if (flag==-1) {
 
-	    if (supported->extensions & FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL) supported->extensions -= FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL;
+	    if (supported->extensions & FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL) supported->extensions -= FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL;
 
 	} else if (flag==1) {
 
-	    supported->extensions|=FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL;
+	    supported->extensions|=FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL;
+
+	}
+
+    } else if (strcmp(name, SFTP_EXTENSION_CREATEBACKUP_BACKUP_BONONLINE_NL)==0) {
+
+	if (flag==-1) {
+
+	    if (supported->extensions & FUSE_SFTP_EXT_CREATEBACKUP_BACKUP_BONONLINE_NL) supported->extensions -= FUSE_SFTP_EXT_CREATEBACKUP_BACKUP_BONONLINE_NL;
+
+	} else if (flag==1) {
+
+	    supported->extensions|=FUSE_SFTP_EXT_CREATEBACKUP_BACKUP_BONONLINE_NL;
 
 	}
 

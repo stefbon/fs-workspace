@@ -55,6 +55,8 @@
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"
 
+#include <glib.h>
+
 /*
     function to read and write sftp attributes when only a pointer to sftp subsystem is available (=context)
     these functions calls the version specific attributes handler
@@ -62,24 +64,34 @@
     the read and write functions give the required size when buffer is NULL
 */
 
-unsigned int read_attributes_ctx(void *ptr, unsigned char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
+unsigned int read_attributes_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    // gchar *encoded;
+
+    /* required to encode ?*/
+    // encoded=g_base64_encode(buffer, size);
+    // logoutput("read_attributes_ctx: buffer %s", encoded);
+    // g_free(encoded);
+
     return (*sftp_subsystem->attr_ops->read_attributes)(sftp_subsystem, buffer, size, fuse_attr);
 }
 
-unsigned int write_attributes_ctx(void *ptr, unsigned char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
+unsigned int write_attributes_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     return (*sftp_subsystem->attr_ops->write_attributes)(sftp_subsystem, buffer, size, fuse_attr);
 }
-
-void read_name_response_ctx(void *ptr, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr)
+void read_name_response_ctx(void *ptr, struct name_response_s *response, char **name, unsigned int *len)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
-    (*sftp_subsystem->attr_ops->read_name_response)(sftp_subsystem, response, name, len, fuse_attr);
+    (*sftp_subsystem->attr_ops->read_name_response)(sftp_subsystem, response, name, len);
 }
-
+unsigned int read_attr_response_ctx(void *ptr, struct name_response_s *response, struct fuse_sftp_attr_s *fuse_attr)
+{
+    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
+    return (*sftp_subsystem->attr_ops->read_attr_response)(sftp_subsystem, response, fuse_attr);
+}
 void correct_time_s2c_ctx(void *ptr, struct timespec *time)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;

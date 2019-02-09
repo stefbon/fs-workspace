@@ -43,12 +43,13 @@
 #include "logging.h"
 #include "utils.h"
 #include "pathinfo.h"
+#include "options.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
 #include "workspace-interface.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -61,20 +62,53 @@
 #include "sftp-send-common.h"
 
 #include "fuse-sftp-common.h"
+#include "fuse-sftp-realpath.h"
+#include "sftp-common-utils.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
 extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
+extern struct fs_options_s fs_options;
 
-/* path is absolute on the remote system, but has no meaning on this host:
-    - when making a path absolute by prepending the mount path
-    - path a absolute to the prefic on the remote host: prepend the prefix */
-
-static void reply_VFS_symlink(struct service_context_s *context, struct fuse_request_s *f_request, char *path, unsigned int len)
+static char *nullpath='\0';
+static unsigned int get_sftp_prefix(struct service_context_s *context, struct ssh_string_s *prefix)
 {
-    struct service_context_s *search=NULL;
-    struct list_element_s *list=NULL;
     struct context_interface_s *interface=&context->interface;
+    unsigned int tmp=0;
+
+    if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME) {
+
+	tmp=get_sftp_remote_home(interface->ptr, prefix);
+
+    } else if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM) {
+
+	tmp=interface->backend.sftp.prefix.len;
+	prefix->ptr=interface->backend.sftp.prefix.path;
+	prefix->len=interface->backend.sftp.prefix.len;
+
+    } else if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT) {
+
+	prefix->ptr=nullpath;
+	prefix->len=0;
+	tmp=0;
+
+    }
+
+    return tmp;
+}
+
+/* construct the full path:
+    - mountpoint
+    - path to the sftp context == shared folder in this fuse fs
+    - actual symlink as reported by the remote system
+
+    and
+
+    send this to the VFS
+*/
+
+static void reply_sftp_readlink(struct service_context_s *context, struct fuse_request_s *f_request, char *path, unsigned int len)
+{
     struct workspace_mount_s *workspace=context->workspace;
     unsigned int written=0;
     unsigned int pathmax=workspace->pathmax; /* should we use PATH_MAX here ?? */
@@ -86,113 +120,78 @@ static void reply_VFS_symlink(struct service_context_s *context, struct fuse_req
     /* fuse path from mountpoint to the entry where this remote directory is ""mounted"*/
 
     init_fuse_path(&fpath, fusepath, pathmax);
-    fpath.len=get_path_root(context->inode, &fpath);
+    fpath.len=get_path_root(context->service.filesystem.inode, &fpath);
 
-    if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME) {
-	struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) interface->ptr;
-
-	/* when subdir of remote home take that (when not what then???) */
-
-	if (sftp->remote_home.len>0 && len > sftp->remote_home.len && strncmp(path, sftp->remote_home.ptr, sftp->remote_home.len)==0) {
-
-	    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len - sftp->remote_home.len, &path[sftp->remote_home.len]);
-
-	} else {
-
-	    goto searchcontext;
-
-	}
-
-    } else if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT) {
-
-	written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len, path);
-
-    } else if (interface->backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM) {
-
-	if (len > interface->backend.sftp.prefix.len && strncmp(path, interface->backend.sftp.prefix.path, interface->backend.sftp.prefix.len)==0) {
-
-	    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len - interface->backend.sftp.prefix.len, &path[interface->backend.sftp.prefix.len]);
-
-	} else {
-
-	    goto searchcontext;
-
-	}
-
-    }
-
+    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len, path);
     reply_VFS_data(f_request, fullpath, written);
-    return;
+}
 
-    searchcontext:
+static void create_reply_sftp_readlink(struct service_context_s *context, struct fuse_request_s *f_request, char *path, unsigned int len)
+{
+    struct context_interface_s *interface=&context->interface;
+    unsigned int tmp=0;
+    struct ssh_string_s prefix;
+    char *result=NULL;
 
-    pthread_mutex_lock(&workspace->mutex);
+    logoutput("create_reply_sftp_readlink: path %.*s", len, path);
 
-    list=workspace->contexes.head;
+    if (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SYMLINK_ALLOW_PREFIX) {
 
-    while (list) {
+	tmp=get_sftp_prefix(context, &prefix);
 
-	search=get_container_context(list);
-	if (search==context) goto next;
+	logoutput("create_reply_sftp_readlink: get prefix (len=%i) %.*s", tmp, tmp, (tmp>0) ? prefix.ptr : "");
 
-	if (search->type==SERVICE_CTX_TYPE_SERVICE) {
+	if (tmp==0 || (tmp>0 && tmp<len && strncmp(path, prefix.ptr, tmp)==0 && path[tmp]=='/')) {
 
-	     if (strcmp(search->name, "sftp")==0) {
+	    result=path+tmp;
+	    len-=tmp;
+	    goto reply;
 
-		/* sftp service: is this the same host? */
+	}
 
-		if (search->parent && search->parent == context->parent) {
+	goto error;
 
-		    if (search->interface.backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_HOME) {
-			struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) search->interface.ptr;
+    } else if (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SYMLINK_ALLOW_CROSS_INTERFACE) {
+	struct service_context_s *c=get_next_service_context(NULL, "sftp");
 
-			if (sftp->remote_home.len>0 && len > sftp->remote_home.len && strncmp(path, sftp->remote_home.ptr, sftp->remote_home.len)==0) {
+	/* walk every sftp context, but take only those with the parent == ssh connection */
 
-			    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len - sftp->remote_home.len, &path[sftp->remote_home.len]);
-			    break;
+	while (c) {
 
-			}
+	    if (c->workspace==context->workspace && c->parent==context->parent) {
 
-		    } else if (search->interface.backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT) {
+		tmp=get_sftp_prefix(c, &prefix);
 
-			written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len, path);
+		if (tmp==0 || (tmp>0 && tmp<len && strncmp(path, prefix.ptr, tmp)==0 && path[tmp]=='/')) {
 
-		    } else if (search->interface.backend.sftp.prefix.type==CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_CUSTOM) {
-
-			if (len > search->interface.backend.sftp.prefix.len && strncmp(path, search->interface.backend.sftp.prefix.path, search->interface.backend.sftp.prefix.len)==0) {
-
-			    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len - search->interface.backend.sftp.prefix.len, &path[search->interface.backend.sftp.prefix.len]);
-
-			}
-
-		    }
+		    result=path+tmp;
+		    len-=tmp;
+		    goto reply;
 
 		}
 
 	    }
 
+	    c=get_next_service_context(c, "sftp");
+
 	}
 
-	next:
+	goto error;
 
-	list=list->next;
-	search=NULL;
+    } else {
 
-    }
-
-    pthread_mutex_unlock(&workspace->mutex);
-
-    if (written>0) {
-
-	reply_VFS_data(f_request, fullpath, written);
-	return;
+	goto error;
 
     }
 
-    /* cannot resolve it futher ... leave it this way */
+    reply:
 
-    written=snprintf(fullpath, fullpathlen, "%.*s%.*s%.*s", workspace->mountpoint.len, workspace->mountpoint.path, fpath.len, fpath.pathstart, len, path);
-    reply_VFS_data(f_request, fullpath, written);
+    reply_sftp_readlink(context, f_request, result, len);
+    return;
+
+    error:
+
+    reply_VFS_error(f_request, ENOENT);
 
 }
 
@@ -207,7 +206,9 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char completepath[pathlen];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    logoutput("_fs_sftp_readlink_common");
+
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -219,11 +220,19 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
     logoutput("_fs_sftp_readlink_common: path %.*s", pathinfo->len, pathinfo->path);
+    memset(completepath, '\0', pathlen);
+
+    if (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SYMLINKS_DISABLE) {
+
+	reply_VFS_error(f_request, ENOENT);
+	return;
+
+    }
 
     sftp_r.id=0;
     sftp_r.call.readlink.path=(unsigned char *) pathinfo->path;
     sftp_r.call.readlink.len=pathinfo->len;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_readlink_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -240,7 +249,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 		logoutput("_fs_sftp_readlink_common: reply %i", sftp_r.type);
 
 		if (sftp_r.type==SSH_FXP_NAME) {
-		    unsigned int len=get_uint32((unsigned char *) sftp_r.response.names.buff);
+		    unsigned int len=get_uint32(sftp_r.response.names.buff);
 		    char path[len+1];
 
 		    /* TODO: check the target is also inside the shared map */
@@ -255,6 +264,8 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 			char fullpath[len + pathinfo->len];
 			char *sep=memrchr(pathinfo->path, '/', pathinfo->len);
 			unsigned int fullpathlen;
+
+			logoutput("_fs_sftp_readlink_common: A1");
 
 			if (sep) {
 
@@ -271,13 +282,12 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
 			}
 
-
 			free(sftp_r.response.names.buff);
 
 			/* TODO: reuse request to be used for the sending and waiting for the realpath */
 
 			sftp_r.id=0;
-			sftp_r.call.realpath.path=fullpath;
+			sftp_r.call.realpath.path=(unsigned char *)fullpath;
 			sftp_r.call.realpath.len=fullpathlen;
 
 			logoutput("_fs_sftp_readlink_common: composed path %.*s", fullpathlen, fullpath);
@@ -289,12 +299,11 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 			    if (request && wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
 				if (sftp_r.type==SSH_FXP_NAME) {
-				    unsigned int realpathlen=get_uint32((unsigned char *) sftp_r.response.names.buff);
+				    unsigned int realpathlen=get_uint32(sftp_r.response.names.buff);
 				    char realpath[realpathlen];
 
 				    memcpy(realpath, sftp_r.response.names.buff + 4, realpathlen);
-
-				    reply_VFS_symlink(context, f_request, realpath, realpathlen);
+				    create_reply_sftp_readlink(context, f_request, realpath, realpathlen);
 				    free(sftp_r.response.names.buff);
 				    return;
 
@@ -311,8 +320,14 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
 		    }
 
-		    reply_VFS_symlink(context, f_request, path, len);
+		    /* get the prefix:
+		    - with root its ready
+		    - with custom prefix it in interface->backend.sftp.prefix
+		    - with hone its in ?? */
 
+		    logoutput("_fs_sftp_readlink_common: A2");
+
+		    create_reply_sftp_readlink(context, f_request, path, len);
 		    free(sftp_r.response.names.buff);
 		    return;
 
@@ -341,10 +356,11 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
 void _fs_sftp_symlink(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s *entry, struct pathinfo_s *pathinfo, const char *target)
 {
+    struct service_context_s *rootcontext=get_root_context(context);
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -358,7 +374,7 @@ void _fs_sftp_symlink(struct service_context_s *context, struct fuse_request_s *
     sftp_r.call.symlink.len=pathinfo->len;
     sftp_r.call.symlink.target_path=(unsigned char *) target;
     sftp_r.call.symlink.target_len=strlen(target);
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_symlink_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -397,19 +413,7 @@ void _fs_sftp_symlink(struct service_context_s *context, struct fuse_request_s *
 
     out:
 
-    {
-
-	struct inode_s *inode=entry->inode;
-	unsigned int tmp_error=0;
-
-	remove_entry(entry, &tmp_error);
-	entry->inode=NULL;
-	destroy_entry(entry);
-
-	remove_inode(inode);
-
-    }
-
+    queue_inode_2forget(entry->inode->st.st_ino, context->unique, 0, 0);
     reply_VFS_error(f_request, error);
 
 }

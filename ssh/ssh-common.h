@@ -26,8 +26,10 @@
 #include <pwd.h>
 
 #include "workspace-interface.h"
+#include "workspace-address.h"
 #include "simple-list.h"
 #include "simple-locking.h"
+#include "localsocket.h"
 #include "ssh-datatypes.h"
 #include "ssh-pk.h"
 
@@ -100,12 +102,19 @@ struct server_reply_s {
 #define CHANNEL_FLAG_CLIENT_EOF				(1 << 6)
 #define CHANNEL_FLAG_CLIENT_CLOSE			(1 << 7)
 #define CHANNEL_FLAG_NODATA				( CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_CLIENT_EOF | CHANNEL_FLAG_SERVER_CLOSE | CHANNEL_FLAG_SERVER_EOF )
+#define CHANNEL_FLAG_UDP				(1 << 8)
 
 #define TABLE_LOCK_OPENCHANNEL				1
 #define TABLE_LOCK_CLOSECHANNEL				2
 #define TABLE_LOCK_LOCKED				( TABLE_LOCK_OPENCHANNEL | TABLE_LOCK_CLOSECHANNEL )
 
 #define CHANNELS_TABLE_SIZE				8
+
+#define _FS_WORKSPACE_SOCKET_MSG_INIT			1
+#define _FS_WORKSPACE_SOCKET_MSG_VERSION		2
+#define _FS_WORKSPACE_SOCKET_MSG_OPENCHANNEL		3
+#define _FS_WORKSPACE_SOCKET_MSG_CLOSECHANNEL		4
+#define _FS_WORKSPACE_SOCKET_MSG_FINISH			5
 
 struct subsys_status_s {
     unsigned int			level;
@@ -180,6 +189,8 @@ struct payload_queue_s {
 #define _CHANNEL_TYPE_SFTP_SUBSYSTEM				3
 #define _CHANNEL_TYPE_DIRECT_STREAMLOCAL			4
 #define _CHANNEL_TYPE_DIRECT_TCPIP				5
+#define _CHANNEL_TYPE_FORWARDED_STREAMLOCAL			6
+#define _CHANNEL_TYPE_STREAMLOCAL_FORWARD			7
 
 struct ssh_channel_s {
     struct ssh_session_s 		*session;
@@ -202,15 +213,26 @@ struct ssh_channel_s {
     void				(* close)(struct ssh_channel_s *c, unsigned int flags);
     void				(* free)(struct ssh_channel_s *c);
     union {
+
+	    /* used when DIRECT_STREAMLOCAL */
+
 	struct serversocket_s {
 	    char			*path;
 	    unsigned int		protocol;
 	} socket;
-	struct tcpip_s {
-	    char			*host;
+
+	    /* used for any network target, UDP, DIRECT_TCPIP, FORWARD, ..
+	    NOTE: the type (tcp, udp, ..) follows from the channel->type*/
+
+	struct network_s {
 	    unsigned int		port;
-	    unsigned int		protocol;
-	} tcpip;
+	    struct host_address_s	host;
+	} network;
+
+	    /* when data is done via special channel this points to that channel */
+
+	void				*ptr;
+
     } target;
 };
 
@@ -290,31 +312,10 @@ struct ssh_utils_s {
     uint64_t 				(* ntohll)(uint64_t value);
 };
 
-#define _SSH_CONNECTION_TYPE_IPV4		1
-#define _SSH_CONNECTION_TYPE_IPV6		2
-
-#define SSH_CONNECTION_STATUS_INIT		1
-#define SSH_CONNECTION_STATUS_CONNECTING	2
-#define SSH_CONNECTION_STATUS_CONNECTED		3
-#define SSH_CONNECTION_STATUS_DISCONNECTING	4
-#define SSH_CONNECTION_STATUS_DISCONNECTED	5
-
-struct ssh_connection_s {
-    unsigned char			type;
-    unsigned int			status;
-    unsigned int			expire;
-    unsigned int			error;
-    union {
-	struct sockaddr_in 		inet;
-	struct sockaddr_in6 		inet6;
-    } socket;
-    unsigned int 			fd;
-    struct bevent_xdata_s 		*xdata;
-};
-
 struct ssh_decompressor_s {
     struct ssh_decompress_s		*decompress;
     struct timespec			created;
+    unsigned int			nr;
     int					(* decompress_packet)(struct ssh_decompressor_s *d, struct ssh_packet_s *packet, struct ssh_payload_s **payload, unsigned int *error);
     void				(* clear)(struct ssh_decompressor_s *d);
     void				(* queue)(struct ssh_decompressor_s *d);
@@ -337,8 +338,7 @@ struct ssh_decompress_s {
     struct list_header_s		decompressors;
     unsigned int			count;
     unsigned int			max_count;
-    struct list_header_s		waiters;
-    unsigned int			waiting;
+    struct simple_locking_s		waiters;
     struct decompress_ops_s		*ops;
 };
 
@@ -381,10 +381,9 @@ struct ssh_decrypt_s {
     char 				ciphername[64];
     char				hmacname[64];
     struct list_header_s		decryptors;		/* linked list of available decrypt handles, maybe more than one when parallel is possible */
-    unsigned int			count;			/* number of decryptors */
+    unsigned int			count;			/* total number decryptors in use */
     unsigned int			max_count;		/* maximum number of decryptors, when set to 1 parallel is disabled */
-    struct list_header_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
-    unsigned int 			waiting;		/* number of threads waiting */
+    struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
     struct decrypt_ops_s		*ops;			/* decrypt ops used */
     struct ssh_string_s			cipher_key;
     struct ssh_string_s			cipher_iv;
@@ -420,6 +419,7 @@ struct ssh_receive_s {
 struct ssh_compressor_s {
     struct ssh_compress_s		*compress;
     struct timespec			created;
+    unsigned int			nr;
     int					(* compress_payload)(struct ssh_compressor_s *c, struct ssh_payload_s **payload, unsigned int *error);
     void				(* clear)(struct ssh_compressor_s *c);
     void				(* queue)(struct ssh_compressor_s *c);
@@ -442,8 +442,7 @@ struct ssh_compress_s {
     struct list_header_s		compressors;
     unsigned int			count;
     unsigned int			max_count;
-    struct list_header_s		waiters;
-    unsigned int			waiting;
+    struct simple_locking_s		waiters;
     struct compress_ops_s		*ops;
 };
 
@@ -488,8 +487,7 @@ struct ssh_encrypt_s {
     struct list_header_s		encryptors;
     unsigned int			count;
     unsigned int			max_count;
-    struct list_header_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
-    unsigned int 			waiting;		/* number of threads waiting */
+    struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
     struct encrypt_ops_s		*ops;			/* encrypt ops used */
     struct ssh_string_s			cipher_key;
     struct ssh_string_s			cipher_iv;
@@ -531,6 +529,7 @@ struct ssh_pubkey_s {
 
 struct ssh_hostinfo_s {
     unsigned int			flags;
+    struct ssh_string_s 		fp;
     struct timespec			delta;
     void				(* correct_time_s2c)(struct ssh_session_s *session, struct timespec *time);
     void				(* correct_time_c2s)(struct ssh_session_s *session, struct timespec *time);
@@ -617,7 +616,6 @@ struct ssh_extension_s {
 struct ssh_extensions_s {
     unsigned int			supported;
     unsigned int			received;
-    
 };
 
 struct session_list_s {
@@ -637,7 +635,7 @@ struct ssh_session_s {
     struct payload_queue_s		*queue;
     struct keyexchange_s		*keyexchange;
     struct ssh_userauth_s		*userauth;
-    struct ssh_connection_s		connection;
+    struct fs_connection_s		connection;
     struct ssh_receive_s		receive;
     struct ssh_send_s			send;
     struct ssh_hostinfo_s		hostinfo;
@@ -657,7 +655,7 @@ int wait_status_sessionphase(struct ssh_session_s *session, struct sessionphase_
 
 struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *interface, char *address, unsigned int port);
 void remove_full_session(struct ssh_session_s *session);
-void umount_ssh_session(struct context_interface_s *interface);
+int create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
 
 unsigned int get_window_size(struct ssh_session_s *session);
 unsigned int get_max_packet_size(struct ssh_session_s *session);
@@ -668,5 +666,7 @@ void get_session_expire_session(struct ssh_session_s *session, struct timespec *
 
 void disconnect_ssh_session(struct ssh_session_s *session, unsigned char server, unsigned int reason);
 void start_thread_connection_problem(struct ssh_session_s *session, unsigned int level);
+
+struct fs_connection_s *get_ssh_connection_ctx(void *p);
 
 #endif

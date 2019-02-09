@@ -81,7 +81,7 @@ static void get_local_unknown(struct context_interface_s *interface, struct sftp
 
     memset(&option, 0, sizeof(struct context_option_s));
 
-    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.user-unknown", &option)==_INTERFACE_OPTION_PCHAR) {
+    if ((* interface->get_context_option)(interface, "option:sftp.usermapping.user-unknown", &option)==_INTERFACE_OPTION_PCHAR) {
 
 	user=option.value.ptr;
 
@@ -111,7 +111,7 @@ static void get_local_unknown(struct context_interface_s *interface, struct sftp
 
     memset(&option, 0, sizeof(struct context_option_s));
 
-    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.user-nobody", &option)==_INTERFACE_OPTION_PCHAR) {
+    if ((* interface->get_context_option)(interface, "option:sftp.usermapping.user-nobody", &option)==_INTERFACE_OPTION_PCHAR) {
 
 	user=option.value.ptr;
 
@@ -138,30 +138,32 @@ static void get_local_unknown(struct context_interface_s *interface, struct sftp
 
 static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_userinfo_s *sftp_userinfo)
 {
-    char buffer[1024];
-    unsigned int size=1024;
-    unsigned int error=0;
+    struct common_buffer_s buffer;
+    unsigned int size;
 
     logoutput("get_remote_sftp_userinfo");
 
-    size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, buffer, size, &error);
+    init_common_buffer(&buffer);
+
+    size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, &buffer);
 
     if (size>0) {
-	char *output=buffer;
+	char *output=buffer.ptr;
 	char *sep=NULL;
 	unsigned int len=0;
 
-	replace_cntrl_char(output, size);
+	replace_cntrl_char(output, size, REPLACE_CNTRL_FLAG_TEXT);
 
 	searchoutput:
 
 	sep=memchr(output, ':', size);
 	if (!sep) goto out;
-	len=(unsigned int) (sep - output);
+	*sep='\0';
+	len=strlen(output);
 
 	if (strncmp((char *)output, "remotegroup=", 12)==0) {
 
-	    logoutput("get_remote_sftp_userinfo: remotegroup");
+	    logoutput("get_remote_sftp_userinfo: remotegroup %s", output);
 
 	    output+=12;
 	    size-=12;
@@ -171,17 +173,17 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
 		if (sftp_userinfo->remote_group) {
 
-		    sftp_userinfo->remote_group->ptr=malloc(len);
+		    sftp_userinfo->remote_group->ptr=malloc(strlen(output));
 
 		    if (sftp_userinfo->remote_group->ptr) {
 
-			memcpy(sftp_userinfo->remote_group->ptr, output, len);
-			sftp_userinfo->remote_group->len=len;
+			memcpy(sftp_userinfo->remote_group->ptr, output, strlen(output));
+			sftp_userinfo->remote_group->len=strlen(output);
 			sftp_userinfo->received|=SFTP_USERINFO_REMOTE_GROUP;
 
 		    } else {
 
-			logoutput("get_remote_sftp_userinfo: unable to alloc %i bytes", len);
+			logoutput("get_remote_sftp_userinfo: unable to alloc %i bytes", strlen(output));
 			goto error;
 
 		    }
@@ -211,10 +213,10 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    if (len>0) {
 
 		if (sftp_userinfo->remote_uid) {
-		    char remote_uid[len+1];
+		    char remote_uid[strlen(output)];
 
-		    memcpy(remote_uid, output, len);
-		    remote_uid[len]='\0';
+		    memcpy(remote_uid, output, strlen(output));
+		    remote_uid[strlen(output)]='\0';
 
 		    *sftp_userinfo->remote_uid=atoi(remote_uid);
 		    sftp_userinfo->received|=SFTP_USERINFO_REMOTE_UID;
@@ -242,10 +244,10 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    if (len>0) {
 
 		if (sftp_userinfo->remote_gid) {
-		    char remote_gid[len+1];
+		    char remote_gid[strlen(output)];
 
-		    memcpy(remote_gid, output, len);
-		    remote_gid[len]='\0';
+		    memcpy(remote_gid, output, strlen(output));
+		    remote_gid[strlen(output)]='\0';
 
 		    *sftp_userinfo->remote_gid=atoi(remote_gid);
 		    sftp_userinfo->received|=SFTP_USERINFO_REMOTE_GID;
@@ -268,23 +270,23 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 	    size-=11;
 	    len-=11;
 
-	    logoutput("get_remote_sftp_userinfo: remotehome");
+	    logoutput("get_remote_sftp_userinfo: remotehome %s", output);
 
 	    if (len>0) {
 
 		if (sftp_userinfo->remote_home) {
 
-		    sftp_userinfo->remote_home->ptr=malloc(len);
+		    sftp_userinfo->remote_home->ptr=malloc(strlen(output));
 
 		    if (sftp_userinfo->remote_home->ptr) {
 
-			memcpy(sftp_userinfo->remote_home->ptr, output, len);
-			sftp_userinfo->remote_home->len=len;
+			memcpy(sftp_userinfo->remote_home->ptr, output, strlen(output));
+			sftp_userinfo->remote_home->len=strlen(output);
 			sftp_userinfo->received|=SFTP_USERINFO_REMOTE_HOME;
 
 		    } else {
 
-			logoutput("get_remote_sftp_userinfo: unable to alloc %i bytes", len);
+			logoutput("get_remote_sftp_userinfo: unable to alloc %i bytes", strlen(output));
 			goto error;
 
 		    }
@@ -321,10 +323,13 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
     out:
 
+    if (buffer.ptr) free(buffer.ptr);
+
     return;
 
     error:
 
+    if (buffer.ptr) free(buffer.ptr);
     logoutput("get_remote_sftp_userinfo: error scanning output");
 
 }
@@ -338,7 +343,7 @@ static unsigned char get_sftp_user_mapping(struct context_interface_s *interface
 
     /* TODO: add "sending" of the name of the remote host */
 
-    if ((* interface->get_interface_option)(interface, "option:sftp.usermapping.type", &option)>0) {
+    if ((* interface->get_context_option)(interface, "option:sftp.usermapping.type", &option)>0) {
 
 	if (strcmp(option.value.ptr, "none")==0) {
 

@@ -26,5 +26,6 @@ const char *get_openfailure_reason(unsigned int reason);
 void get_channel_expire_init(struct ssh_channel_s *channel, struct timespec *expire);
 
 void get_timeinfo_ssh_server(struct ssh_session_s *session);
+unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buffer, unsigned int size);
 
 #endif

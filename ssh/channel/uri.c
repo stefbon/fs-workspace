@@ -51,15 +51,35 @@ static int reverse_check_uri_socket(char *path, char *uri)
     char test[len+10];
     int result=-1;
 
-    snprintf(test, len+10, "socket://%s", path);
+    if (snprintf(test, len+10, "socket://%s", path)>0) {
 
-    if (strcmp(uri, test)==0) result=0;
+	logoutput("reverse_check_uri_socket: compare %s with uri %s", test, uri);
+
+	if (strcmp(uri, test)==0) result=0;
+
+    }
 
     return result;
 
 }
 
-static int reverse_check_uri_tcpip(char *host, unsigned int port, char *uri)
+static int reverse_check_uri_udp(char *path, unsigned int port, char *uri)
+{
+    unsigned int len=strlen(path);
+    char test[len+7];
+    int result=-1;
+
+    if (snprintf(test, len+6, "udp://%s:%i", path, port)>0) {
+
+	if (strcmp(uri, test)==0) result=0;
+
+    }
+
+    return result;
+
+}
+
+static int reverse_check_uri_network(char *host, unsigned int port, char *uri)
 {
     char *sep=strstr(uri, "://"); /* ssh channels don't care about the protocol */
     int result=-1;
@@ -88,8 +108,27 @@ int reverse_check_channel_uri(struct ssh_channel_s *channel, char *uri)
 	result=reverse_check_uri_socket(channel->target.socket.path, uri);
 
     } else if (channel->type==_CHANNEL_TYPE_DIRECT_TCPIP) {
+	char *target=NULL;
 
-	result=reverse_check_uri_tcpip(channel->target.tcpip.host, channel->target.tcpip.port, uri);
+	if (strlen(channel->target.network.host.hostname)>0) {
+
+	    target=channel->target.network.host.hostname;
+
+	} else {
+
+	    if (channel->target.network.host.ip.family==IP_ADDRESS_FAMILY_IPv4) {
+
+		target=channel->target.network.host.ip.ip.v4;
+
+	    } else if (channel->target.network.host.ip.family==IP_ADDRESS_FAMILY_IPv6) {
+
+		target=channel->target.network.host.ip.ip.v6;
+
+	    }
+
+	}
+
+	if (target) result=reverse_check_uri_network(target, channel->target.network.port, uri);
 
     } else {
 
@@ -107,7 +146,6 @@ int reverse_check_channel_uri(struct ssh_channel_s *channel, char *uri)
 int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int *error)
 {
     unsigned int len=strlen(uri);
-    int result=-1;
 
     if (len>9 && strncmp(uri, "socket://", 9)==0) {
 	char *path=(char *)(uri + 9);
@@ -116,7 +154,7 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
 
 	if (channel->target.socket.path==NULL) {
 
-	    *error=ENOMEM;
+	    if (error) *error=ENOMEM;
 	    goto error;
 
 	}
@@ -143,7 +181,7 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
 
 	    if (sep==NULL) {
 
-		*error=EINVAL;
+		if (error) *error=EINVAL;
 		goto error;
 
 	    }
@@ -153,25 +191,30 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
 
 	    if (port==0) {
 
-		*error=EINVAL;
+		if (error) *error=EINVAL;
 		goto error;
 
 	    }
 
 	    /* check the uri is just a host and a port, more not supported */
 
-	    if (reverse_check_uri_tcpip(target, port, uri)==-1) goto error;
+	    if (reverse_check_uri_network(target, port, uri)==-1) goto error;
 
-	    channel->target.tcpip.host=strdup(target);
+	    if (check_family_ip_address(target, "ipv4")==1) {
 
-	    if (channel->target.tcpip.host==NULL) {
+		set_host_address(&channel->target.network.host, NULL, target, NULL);
 
-		*error=ENOMEM;
-		goto error;
+	    } else if (check_family_ip_address(target, "ipv6")==1) {
+
+		set_host_address(&channel->target.network.host, NULL, NULL, target);
+
+	    } else {
+
+		set_host_address(&channel->target.network.host, target, NULL, NULL);
 
 	    }
 
-	    channel->target.tcpip.port=port;
+	    channel->target.network.port=port;
 	    channel->type=_CHANNEL_TYPE_DIRECT_TCPIP;
 
 	}
@@ -182,7 +225,7 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
 
     error:
 
-    logoutput_warning("translate_channel_uri: error %i (%s)", *error, strerror(*error));
+    if (error) logoutput_warning("translate_channel_uri: error %i (%s)", *error, strerror(*error));
     return -1;
 
 }
@@ -192,6 +235,8 @@ int translate_channel_uri(struct ssh_channel_s *channel, char *uri, unsigned int
 unsigned char get_channel_type_uri(char *uri)
 {
     unsigned int len=strlen(uri);
+
+    logoutput("get_channel_type_uri");
 
     if (len>9 && strncmp(uri, "socket://", 9)==0) {
 	char *path=(char *)(uri + 9);
@@ -222,7 +267,7 @@ unsigned char get_channel_type_uri(char *uri)
 
 	    /* check the uri is just a host and a port, more not supported */
 
-	    if (reverse_check_uri_tcpip(target, port, uri)==0) return _CHANNEL_TYPE_DIRECT_TCPIP;
+	    if (reverse_check_uri_network(target, port, uri)==0) return _CHANNEL_TYPE_DIRECT_TCPIP;
 
 	}
 

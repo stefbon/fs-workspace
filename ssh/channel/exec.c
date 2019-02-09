@@ -106,8 +106,8 @@ static unsigned int run_remote_command_exec(struct ssh_channel_s *channel, char 
 
 		    if (server_reply->response.data.ptr) {
 
-			//replace_cntrl_char(server_reply->response.data.ptr, server_reply->response.data.size);
-			replace_newline_char(server_reply->response.data.ptr, &server_reply->response.data.size);
+			//replace_cntrl_char(server_reply->response.data.ptr, server_reply->response.data.size, REPLACE_CNTRL_FLAG_BINARY);
+			replace_newline_char(server_reply->response.data.ptr, server_reply->response.data.size);
 			server_reply->error=0;
 
 		    } else {
@@ -141,7 +141,7 @@ static unsigned int run_remote_command_exec(struct ssh_channel_s *channel, char 
 
 			if (server_reply->response.data.ptr) {
 
-			    replace_cntrl_char(server_reply->response.data.ptr, server_reply->response.data.size);
+			    replace_cntrl_char(server_reply->response.data.ptr, server_reply->response.data.size, REPLACE_CNTRL_FLAG_TEXT);
 			    // replace_newline_char(server_reply->response.data.ptr, &server_reply->response.data.size);
 			    server_reply->error=0;
 

@@ -49,7 +49,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -107,7 +107,7 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -128,7 +128,7 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
     sftp_r.id=0;
     sftp_r.call.statvfs.path=(unsigned char *) pathinfo->path;
     sftp_r.call.statvfs.len=pathinfo->len;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_statvfs_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;

@@ -49,9 +49,9 @@
 #include "pathinfo.h"
 #include "beventloop.h"
 #include "beventloop-xdata.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "workerthreads.h"
 #include "fuse-fs.h"
@@ -82,10 +82,11 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 
     while (entry) {
 
+	logoutput("update_mountinfo: found %s at %s", entry->fs, entry->mountpoint);
+
 	if (strncmp(entry->fs, "fuse.", 5)==0 ) {
 	    struct service_context_s *context=NULL;
 
-	    logoutput("update_mountinfo: found fuse %s at %s", entry->fs, entry->mountpoint);
 	    error=0;
 
 	    /* look for matching workspace/context */
@@ -114,13 +115,11 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 		    /* get all network services */
 
 		    logoutput("update_mountinfo: found network workspace %s on %s", base->name, workspace->mountpoint.path);
-
 		    get_net_services(&workspace->syncdate, install_net_services_cb, (void *) context);
 
 		} else if (base->type==WORKSPACE_TYPE_BACKUP) {
 
 		    logoutput("update_mountinfo: found backup workspace %s on %s", base->name, workspace->mountpoint.path);
-
 		    start_backup_service(context);
 
 		} else {
@@ -133,6 +132,7 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 
 	}
 
+	logoutput("update_mountinfo: next");
 	entry=next(&index, generation, MOUNTLIST_ADDED);
 
     }
@@ -195,7 +195,7 @@ int add_mountinfo_watch(struct beventloop_s *loop, unsigned int *error)
 
 	if (add_to_beventloop(xdata.fd, EPOLLPRI, xdata.callback, NULL, &xdata, loop)) {
 
-    	    logoutput("add_mountinfo_watch: mountinfo fd %i added to eventloop", xdata.fd);
+    	    logoutput_info("add_mountinfo_watch: mountinfo fd %i added to eventloop", xdata.fd);
 
 	    /* read the mountinfo to initialize */
 	    (* xdata.callback)(0, NULL, 0);
@@ -203,14 +203,14 @@ int add_mountinfo_watch(struct beventloop_s *loop, unsigned int *error)
 
 	} else {
 
-	    logoutput("add_mountinfo_watch: unable to add mountinfo fd %i to eventloop", xdata.fd);
+	    logoutput_info("add_mountinfo_watch: unable to add mountinfo fd %i to eventloop", xdata.fd);
 	    *error=EIO;
 
 	}
 
     } else {
 
-	logoutput("add_mountinfo_watch: unable to open mountmonitor");
+	logoutput_info("add_mountinfo_watch: unable to open mountmonitor");
 
     }
 

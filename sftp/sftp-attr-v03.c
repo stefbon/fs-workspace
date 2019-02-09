@@ -43,6 +43,7 @@
 #include "main.h"
 
 #include "utils.h"
+#include "fuse-dentry.h"
 
 #include "workspace-interface.h"
 #include "ssh-common.h"
@@ -55,6 +56,8 @@
 #include "sftp-protocol-v03.h"
 #include "sftp-attr-common.h"
 
+static unsigned int type_mapping[5]={0, S_IFREG, S_IFDIR, S_IFLNK, 0};
+
 struct sftp_string_s {
     char				*name;
     unsigned int			len;
@@ -65,6 +68,8 @@ struct sftp_attr_s {
     uint64_t				size;
     uint32_t				uid;
     uint32_t				gid;
+    struct sftp_string_s		owner;
+    struct sftp_string_s		group;
     uint32_t				permissions;
     uint32_t				accesstime;
     uint32_t				modifytime;
@@ -88,7 +93,63 @@ static unsigned int read_attr_size(struct sftp_subsystem_s *sftp, char *buffer, 
     fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_SIZE;
 
+    logoutput("read_attr_size: size %i", attr->size);
+
     return 8; /* 64 bits takes 8 bytes */
+}
+
+static unsigned int read_attr_ownergroup(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
+{
+    struct sftp_usermapping_s *usermapping=&sftp->usermapping;
+    char *pos=buffer;
+
+    logoutput("read_attr_ownergroup: uid %i gid %i", fuse_attr->user.uid, fuse_attr->group.gid);
+
+    attr->owner.len=get_uint32(pos);
+    pos+=4;
+
+    if (attr->owner.len>0) {
+	struct sftp_user_s user;
+
+	attr->owner.name=pos;
+	pos+=attr->owner.len;
+
+	user.remote.name.ptr=attr->owner.name;
+	user.remote.name.len=attr->owner.len;
+
+	(* usermapping->get_local_uid)(sftp, &user);
+
+	fuse_attr->user.uid=user.local_uid;
+
+	fuse_attr->valid[FUSE_SFTP_INDEX_USER]=1;
+	fuse_attr->received|=FUSE_SFTP_ATTR_USER;
+
+    }
+
+    attr->group.len=get_uint32(pos);
+    pos+=4;
+
+    if (attr->group.len>0) {
+	struct sftp_group_s group;
+
+	attr->group.name=pos;
+	pos+=attr->group.len;
+
+	group.remote.name.ptr=attr->group.name;
+	group.remote.name.len=attr->group.len;
+
+	(* usermapping->get_local_gid)(sftp, &group);
+
+	fuse_attr->group.gid=group.local_gid;
+
+	fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]=1;
+	fuse_attr->received|=FUSE_SFTP_ATTR_GROUP;
+
+    }
+
+    logoutput("read_attr_ownergroup: uid %i gid %i", fuse_attr->user.uid, fuse_attr->group.gid);
+
+    return 8 + attr->owner.len + attr->group.len;
 }
 
 static unsigned int read_attr_uidgid(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
@@ -120,6 +181,8 @@ static unsigned int read_attr_uidgid(struct sftp_subsystem_s *sftp, char *buffer
     fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_GROUP;
 
+    logoutput("read_attr_uidgid: uid %i gid %i", user.local_uid, group.local_gid);
+
     return 8;
 }
 
@@ -129,6 +192,7 @@ static unsigned int read_attr_permissions(struct sftp_subsystem_s *sftp, char *b
     fuse_attr->permissions=(S_IRWXU | S_IRWXG | S_IRWXO) & attr->permissions; /* sftp uses the same permission bits as Linux */
     fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_PERMISSIONS;
+    logoutput("read_attr_permissions: fattr %i attr %i", attr->permissions, fuse_attr->permissions);
     return 4;
 }
 
@@ -158,57 +222,50 @@ static read_attr_cb read_attr_acb[][2] = {
 	{read_attr_zero, read_attr_uidgid},
 	{read_attr_zero, read_attr_permissions},
 	{read_attr_zero, read_attr_acmodtime},
-	{read_attr_zero, read_attr_extensions}};
+	{read_attr_zero, read_attr_extensions},
+	{read_attr_zero, read_attr_ownergroup}};
 
-static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned int valid, char *buffer, unsigned int size, struct sftp_attr_s *sftp_attr, struct fuse_sftp_attr_s *fuse_attr)
+static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned int valid, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
-    unsigned char vb[4];
+    unsigned char vb[6];
     char *pos=buffer;
     unsigned char type=0;
+    struct sftp_attr_s sftp_attr;
+
+    memset(&sftp_attr, 0, sizeof(struct sftp_attr_s));
 
     vb[0]=(valid & SSH_FILEXFER_ATTR_SIZE) >> SSH_FILEXFER_INDEX_SIZE;
     vb[1]=(valid & SSH_FILEXFER_ATTR_UIDGID) >> SSH_FILEXFER_INDEX_UIDGID;
     vb[2]=(valid & SSH_FILEXFER_ATTR_PERMISSIONS) >> SSH_FILEXFER_INDEX_PERMISSIONS;
     vb[3]=(valid & SSH_FILEXFER_ATTR_ACMODTIME) >> SSH_FILEXFER_INDEX_ACMODTIME;
     vb[4]=(valid & SSH_FILEXFER_ATTR_EXTENDED) >> SSH_FILEXFER_INDEX_EXTENDED;
+    vb[5]=(valid & SSH_FILEXFER_ATTR_OWNERGROUP) >> SSH_FILEXFER_INDEX_OWNERGROUP;
 
-    /*
-	type field is absent
-    */
+    /* type field is not present */
 
-    fuse_attr->type=0;
+    /* size */
 
+    pos += (* read_attr_acb[0][vb[0]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
-    /*
-	size
-    */
+    /* uid and gid */
 
-    pos += (* read_attr_acb[0][vb[0]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
+    pos += (* read_attr_acb[1][vb[1]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
+    /* owner and group */
 
-    /*
-	uid and gid
-    */
+    pos += (* read_attr_acb[5][vb[5]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
-    pos += (* read_attr_acb[1][vb[1]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
+    /* permissions */
 
-    /*
-	permissions
-    */
+    pos += (* read_attr_acb[2][vb[2]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
-    pos += (* read_attr_acb[2][vb[2]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
+    /* acmodtime */
 
-    /*
-	acmodtime
-    */
+    pos += (* read_attr_acb[3][vb[3]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
-    pos += (* read_attr_acb[3][vb[3]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
+    /* extensions */
 
-    /*
-	extensions
-    */
-
-    pos += (* read_attr_acb[4][vb[4]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
+    pos += (* read_attr_acb[4][vb[4]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), &sftp_attr, fuse_attr);
 
     return (unsigned int) (pos - buffer);
 
@@ -216,18 +273,19 @@ static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned
 
 static unsigned int read_attributes_v03(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
-    struct sftp_attr_s sftp_attr;
     char *pos=buffer;
     unsigned int valid=0;
 
-    memset(&sftp_attr, 0, sizeof(struct sftp_attr_s));
+    logoutput_base64encoded("read_attributes_v03", buffer, size);
+    logoutput("read_attributes_v03");
+
     valid=get_uint32(pos);
     pos+=4;
 
-    pos+=read_sftp_attributes(sftp, valid, pos, size-4, &sftp_attr, fuse_attr);
+    logoutput("read_attributes_v03: valid %i", valid);
 
+    pos+=read_sftp_attributes(sftp, valid, pos, size-4, fuse_attr);
     return (unsigned int) (pos - buffer);
-
 }
 
 typedef unsigned int (* write_attr_cb)(struct sftp_subsystem_s *sftp, char *pos, unsigned int size, struct fuse_sftp_attr_s *fuse_attr, unsigned int *valid);
@@ -360,71 +418,107 @@ static unsigned int write_attributes_v03(struct sftp_subsystem_s *sftp, char *bu
     01234567890123456789012345678901234567890123456789012345
     0         1         2         3         4         5
 
+    example:
+
+    -rw-------    1 sbon     sbon         1799 Nov 26 15:22 .bash_history
+
 
 */
 
-static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr)
+static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
 {
-    char *pos=response->pos;
+
+    logoutput("read_name_response_v03: pos %i", (unsigned int)(response->pos - response->buff));
+
+    *len=get_uint32(response->pos);
+    response->pos+=4;
+
+    *name=(char *) response->pos; /* name without trailing zero */
+    response->pos+=*len;
+
+}
+
+static unsigned int read_attr_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *fuse_attr)
+{
     struct sftp_string_s longname;
+    unsigned int valid=0;
+    char *keep=response->pos;
+    unsigned char correction=0;
 
-    *len=get_uint32(pos);
-    pos+=4;
+    logoutput_base64encoded("read_attr_response_v03", response->pos, response->size);
 
-    *name=(char *) pos; /* name without trailing zero */
-    pos+=*len;
+    logoutput("read_attr_response_v03: pos %i", (unsigned int)(response->pos - response->buff));
 
     /* longname */
 
-    longname.len=get_uint32(pos);
-    pos+=4;
-    longname.name=pos;
-    pos+=longname.len;
+    longname.len=get_uint32(response->pos);
+    response->pos+=4;
+    longname.name=response->pos;
+    response->pos+=longname.len;
+
+    logoutput("read_attr_response_v03: longname %.*s (length %i)", longname.len, longname.name, longname.len);
+
+    /* valid attributes */
+
+    valid=get_uint32(response->pos);
+    response->pos+=4;
+
+    logoutput("read_attr_response_v03: valid %i", valid);
 
     /* attr */
 
-    pos+=read_attributes_v03(sftp, pos, (unsigned int) (response->buff + response->size - pos), fuse_attr);
+    response->pos+=read_sftp_attributes(sftp, valid, response->pos, (unsigned int) (response->buff + response->size - response->pos), fuse_attr);
+    response->count--;
 
-    response->pos=(char *) pos;
-    response->left--;
-
-    /* get type from longname: attr for version 3 does not have a type */
+    /* get type from longname: parse the string which is output of ls -al %filename% */
 
     switch (longname.name[0]) {
 
 	case '-':
 
-	    fuse_attr->permissions |= S_IFREG;
+	    fuse_attr->type |= S_IFREG;
 	    break;
 
 	case 'd':
 
-	    fuse_attr->permissions |= S_IFDIR;
+	    fuse_attr->type |= S_IFDIR;
 	    break;
 
 	case 'l':
 
-	    fuse_attr->permissions |= S_IFLNK;
+	    fuse_attr->type |= S_IFLNK;
 	    break;
 
 	case 'c':
 
-	    fuse_attr->permissions |= S_IFCHR;
+	    fuse_attr->type |= S_IFCHR;
 	    break;
 
 	case 'b':
 
-	    fuse_attr->permissions |= S_IFBLK;
+	    fuse_attr->type |= S_IFBLK;
 	    break;
 
 	case 's':
 
-	    fuse_attr->permissions |= S_IFSOCK;
+	    fuse_attr->type |= S_IFSOCK;
 	    break;
 
 	default:
 
-	    fuse_attr->permissions |= S_IFREG;
+	    fuse_attr->type |= S_IFREG;
+
+    }
+
+    logoutput("read_attr_response_v03: type %i", fuse_attr->type);
+    fuse_attr->valid[FUSE_SFTP_INDEX_TYPE]=1;
+    fuse_attr->received|=FUSE_SFTP_ATTR_TYPE;
+
+    if (longname.len>10) {
+	char modestr[11];
+	memcpy(modestr, &longname.name[0], 10);
+	modestr[10]='\0';
+	logoutput("read_attr_response_v03: modestr %s", modestr);
 
     }
 
@@ -446,6 +540,13 @@ static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_re
 
     }
 
+    fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]=1;
+    fuse_attr->received|=FUSE_SFTP_ATTR_PERMISSIONS;
+
+    logoutput("read_attr_response_v03: perm %i", fuse_attr->permissions);
+
+    if (sftp->flags & SFTP_SUBSYSTEM_FLAG_NEWREADDIR) correction=1;
+
     if (fuse_attr->valid[FUSE_SFTP_INDEX_USER]==0) {
 	struct sftp_usermapping_s *usermapping=&sftp->usermapping;
 	struct sftp_user_s user;
@@ -453,7 +554,7 @@ static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_re
 
 	/* get user */
 
-	user.remote.name.ptr=&longname.name[15];
+	user.remote.name.ptr=&longname.name[15 + correction];
 	user.remote.name.len=8;
 	sep=memchr(user.remote.name.ptr, ' ', 8);
 	if (sep) user.remote.name.len=(unsigned int) (sep - (char *)user.remote.name.ptr);
@@ -467,6 +568,8 @@ static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_re
 
     }
 
+    logoutput("read_attr_response_v03: user %i", fuse_attr->user.uid);
+
     if (fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]==0) {
 	struct sftp_usermapping_s *usermapping=&sftp->usermapping;
 	struct sftp_group_s group;
@@ -474,7 +577,7 @@ static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_re
 
 	/* get group */
 
-	group.remote.name.ptr=&longname.name[24];
+	group.remote.name.ptr=&longname.name[24 + correction];
 	group.remote.name.len=8;
 	sep=memchr(group.remote.name.ptr, ' ', 8);
 	if (sep) group.remote.name.len=(unsigned int) (sep - (char *)group.remote.name.ptr);
@@ -488,20 +591,33 @@ static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_re
 
     }
 
+    logoutput("read_attr_response_v03: user %i", fuse_attr->group.gid);
+
+    if (longname.len>42) {
+	char sizestr[9];
+	memcpy(sizestr, &longname.name[33 + correction], 8);
+	sizestr[8]='\0';
+	logoutput("read_attr_response_v03: sizestr %s", sizestr);
+
+    }
+
     if (fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]==0) {
 
-	fuse_attr->size=atoll(&longname.name[33]);
+	fuse_attr->size=atoll(&longname.name[33 + correction]);
 	fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]=1;
 	fuse_attr->received|=FUSE_SFTP_ATTR_SIZE;
 
     }
+
+    logoutput("read_attr_response_v03: size %i", fuse_attr->size);
+
+    return (unsigned int) (response->pos - keep);
 
 }
 
 static void read_sftp_features_v03(struct sftp_subsystem_s *sftp)
 {
     struct sftp_supported_s *supported=&sftp->supported;
-
     supported->fuse_attr_supported=FUSE_SFTP_ATTR_TYPE | FUSE_SFTP_ATTR_SIZE | FUSE_SFTP_ATTR_PERMISSIONS | FUSE_SFTP_ATTR_ATIME | FUSE_SFTP_ATTR_MTIME | FUSE_SFTP_ATTR_CTIME | FUSE_SFTP_ATTR_USER | FUSE_SFTP_ATTR_GROUP;
 }
 
@@ -514,6 +630,7 @@ static struct sftp_attr_ops_s attr_ops_v03 = {
     .read_attributes			= read_attributes_v03,
     .write_attributes			= write_attributes_v03,
     .read_name_response			= read_name_response_v03,
+    .read_attr_response			= read_attr_response_v03,
     .read_sftp_features			= read_sftp_features_v03,
     .get_attribute_mask			= get_attribute_mask_v03,
 };

@@ -45,9 +45,9 @@
 #include "pathinfo.h"
 #include "beventloop.h"
 
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "fuse-fs.h"
 #include "workspaces.h"
@@ -68,10 +68,11 @@
 #include "fuse-sftp-setattr.h"
 #include "fuse-sftp-symlink.h"
 #include "fuse-sftp-statfs.h"
+#include "fuse-sftp-xattr.h"
 
-extern unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int size, unsigned int *error);
-extern void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-extern int start_sftp_common(struct context_interface_s *interface, void *data);
+extern unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
+extern int connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
+extern int start_sftp_common(struct context_interface_s *interface, int fd, void *data);
 
 /* generic sftp fs */
 
@@ -112,6 +113,11 @@ static struct service_fs_s sftp_fs = {
     .readdirplus		= _fs_sftp_readdirplus,
     .fsyncdir			= _fs_sftp_fsyncdir,
     .releasedir			= _fs_sftp_releasedir,
+
+    .getxattr			= _fs_sftp_getxattr,
+    .setxattr			= _fs_sftp_setxattr,
+    .listxattr			= _fs_sftp_listxattr,
+    .removexattr		= _fs_sftp_removexattr,
 
     .fsnotify			= _fs_sftp_fsnotify,
 
@@ -157,31 +163,51 @@ static struct service_fs_s sftp_fs_disconnected = {
     .fsyncdir			= _fs_sftp_fsyncdir_disconnected,
     .releasedir			= _fs_sftp_releasedir_disconnected,
 
+    .getxattr			= _fs_sftp_getxattr,
+    .setxattr			= _fs_sftp_setxattr,
+    .listxattr			= _fs_sftp_listxattr,
+    .removexattr		= _fs_sftp_removexattr,
+
     .fsnotify			= _fs_sftp_fsnotify_disconnected,
 
     .statfs			= _fs_sftp_statfs_disconnected,
 
 };
 
+/* on disconnect */
+
+static void signal_sftp_context(struct context_interface_s *interface, const char *what)
+{
+    struct service_context_s *context=get_service_context(interface);
+    struct workspace_mount_s *workspace=context->workspace;
+
+    if (strcmp(what, "disconnect")==0) {
+
+	/* when remote side disconnects: use a "disconnect" filesystem */
+
+	pthread_mutex_lock(&workspace->mutex);
+
+	if ((context->flags & SERVICE_CTX_FLAG_DISCONNECTED)==0) {
+
+	    context->service.filesystem.fs=&sftp_fs_disconnected;
+	    context->flags |= SERVICE_CTX_FLAG_DISCONNECTED;
+
+	}
+
+	pthread_mutex_unlock(&workspace->mutex);
+
+    }
+
+}
 
 
 /* initialize a sftp subsystem interface using sftp fs */
 
-void init_sftp_subsystem_interface(struct context_interface_s *interface)
+void init_sftp_filesystem_context(struct service_context_s *context)
 {
-    struct service_context_s *context=get_service_context(interface);
-
-    interface->get_interface_info=get_sftp_interface_info;
-    interface->start=start_sftp_common;
-    interface->connect=connect_sftp_common;
-
-    context->fscount=get_workspace_fs_count(context->workspace);
-    context->fs=&sftp_fs;
-
-}
-
-void set_sftp_subsystem_interface_disconnected(struct context_interface_s *interface)
-{
-    struct service_context_s *context=get_service_context(interface);
-    context->fs=&sftp_fs_disconnected;
+    context->interface.connect=connect_sftp_common;
+    context->interface.start=start_sftp_common;
+    context->interface.signal_context=signal_sftp_context;
+    context->interface.get_interface_info=get_sftp_interface_info;
+    context->service.filesystem.fs=&sftp_fs;
 }

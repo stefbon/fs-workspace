@@ -32,4 +32,6 @@ void _fs_sftp_readdirplus_disconnected(struct fuse_opendir_s *opendir, struct fu
 void _fs_sftp_fsyncdir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *r, unsigned char datasync);
 void _fs_sftp_releasedir_disconnected(struct fuse_opendir_s *opendir, struct fuse_request_s *f_request);
 
+int test_valid_sftp_readdir(struct context_interface_s *interface, void *ptr, unsigned int *len);
+
 #endif

@@ -42,16 +42,18 @@
 #define ENOATTR ENODATA        /* No such attribute */
 #endif
 
+#define LOGGING
 #include "logging.h"
 
 #include "main.h"
+#include "options.h"
 #include "utils.h"
 #include "pathinfo.h"
 #include "beventloop.h"
 #include "beventloop-xdata.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 
 #include "workerthreads.h"
 #include "fuse-fs.h"
@@ -63,9 +65,15 @@
 #include "fuse-fs-common.h"
 #include "fuse-sftp.h"
 
-struct entry_s *create_network_map_entry(struct workspace_mount_s *workspace, struct directory_s *directory, struct name_s *xname, unsigned int *error)
+extern struct fs_options_s fs_options;
+extern unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
+
+struct entry_s *create_network_map_entry(struct service_context_s *context, struct directory_s *directory, struct name_s *xname, unsigned int *error)
 {
+    struct create_entry_s ce;
     struct stat st;
+
+    /* stat values for a network map */
 
     st.st_mode=S_IFDIR | S_IRUSR | S_IXUSR | S_IWUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
     st.st_uid=0;
@@ -75,27 +83,30 @@ struct entry_s *create_network_map_entry(struct workspace_mount_s *workspace, st
     st.st_nlink=2;
     st.st_rdev=0;
     st.st_size=_INODE_DIRECTORY_SIZE;
-    st.st_blksize=0;
-    st.st_blocks=0;
+    st.st_blksize=1024;
+    st.st_blocks=(unsigned int) (st.st_size / st.st_blksize) + ((st.st_size % st.st_blksize)==0) ? 1 : 0;
 
     get_current_time(&st.st_mtim);
     memcpy(&st.st_ctim, &st.st_mtim, sizeof(struct timespec));
     memcpy(&st.st_atim, &st.st_mtim, sizeof(struct timespec));
 
-    return _fs_common_create_entry(workspace, directory, xname, &st, 0, error);
+    init_create_entry(&ce, xname, NULL, directory, NULL, context, &st, NULL);
+    return create_entry_extended_batch(&ce);
 
 }
 
 
 /* function called when a network FUSE context is mounted */
 
-static void install_net_services_context(unsigned int service, struct context_address_s *address, struct timespec *found, unsigned long hostid, unsigned int serviceid, void *ptr)
+static void install_net_services_context(struct host_address_s *host, struct service_address_s *service, unsigned int code, struct timespec *found, unsigned long hostid, unsigned int serviceid, void *ptr)
 {
     struct service_context_s *context=(struct service_context_s *) ptr;
     struct workspace_mount_s *workspace=context->workspace;
     struct inode_s *inode=NULL;
     struct directory_s *root_directory=NULL;
     struct simple_lock_s wlock;
+
+    logoutput("install_net_services_context");
 
     if (workspace->syncdate.tv_sec < found->tv_sec || (workspace->syncdate.tv_sec == found->tv_sec && workspace->syncdate.tv_nsec < found->tv_nsec)) {
 
@@ -105,23 +116,30 @@ static void install_net_services_context(unsigned int service, struct context_ad
     }
 
     inode=&workspace->rootinode;
+    root_directory=get_directory(inode);
 
-    if (wlock_directory(inode, &wlock)==-1) {
+    if (wlock_directory(root_directory, &wlock)==-1) {
 
 	logoutput("install_net_services_context: unable to lock root directory");
 	return;
 
     }
 
-    root_directory=get_directory(inode);
-    unlock_directory(inode, &wlock);
+    unlock_directory(root_directory, &wlock);
 
-    if (service==WORKSPACE_SERVICE_SFTP) {
+    if (code==WORKSPACE_SERVICE_SFTP) {
 	unsigned int error=0;
+	char *target=NULL;
+	unsigned int port=22;
 
-	if (install_ssh_server_context(workspace, inode->alias, address->target.network.address, address->target.network.port, &error)!=0) {
+	translate_context_host_address(host, &target, NULL);
+	translate_context_network_port(service, &port);
 
-	    logoutput("install_net_services_context: unable to connect to %s:%i", address->target.network.address, address->target.network.port);
+	logoutput("install_net_services_context: connecting to %s:%i", target, port);
+
+	if (install_ssh_server_context(workspace, inode->alias, host, service, &error)!=0) {
+
+	    logoutput("install_net_services_context: unable to connect to %s:%i", target, port);
 
 	}
 
@@ -133,7 +151,7 @@ static void install_net_services_context(unsigned int service, struct context_ad
     walk every FUSE context for network services and test it should be used here
 */
 
-static void install_net_services_all(unsigned int service, struct context_address_s *address, struct timespec *found, unsigned long hostid, unsigned long serviceid)
+static void install_net_services_all(struct host_address_s *host, struct service_address_s *service, unsigned int code, struct timespec *found, unsigned long hostid, unsigned long serviceid)
 {
     struct fuse_user_s *user=NULL;
     struct workspace_mount_s *workspace=NULL;
@@ -142,6 +160,8 @@ static void install_net_services_all(unsigned int service, struct context_addres
     void *index=NULL;
     struct list_element_s *list=NULL;
     struct simple_lock_s wlock;
+
+    logoutput("install_net_services_all");
 
     init_wlock_users_hash(&wlock);
 
@@ -165,7 +185,7 @@ static void install_net_services_all(unsigned int service, struct context_addres
     pthread_mutex_lock(&user->mutex);
     unlock_users_hash(&wlock);
 
-    list=user->workspaces.head;
+    list=get_list_head(&user->workspaces, 0);
 
     while(list) {
 
@@ -182,16 +202,39 @@ static void install_net_services_all(unsigned int service, struct context_addres
 
 	    while (context) {
 
-		if (context->type==SERVICE_CTX_TYPE_SERVICE && context->serviceid==serviceid) break;
-		context=get_container_context(context->list.next);
+		if ((context->type==SERVICE_CTX_TYPE_FILESYSTEM || context->type==SERVICE_CTX_TYPE_CONNECTION || context->type==SERVICE_CTX_TYPE_SOCKET) && context->serviceid==serviceid) break;
+		context=get_container_context(get_next_element(&context->list));
 
 	    }
 
-	    if (! context) install_net_services_context(service, address, found, hostid, serviceid, (void *) workspace->context);
+	    /* only install when not found
+		TODO: when it's found earlier (does exist) but not connected does this here again */
+
+	    if (! context) {
+
+		install_net_services_context(host, service, code, found, hostid, serviceid, (void *) workspace->context);
+
+	    } else {
+		char connectionstatus[4];
+		struct common_buffer_s bufferstatus;
+
+		bufferstatus.ptr=connectionstatus;
+		bufferstatus.size=4;
+		bufferstatus.len=bufferstatus.size;
+		bufferstatus.pos=bufferstatus.ptr;
+
+		if (get_ssh_interface_info(&context->interface, "status", NULL, &bufferstatus)==4) {
+
+		    logoutput("install_net_services_all: host %i serviceid %i found, reconnect", hostid, serviceid);
+		    install_net_services_context(host, service, code, found, hostid, serviceid, (void *) workspace->context);
+
+		}
+
+	    }
 
 	}
 
-	list=workspace->list.next;
+	list=get_next_element(&workspace->list);
 
     }
 
@@ -200,30 +243,32 @@ static void install_net_services_all(unsigned int service, struct context_addres
 
 }
 
-void install_net_services_cb(unsigned int service, struct context_address_s *address, struct timespec *found, unsigned long hostid, unsigned long serviceid, void *ptr)
+void install_net_services_cb(struct host_address_s *host, struct service_address_s *service, unsigned int code, struct timespec *found, unsigned long hostid, unsigned long serviceid, void *ptr)
 {
 
-    if (service==WORKSPACE_SERVICE_SFTP) {
+    logoutput("install_net_services_cb");
 
-	logoutput("install_net_services_cb: found sftp at %s", address->target.network.address);
+    if (code==WORKSPACE_SERVICE_SFTP) {
+
+	logoutput("install_net_services_cb: found sftp");
 
     } else {
 
-	if (service==WORKSPACE_SERVICE_SMB) {
+	if (code==WORKSPACE_SERVICE_SMB) {
 
-	    logoutput("install_net_services_cb: found smb://%s; not supported yet", address->target.smbshare.server);
+	    logoutput("install_net_services_cb: found smb:// not supported yet");
 
-	} else if (service==WORKSPACE_SERVICE_NFS) {
+	} else if (code==WORKSPACE_SERVICE_NFS) {
 
-	    logoutput("install_net_services_cb: found nfs at %s; not supported yet", address->target.network.address);
+	    logoutput("install_net_services_cb: found nfs:// not supported yet");
 
-	} else if (service==WORKSPACE_SERVICE_WEBDAV) {
+	} else if (code==WORKSPACE_SERVICE_WEBDAV) {
 
-	    logoutput("install_net_services_cb: found webdav at %s; not supported yet", address->target.network.address);
+	    logoutput("install_net_services_cb: found webdav not supported yet");
 
-	} else if (service==WORKSPACE_SERVICE_SSH) {
+	} else if (code==WORKSPACE_SERVICE_SSH) {
 
-	    logoutput("install_net_services_cb: found ssh at %s; ignoring", address->target.network.address);
+	    logoutput("install_net_services_cb: found ssh ignoring");
 
 	}
 
@@ -233,11 +278,11 @@ void install_net_services_cb(unsigned int service, struct context_address_s *add
 
     if (ptr) {
 
-	install_net_services_context(service, address, found, hostid, serviceid, ptr);
+	install_net_services_context(host, service, code, found, hostid, serviceid, ptr);
 
     } else {
 
-	install_net_services_all(service, address, found, hostid, serviceid);
+	install_net_services_all(host, service, code, found, hostid, serviceid);
 
     }
 

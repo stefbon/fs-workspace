@@ -36,9 +36,9 @@ struct sftp_userinfo_s {
 
 /* prototypes */
 
-unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, char *buffer, unsigned int size, unsigned int *error);
-unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, char *buffer, unsigned int len, unsigned int *error);
-unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, char *buffer, unsigned int len, unsigned int *error);
+unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
+unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, struct common_buffer_s *buffer);
+unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, struct common_buffer_s *buffer);
 
 void get_timeinfo_sftp_server(struct sftp_subsystem_s *sftp);
 

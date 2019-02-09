@@ -80,26 +80,38 @@
 static void receive_msg_global_request(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
 
-    if (payload->len>5) {
-	unsigned int pos=1;
-	unsigned int len=0;
+    pthread_mutex_lock(&session->status.mutex);
 
-	len=get_uint32(&payload->buffer[pos]);
-	pos+=4;
+    if (session->status.sessionphase.status & SESSION_STATUS_DISCONNECTING) {
 
-	if (payload->len>pos+len) {
-	    char string[len+1];
+	free_payload(&payload);
 
-	    memcpy(string, &payload->buffer[pos], len);
-	    string[len]='\0';
+    } else if (session->status.sessionphase.phase==SESSION_PHASE_SETUP || session->status.sessionphase.phase==SESSION_PHASE_CONNECTION) {
+	struct payload_queue_s *queue = session->queue;
 
-	    logoutput("receive_msg_global_request: %s", string);
+	if (queue) {
+
+	    queue_ssh_payload(queue, payload);
+	    payload=NULL;
+
+	} else {
+	    unsigned int len=0;
+
+	    len=get_uint32(&payload->buffer[1]);
+	    logoutput("receive_msg_global_request: %.*", len, &payload->buffer[5]);
 
 	}
 
     }
 
-    free_payload(&payload);
+    pthread_mutex_unlock(&session->status.mutex);
+
+    if (payload) {
+
+	free_payload(&payload);
+	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+
+    }
 
 }
 
@@ -245,7 +257,7 @@ static void receive_msg_channel_data_down(struct ssh_channel_s *channel, struct 
 static void receive_msg_channel_data(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
 
-    logoutput("receive_msg_channel_data: len %i", payload->len);
+    // logoutput("receive_msg_channel_data: len %i", payload->len);
 
     /*
 	call the specific handler for the channel

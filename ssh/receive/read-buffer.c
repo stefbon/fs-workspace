@@ -58,6 +58,8 @@ void process_ssh_packet_nodecompress(struct ssh_session_s *session, struct ssh_p
 
     if (payload) {
 
+	memset(payload, '\0', sizeof(struct ssh_payload_s) + len);
+
 	payload->flags=SSH_PAYLOAD_FLAG_ALLOCATED;
 	payload->len=len;
 	payload->sequence=packet->sequence;
@@ -185,7 +187,7 @@ void read_ssh_buffer_packet(void *ptr)
 		/* length of the packet is bigger than size of received data
 		    wait for data to arrive: signalled when data is received */
 
-		logoutput("read_ssh_buffer_packet: packet length %i, received %i", packet.size, receive->read);
+		// logoutput("read_ssh_buffer_packet: packet length %i, received %i", packet.size, receive->read);
 
 		while (receive->read < packet.size) {
 
@@ -231,7 +233,7 @@ void read_ssh_buffer_packet(void *ptr)
 	    pthread_mutex_unlock(&receive->mutex);
 	    packet.buffer=data;
 
-	    logoutput("read_ssh_buffer_packet: packet length %i size %i", packet.len, packet.size);
+	    // logoutput("read_ssh_buffer_packet: packet length %i size %i", packet.len, packet.size);
 
 	    /* do mac/tag checking when "before decrypting" is used: use the unecrypted data */
 
@@ -379,8 +381,7 @@ void read_ssh_buffer(struct ssh_session_s *session)
     unsigned int error=0;
     struct ssh_receive_s *receive=&session->receive;
 
-    logoutput("read_ssh_buffer: threadid %i", gettid());
-
+    //logoutput("read_ssh_buffer: threadid %i", gettid());
     work_workerthread(NULL, 0, receive->read_ssh_buffer, (void *) session, &error);
 }
 

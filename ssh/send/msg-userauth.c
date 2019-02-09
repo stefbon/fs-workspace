@@ -224,3 +224,62 @@ int send_userauth_hostbased_message(struct ssh_session_s *session, char *r_user,
     return write_ssh_packet(session, payload, seq);
 
 }
+
+/*
+    send a password auth request (RFC4252 8. Password Authentication Method: "password")
+
+    - byte 	SSH_MSG_USERAUTH_REQUEST
+    - string	username used to connect
+    - string	service name
+    - string	"password"
+    - boolean	FALSE
+    - string	plaintext password
+
+*/
+
+static void _msg_write_userauth_password_message(struct msg_buffer_s *mb, char *user, char *pw, const char *service)
+{
+    // logoutput("_msg_write_userauth_password_message");
+    msg_write_byte(mb, SSH_MSG_USERAUTH_REQUEST);
+    // logoutput("_msg_write_userauth_password_message: A1");
+    msg_write_ssh_string(mb, 'c', (void *) user);
+    // logoutput("_msg_write_userauth_password_message: A2");
+    msg_write_ssh_string(mb, 'c', (void *) service);
+    // logoutput("_msg_write_userauth_password_message: A3");
+    msg_write_ssh_string(mb, 'c', (void *) "password");
+    // logoutput("_msg_write_userauth_password_message: A4");
+    msg_write_byte(mb, 0);
+    // logoutput("_msg_write_userauth_password_message: A5");
+    msg_write_ssh_string(mb, 'c', (void *) pw);
+    // logoutput("_msg_write_userauth_password_message: A6");
+}
+
+static unsigned int _write_userauth_password_message(struct msg_buffer_s *mb, char *user, char *pw, const char *service)
+{
+    logoutput("_write_userauth_password_message: user %s pw %s", user, pw);
+    _msg_write_userauth_password_message(mb, user, pw, service);
+    return mb->pos;
+}
+
+int send_userauth_password_message(struct ssh_session_s *session, char *user, char *pw, const char *service, unsigned int *seq)
+{
+    struct msg_buffer_s mb=INIT_SSH_MSG_BUFFER;
+    unsigned int len=_write_userauth_password_message(&mb, user, pw, service) + 64;
+    char buffer[sizeof(struct ssh_payload_s) + len];
+    struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
+
+    if (user==NULL || pw==NULL) {
+
+	logoutput("send_userauth_password_message: user and/or pw NULL");
+	return -1;
+
+    }
+
+    init_ssh_payload(payload, len);
+    payload->type=SSH_MSG_USERAUTH_REQUEST;
+    set_msg_buffer_payload(&mb, payload);
+    payload->len=_write_userauth_password_message(&mb, user, pw, service);
+
+    return write_ssh_packet(session, payload, seq);
+
+}

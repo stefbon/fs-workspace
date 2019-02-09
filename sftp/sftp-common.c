@@ -49,6 +49,8 @@
 
 #include "ssh-channel.h"
 #include "ssh-utils.h"
+#include "ssh-send.h"
+#include "ssh-receive.h"
 
 #include "sftp-common-protocol.h"
 #include "sftp-common.h"
@@ -77,37 +79,49 @@
 
 #include "sftp-usermapping.h"
 
+extern int test_valid_sftp_readdir(struct context_interface_s *interface, void *ptr, unsigned int *len);
+
+struct sftp_ext_s {
+	char			*name;
+	unsigned int		code;
+	unsigned int		bits;
+};
+
+static struct sftp_ext_s sftp_extensions[] = {
+    {SFTP_EXTENSION_STATVFS_OPENSSH_COM				, 1, FUSE_SFTP_EXT_STATVFS_OPENSSH_COM},
+    {SFTP_EXTENSION_FSTATVFS_OPENSSH_COM			, 2, FUSE_SFTP_EXT_FSTATVFS_OPENSSH_COM},
+    {SFTP_EXTENSION_POSIXRENAME_OPENSSH_COM			, 3, FUSE_SFTP_EXT_POSIXRENAME_OPENSSH_COM},
+    {SFTP_EXTENSION_HARDLINK_OPENSSH_COM			, 4, FUSE_SFTP_EXT_HARDLINK_OPENSSH_COM},
+    {SFTP_EXTENSION_FSYNC_OPENSSH_COM				, 5, FUSE_SFTP_EXT_FSYNC_OPENSSH_COM},
+    {SFTP_EXTENSION_FSNOTIFY_SYSTEM_BONONLINE_NL		, 6, FUSE_SFTP_EXT_FSNOTIFY_SYSTEM_BONONLINE_NL},
+    {NULL, 0, 0},
+};
+
 extern void set_fallback_statfs_sftp(struct statfs *fallback);
 
 static void read_supported_extension(struct sftp_subsystem_s *sftp, char *name, char *data)
 {
     struct sftp_supported_s *supported=&sftp->supported;
+    struct sftp_ext_s *extension=NULL;
+    unsigned int i=0;
 
-    if (strcmp(name, "statvfs@openssh.com")==0) {
+    extension=&sftp_extensions[i];
 
-	supported->extensions |= FUSE_SFTP_EXT_STATVFS_OPENSSH_COM;
+    while(extension->name) {
 
-    } else if (strcmp(name, "fstatvfs@openssh.com")==0) {
+	if (strcmp(name, extension->name)==0) {
 
-	supported->extensions |= FUSE_SFTP_EXT_FSTATVFS_OPENSSH_COM;
+	    supported->extensions |= extension->bits;
+	    return;
 
-    } else if (strcmp(name, "posix-rename@openssh.com")==0) {
+	}
 
-	supported->extensions |= FUSE_SFTP_EXT_POSIXRENAME_OPENSSH_COM;
-
-    } else if (strcmp(name, "hardlink@openssh.com")==0) {
-
-	supported->extensions |= FUSE_SFTP_EXT_HARDLINK_OPENSSH_COM;
-
-    } else if (strcmp(name, "fsync@openssh.com")==0) {
-
-	supported->extensions |= FUSE_SFTP_EXT_FSYNC_OPENSSH_COM;
-
-    } else if (strcmp(name, "fsnotify@bononline.nl")==0) {
-
-	supported->extensions |= FUSE_SFTP_EXT_FSNOTIFY_BONONLINE_NL;
+	i++;
+	extension=&sftp_extensions[i];
 
     }
+
+    logoutput("read_supported_extension: extensiond %s not found", name);
 
 }
 
@@ -116,15 +130,65 @@ static void read_default_features_v06(struct sftp_subsystem_s *sftp, char *data,
     struct sftp_supported_s *supported=&sftp->supported;
     unsigned int pos=0;
 
-    if (pos + 4 < len) {
+    if (len < 32) {
 
-	supported->version.v06.attribute_mask=get_uint32(&data[pos]);
+	logoutput("read_default_features_v06: data too small (len=%i)", len);
+	return;
 
-	logoutput("read_default_features_v06: attribute mask %i", supported->version.v06.attribute_mask);
+    }
 
-    } else {
+    supported->version.v06.attribute_mask=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.attribute_bits=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.open_flags=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.access_mask=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.max_read_size=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.open_block_vector=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.block_vector=get_uint32(&data[pos]);
+    pos+=4;
+    supported->version.v06.attrib_extension_count=get_uint32(&data[pos]);
+    pos+=4;
+    logoutput("read_default_features_v06: found attrib extension count %i", supported->version.v06.attrib_extension_count);
+    for (unsigned int i=0; i<supported->version.v06.attrib_extension_count; i++) {
 
-	logoutput("read_default_features_v06: error reading attribute mask");
+	unsigned int size=get_uint32(&data[pos]);
+	pos+=4;
+
+	if (size>0 && len >= pos + size) {
+
+	    logoutput("read_default_features_v06: found attrib extension %.*s", size, &data[pos]);
+	    pos+=size;
+
+	} else {
+
+	    return;
+
+	}
+
+    }
+    supported->version.v06.extension_count=get_uint32(&data[pos]);
+    pos+=4;
+    logoutput("read_default_features_v06: found extension count %i", supported->version.v06.extension_count);
+    for (unsigned int i=0; i<supported->version.v06.extension_count; i++) {
+
+	unsigned int size=get_uint32(&data[pos]);
+	pos+=4;
+
+	if (size>0 && len >= pos + size) {
+
+	    logoutput("read_default_features_v06: found extension %.*s", size, &data[pos]);
+	    pos+=size;
+
+	} else {
+
+	    break;
+
+	}
 
     }
 
@@ -291,21 +355,24 @@ void set_sftp_protocol(struct sftp_subsystem_s *sftp_subsystem)
     (* sftp_subsystem->attr_ops->read_sftp_features)(sftp_subsystem);
 
 }
-
 unsigned int get_sftp_version(struct sftp_subsystem_s *sftp)
 {
 
     /* TODO ... */
 
-    return 6;
+    if (sftp && sftp->server_version>0) return sftp->server_version;
+    return 6; /* preferred version */
 
 }
-
+unsigned int get_sftp_version_ctx(void *ptr)
+{
+    struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
+    return get_sftp_version(sftp);
+}
 void set_sftp_server_version(struct sftp_subsystem_s *sftp, unsigned int version)
 {
     sftp->server_version=version;
 }
-
 unsigned int get_sftp_request_id(struct sftp_subsystem_s *sftp)
 {
     struct sftp_send_hash_s *send_hash=&sftp->send_hash;
@@ -333,9 +400,9 @@ static int init_sftp_subsystem(struct sftp_subsystem_s *sftp, unsigned int *erro
 {
     struct sftp_supported_s *supported=&sftp->supported;
 
+    sftp->flags=0;
     sftp->status=0;
     sftp->refcount=0;
-    sftp->client_version=0;
     sftp->server_version=0;
 
     memset(supported, 0, sizeof(struct sftp_supported_s));
@@ -347,7 +414,6 @@ static int init_sftp_subsystem(struct sftp_subsystem_s *sftp, unsigned int *erro
     sftp->attr_ops=NULL;
 
     return init_send_hash(&sftp->send_hash, error);
-
 }
 
 static void clear_sftp_subsystem(struct sftp_subsystem_s *sftp)
@@ -359,7 +425,6 @@ static void clear_sftp_subsystem(struct sftp_subsystem_s *sftp)
 
 static void free_sftp_subsystem(struct sftp_subsystem_s *sftp)
 {
-    logoutput("free_sftp_subsystem");
     clear_sftp_subsystem(sftp);
     free(sftp);
 }
@@ -371,7 +436,6 @@ static void remove_sftp_channel(struct ssh_channel_s *channel)
     remove_channel(channel, CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_SERVER_CLOSE);
     clear_ssh_channel(channel);
     free_sftp_subsystem(sftp);
-
 }
 
 /* create a new sftp subsystem - it's basically a container of a channel */
@@ -398,13 +462,15 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
     init_ssh_channel(session, channel, _CHANNEL_TYPE_SFTP_SUBSYSTEM);
     channel->free=remove_sftp_channel;
 
-    logoutput("new_sftp_subsystem: initializing sftp");
-
     if (uri) {
+
+	logoutput("new_sftp_subsystem: translating uri %s to channel", uri);
 
 	if (translate_channel_uri(channel, uri, &error)==-1) goto error;
 
     }
+
+    logoutput("new_sftp_subsystem: initializing sftp");
 
     if (init_sftp_subsystem(sftp, &error)==-1) goto error;
 
@@ -426,61 +492,63 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
 	this callback is used for the "main" interface pointing to the home
 	directory on the server */
 
-void umount_sftp_subsystem(struct context_interface_s *interface)
+void signal_sftp_interface(struct context_interface_s *interface, const char *what)
 {
-    struct sftp_subsystem_s *sftp=NULL;
-    struct ssh_channel_s *channel=NULL;
+    struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) interface->ptr;
 
-    if (interface->backend.sftp.prefix.path) {
+    logoutput("signal_sftp_interface: what %s", what);
 
-	free(interface->backend.sftp.prefix.path);
-	interface->backend.sftp.prefix.path=NULL;
-	interface->backend.sftp.prefix.len=0;
+    if (sftp==NULL) return;
+
+    if (strcmp(what, "disconnecting")==0) {
+
+
+    } else if (strcmp(what, "close")==0) {
+
+    } else if (strcmp(what, "free")==0) {
+	struct ssh_channel_s *channel=NULL;
+
+	if (interface->backend.sftp.prefix.path) {
+
+	    free(interface->backend.sftp.prefix.path);
+	    interface->backend.sftp.prefix.path=NULL;
+	    interface->backend.sftp.prefix.len=0;
+
+	}
+
+	channel=&sftp->channel;
+
+	pthread_mutex_lock(&sftp->mutex);
+	sftp->refcount--;
+	if (sftp->refcount==0) remove_channel(&sftp->channel, CHANNEL_FLAG_CLIENT_CLOSE);
+	pthread_mutex_unlock(&sftp->mutex);
+
+	if (sftp->refcount==0) {
+
+	    logoutput("signal_sftp_interface: refcount sftp zero");
+	    clear_sftp_subsystem(sftp);
+	    free(sftp);
+
+	}
+
+	interface->ptr=NULL;
 
     }
-
-    if (interface->ptr==NULL) return;
-    sftp=(struct sftp_subsystem_s *) interface->ptr;
-
-    logoutput("umount_sftp_subsystem");
-
-    channel=&sftp->channel;
-
-    pthread_mutex_lock(&sftp->mutex);
-    sftp->refcount--;
-
-    if (sftp->refcount==0) {
-
-	remove_channel(&sftp->channel, CHANNEL_FLAG_CLIENT_CLOSE);
-
-    }
-
-    pthread_mutex_unlock(&sftp->mutex);
-
-    if (sftp->refcount==0) {
-
-	logoutput("umount_sftp_subsystem: refcount zero");
-	clear_sftp_subsystem(sftp);
-	free(sftp);
-
-    }
-
-    interface->ptr=NULL;
 
 }
 
 static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, char **prefix, char **uri)
 {
-    char buffer[1024];
-    char *pos=NULL;
+    struct common_buffer_s buffer;
     char *sep=NULL;
-    unsigned int error=0;
+    char *pos=NULL;
+    unsigned int left=0;
 
     /* get prefix from server and optional the socket */
 
-    memset(buffer, '\0', 1024);
+    init_common_buffer(&buffer);
 
-    if (get_sftp_sharedmap(session, name, buffer, 1024, &error)==0) {
+    if (get_sftp_sharedmap(session, name, &buffer)==0) {
 
 	logoutput("get_sftp_server_type_info: no prefix found for %s", name);
 	return 0;
@@ -496,21 +564,23 @@ static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, 
 	/home/public:
     */
 
-    pos=buffer;
-    sep=memchr(pos, '|', 1024);
-    if (! sep) return -1;
+    pos=buffer.ptr;
+    left=buffer.size;
+    sep=memchr(pos, '|', left);
+    if (! sep) goto error;
 
     *sep='\0';
     *prefix=strdup(pos);
-    if (! *prefix) return -1;
+    if (! *prefix) goto error;
 
     *sep='|';
+    left-=(sep + 1 - pos);
     pos=sep+1;
 
     /* get the optional uri */
 
-    sep=memchr(pos, '|', buffer + 1024 - pos);
-    if (sep==NULL) return 0;
+    sep=memchr(pos, '|', left);
+    if (sep==NULL) goto out;
 
     *sep='\0';
     *uri=strdup(pos);
@@ -518,10 +588,17 @@ static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, 
 
     *sep='|';
     pos=sep+1;
+    left-=(sep + 1 - pos);
+
+    if (buffer.ptr) free(buffer.ptr);
+
+    out:
 
     return 0;
 
     error:
+
+    if (buffer.ptr) free(buffer.ptr);
 
     if (*prefix) {
 
@@ -537,14 +614,13 @@ static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, 
 
     }
 
-
     return -1;
 
 }
 
 /* create a new sftp subsystem using existing interface to a ssh server */
 
-void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
+int connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error)
 {
     struct context_interface_s *ssh_interface=NULL;
     struct ssh_session_s *session=NULL;
@@ -560,8 +636,9 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     if (! interface) {
 
+	logoutput_warning("connect_sftp_common: interface not defined");
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
@@ -569,8 +646,9 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     if (! ssh_interface) {
 
+	logoutput("connect_sftp_common: parent interface not defined");
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
@@ -578,31 +656,34 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     if (! session) {
 
+	logoutput("connect_sftp_common: session not defined");
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
     if (! address) {
 
+	logoutput("connect_sftp_common: address not defined");
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
-    if (address->type!=_INTERFACE_SFTP_SERVER || address->target.sftp.name==NULL) {
+    if (address->service.type != _INTERFACE_SERVICE_SFTP || strlen(address->service.target.sftp.name)==0) {
 
+	logoutput("connect_sftp_common: service wrong format");
 	*error=EINVAL;
-	return NULL;
+	return -1;
 
     }
 
     /* get the full prefix and the method to connect:
-	- sftp server listens to socket
-	- sftp server listens to ip address
-	- sftp server as subsystem of ssh */
+	- remote sftp server listens to local unix socket
+	- remote sftp server listens to network address
+	- remote sftp server as subsystem of ssh */
 
-    if (get_sftp_server_type_info(session, address->target.sftp.name, &prefix, &uri)==0) {
+    if (get_sftp_server_type_info(session, address->service.target.sftp.name, &prefix, &uri)==0) {
 
 	if (uri) {
 
@@ -639,8 +720,6 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
     channel=get_next_channel(session, NULL);
     while (channel) {
 
-	// pthread_mutex_lock(&channel->mutex);
-
 	if (channel->type==type) {
 
 	    if (type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
@@ -655,7 +734,6 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	}
 
-	// pthread_mutex_unlock(&channel->mutex);
 	channel=get_next_channel(session, channel);
 
     }
@@ -669,7 +747,6 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 	if (sftp_subsystem) {
 
 	    channel=&sftp_subsystem->channel;
-	    // pthread_mutex_lock(&channel->mutex);
 
 	    channeltable_upgrade_readlock(table, &rlock);
 	    table_add_channel(channel);
@@ -677,7 +754,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	    sftp_subsystem->status=SFTP_STATUS_INIT;
 	    sftp_subsystem->refcount=1;
-	    interface->free=umount_sftp_subsystem;
+	    interface->signal_interface=signal_sftp_interface;
 
 	    if (start_channel(channel, error)==-1) {
 
@@ -686,8 +763,6 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 		goto error;
 
 	    }
-
-	    // pthread_mutex_unlock(&channel->mutex);
 
 	} else {
 
@@ -703,14 +778,20 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	sftp_subsystem=(struct sftp_subsystem_s *) (((char *) channel) - offsetof(struct sftp_subsystem_s, channel));
 	sftp_subsystem->refcount++;
-	// pthread_mutex_unlock(&channel->mutex);
 	channeltable_unlock(table, &rlock);
 
     }
 
     if (sftp_subsystem) {
 
-	if (strcmp(address->target.sftp.name, "home")==0) {
+	interface->ptr=(void *) sftp_subsystem;
+
+	if (strcmp(address->service.target.sftp.name, "home")==0) {
+
+	    /* the remoet folder is the home directory of the connecting user
+		- paths startiing without slash are relative to ~ */
+
+	    logoutput("connect_sftp_common: home, name is %s", address->service.target.sftp.name);
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_home;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_home;
@@ -727,6 +808,8 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
 	} else if (prefix==NULL || strlen(prefix)==0) {
 
+	    logoutput("connect_sftp_common: root, prefix is empty");
+
 	    interface->backend.sftp.complete_path=complete_path_sftp_root;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_root;
 	    interface->backend.sftp.prefix.type=CONTEXT_INTERFACE_BACKEND_SFTP_PREFIX_ROOT;
@@ -741,6 +824,10 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 	    }
 
 	} else {
+
+	    /* custom prefix */
+
+	    logoutput("connect_sftp_common: custom, using prefix %s", prefix);
 
 	    interface->backend.sftp.complete_path=complete_path_sftp_custom;
 	    interface->backend.sftp.get_complete_pathlen=get_complete_pathlen_custom;
@@ -771,7 +858,8 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     }
 
-    return (void *) sftp_subsystem;
+
+    return 0;
 
     error:
 
@@ -797,7 +885,7 @@ void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, stru
 
     }
 
-    return NULL;
+    return -1;
 
 }
 
@@ -808,6 +896,8 @@ static int _start_sftp_common(struct context_interface_s *interface)
     struct ssh_session_s *session=channel->session;
     struct channel_table_s *table=&session->channel_table;
     unsigned int seq=0;
+    struct fuse_sftp_attr_s attr;
+    unsigned int lenreaddir=0;
 
     if (channel->type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
 	struct ssh_payload_s *payload=NULL;
@@ -969,6 +1059,35 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
     }
 
+    /* get sftp info */
+
+    memset(&attr, 0, sizeof(struct fuse_sftp_attr_s));
+    if (test_valid_sftp_readdir(interface, (void *)&attr, &lenreaddir)==0) {
+
+	if (attr.type > 0 && (attr.received & (FUSE_SFTP_INDEX_SIZE | FUSE_SFTP_INDEX_PERMISSIONS | FUSE_SFTP_INDEX_MTIME | FUSE_SFTP_INDEX_CTIME | FUSE_SFTP_INDEX_USER | FUSE_SFTP_INDEX_GROUP))) {
+
+	    logoutput("_start_sftp_subsystem: received enough to use readdirplus");
+	    sftp_subsystem->flags |= SFTP_SUBSYSTEM_FLAG_READDIRPLUS;
+
+	} else {
+
+	     logoutput("_start_sftp_subsystem: not received enough to use readdirplus");
+
+	}
+
+	if (lenreaddir<=54) {
+
+	    logoutput("_start_sftp_subsystem: found readdir length %i, old style", lenreaddir);
+
+	} else {
+
+	    logoutput("_start_sftp_subsystem: found readdir length %i, new style", lenreaddir);
+	    sftp_subsystem->flags |= SFTP_SUBSYSTEM_FLAG_NEWREADDIR;
+
+	}
+
+    }
+
     return 0;
 
     error:
@@ -979,7 +1098,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
 }
 
-int start_sftp_common(struct context_interface_s *interface, void *data)
+int start_sftp_common(struct context_interface_s *interface, int fd, void *data)
 {
     struct sftp_subsystem_s *sftp_subsystem=NULL;
 
@@ -1020,7 +1139,6 @@ unsigned char get_sftp_features(void *ptr)
 {
     struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
     struct sftp_supported_s *supported=&sftp->supported;
-
     return (supported->fuse_attr_supported);
 }
 

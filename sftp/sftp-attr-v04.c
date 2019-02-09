@@ -42,6 +42,7 @@
 #include "logging.h"
 #include "main.h"
 #include "utils.h"
+#include "fuse-dentry.h"
 
 #include "workspace-interface.h"
 #include "ssh-common.h"
@@ -165,7 +166,7 @@ static unsigned int read_attr_permissions(struct sftp_subsystem_s *sftp, char *b
 
 static unsigned int read_attr_accesstime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->accesstime=get_int64(buffer);
+    attr->accesstime=get_uint64(buffer);
     fuse_attr->atime=attr->accesstime;
     fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_ATIME;
@@ -181,7 +182,7 @@ static unsigned int read_attr_accesstime_n(struct sftp_subsystem_s *sftp, char *
 
 static unsigned int read_attr_createtime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->createtime=get_int64(buffer);
+    attr->createtime=get_uint64(buffer);
     return 8;
 }
 
@@ -193,7 +194,7 @@ static unsigned int read_attr_createtime_n(struct sftp_subsystem_s *sftp, char *
 
 static unsigned int read_attr_modifytime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->modifytime=get_int64(buffer);
+    attr->modifytime=get_uint64(buffer);
     fuse_attr->mtime=attr->modifytime;
     fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_MTIME;
@@ -313,7 +314,7 @@ static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned
 
     type=(unsigned char) *pos;
 
-    if (type<10) {
+    if (type >0 && type<6) {
 
 	fuse_attr->type=type_mapping[type];
 
@@ -324,6 +325,8 @@ static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned
     }
 
     pos++;
+    fuse_attr->valid[FUSE_SFTP_INDEX_TYPE]=1;
+    fuse_attr->received|=FUSE_SFTP_ATTR_TYPE;
 
     /*
 	size
@@ -399,6 +402,8 @@ static unsigned int read_attributes_v04(struct sftp_subsystem_s *sftp, char *buf
     struct sftp_attr_s sftp_attr;
     char *pos=buffer;
     unsigned int valid=0;
+
+    logoutput("read_attributes_v04");
 
     memset(&sftp_attr, 0, sizeof(struct sftp_attr_s));
     valid=get_uint32(pos);
@@ -613,20 +618,30 @@ static unsigned int write_attributes_v04(struct sftp_subsystem_s *sftp, char *bu
 
 */
 
-static void read_name_response_v04(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr)
+static void read_name_response_v04(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
 {
-    char *pos=response->pos;
 
-    *len=get_uint32(pos);
-    pos+=4;
+    logoutput("read_name_response_v04: pos %i", (unsigned int)(response->pos - response->buff));
+    *len=get_uint32(response->pos);
+    response->pos+=4;
 
-    *name=(char *) pos; /* name without trailing zero */
-    pos+=*len;
+    *name=(char *) response->pos; /* name without trailing zero */
+    response->pos+=*len;
+}
 
-    pos+=read_attributes_v04(sftp, pos, (unsigned int) (response->buff + response->size - pos), fuse_attr);
+static unsigned int read_attr_response_v04(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *sftp_attr)
+{
+    char *keep=response->pos;
 
-    response->pos=pos;
-    response->left--;
+    memset(sftp_attr, 0, sizeof(struct fuse_sftp_attr_s));
+
+    logoutput("read_attr_response_v04: pos %i", (unsigned int)(response->pos - response->buff));
+    response->pos+=read_attributes_v04(sftp, response->pos, (unsigned int) (response->buff + response->size - response->pos), sftp_attr);
+    response->count--;
+
+    logoutput("read_attr_response_v04: m %i p %i", sftp_attr->type, sftp_attr->permissions);
+
+    return (unsigned int)(response->pos - keep);
 
 }
 
@@ -645,6 +660,7 @@ static struct sftp_attr_ops_s attr_ops_v04 = {
     .read_attributes			= read_attributes_v04,
     .write_attributes			= write_attributes_v04,
     .read_name_response			= read_name_response_v04,
+    .read_attr_response			= read_attr_response_v04,
     .read_sftp_features			= read_sftp_features_v04,
     .get_attribute_mask			= get_attribute_mask_v04,
 };

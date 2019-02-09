@@ -44,6 +44,7 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
+#include <glib.h>
 
 #if HAVE_LIBGCRYPT
 
@@ -60,6 +61,8 @@ unsigned int create_hash(const char *name, char *in, unsigned int size, struct s
     int algo=gcry_md_map_name(name);
     unsigned int len=0;
     gcry_md_hd_t handle;
+
+    logoutput("create_hash: hash %s", name);
 
     if (algo==0) {
 
@@ -198,35 +201,83 @@ uint64_t ntohll(uint64_t value)
     return (* utils.ntohll)(value);
 }
 
-void replace_cntrl_char(char *buffer, unsigned int size)
+void replace_cntrl_char(char *buffer, unsigned int size, unsigned char flag)
 {
     for (unsigned int i=0; i<size; i++) {
 
-	if (iscntrl(buffer[i])) {
+	if (flag & REPLACE_CNTRL_FLAG_BINARY) {
 
-	    buffer[i]=' ';
+	    if (iscntrl(buffer[i])) buffer[i]=' ';
+
+	} else if (flag & REPLACE_CNTRL_FLAG_TEXT) {
+
+	    if (! isalnum(buffer[i]) && ! ispunct(buffer[i])) {
+
+		// logoutput("replace_cntrl_char: replace %i", 1, buffer[i]);
+		buffer[i]=' ';
+
+	    }
 
 	}
 
     }
 }
 
-void replace_newline_char(char *ptr, unsigned int *size)
+void replace_newline_char(char *ptr, unsigned int size)
 {
     char *sep=NULL;
-    unsigned int tmp=*size;
 
-    // logoutput("replace_newline_char: prev %i", tmp);
+    sep=memchr(ptr, 13, size);
 
-    sep=memchr(ptr, 13, tmp);
+    if (sep) *sep='\0';
 
-    if (sep) {
+}
 
-	*sep='\0';
-	tmp=(unsigned int) (sep - ptr);
+unsigned int skip_trailing_spaces(char *ptr, unsigned int size, unsigned int flags)
+{
+    unsigned int len=size;
 
-	// logoutput("replace_newline_char: new %i", tmp);
-	*size=tmp;
+    skipspace:
+
+    if (len > 0 && isspace(ptr[len-1])) {
+
+	if (flags & SKIPSPACE_FLAG_REPLACEBYZERO) ptr[len-1]='\0';
+	len--;
+	goto skipspace;
+
+    }
+
+    return (size - len);
+
+}
+
+unsigned int skip_heading_spaces(char *ptr, unsigned int size)
+{
+    unsigned int pos=0;
+
+    skipspace:
+
+    if (pos < size && isspace(ptr[pos])) {
+
+	pos++;
+	goto skipspace;
+
+    }
+
+    if (pos>0) memmove(ptr, &ptr[pos], size - pos);
+
+    return pos;
+
+}
+
+void logoutput_base64encoded(char *prefix, char *buffer, unsigned int size)
+{
+    gchar *encoded=g_base64_encode(buffer, size);
+
+    if (encoded) {
+
+        logoutput("%s : %s", prefix, encoded);
+        g_free(encoded);
 
     }
 

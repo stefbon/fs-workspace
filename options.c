@@ -42,12 +42,11 @@
 
 #include "main.h"
 #include "pathinfo.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
-#include "options.h"
 #include "utils.h"
-
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
+#include "options.h"
 #include "logging.h"
 
 extern struct fs_options_s fs_options;
@@ -533,13 +532,19 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
     convert_double_to_timespec(&fs_options.fuse.entry_timeout, _OPTIONS_FUSE_ENTRY_TIMEOUT);
     convert_double_to_timespec(&fs_options.fuse.negative_timeout, _OPTIONS_FUSE_NEGATIVE_TIMEOUT);
 
+    /* create or not the service specific network name like SMB, NFS and SFTP */
+
+    fs_options.fuse.flags=_OPTIONS_FUSE_FLAG_NETWORK_IGNORE_SERVICE;
+
     /* network */
 
     fs_options.network.flags=0;
     fs_options.network.discover_static_file=NULL;
+    fs_options.network.path_icon_network=NULL;
     fs_options.network.path_icon_domain=NULL;
     fs_options.network.path_icon_server=NULL;
     fs_options.network.path_icon_share=NULL;
+    fs_options.network.network_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
     fs_options.network.domain_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
     fs_options.network.server_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
     fs_options.network.share_icon=_OPTIONS_NETWORK_ICON_OVERRULE;
@@ -571,9 +576,15 @@ int parse_arguments(int argc, char *argv[], unsigned int *error)
     fs_options.sftp.usermapping_user_nobody=NULL;
     fs_options.sftp.usermapping_type=_OPTIONS_SFTP_USERMAPPING_DEFAULT;
     fs_options.sftp.usermapping_file=NULL;
-    fs_options.sftp.flags=_OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME | _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME;
+    fs_options.sftp.flags=_OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME | _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME | _OPTIONS_SFTP_FLAG_SYMLINK_ALLOW_PREFIX;
     fs_options.sftp.packet_maxsize=_OPTIONS_SFTP_PACKET_MAXSIZE;
-    fs_options.sftp.network_name=NULL;
+    fs_options.sftp.network_name=_OPTIONS_SFTP_NETWORK_NAME_DEFAULT;
+
+    /* nfs */
+
+    fs_options.nfs.flags=_OPTIONS_NFS_FLAG_SHOW_DOMAINNAME;
+    fs_options.nfs.packet_maxsize=_OPTIONS_NFS_PACKET_MAXSIZE;
+    fs_options.nfs.network_name=NULL;
 
     while(1) {
 
@@ -733,7 +744,7 @@ void free_options()
     if (fs_options.ssh.compression_algos) free(fs_options.ssh.compression_algos);
     if (fs_options.ssh.keyx_algos) free(fs_options.ssh.keyx_algos);
 
-    if (fs_options.sftp.network_name) free(fs_options.sftp.network_name);
+    // if (fs_options.sftp.network_name) free(fs_options.sftp.network_name);
     if (fs_options.sftp.usermapping_file) free(fs_options.sftp.usermapping_file);
     if (fs_options.sftp.usermapping_user_nobody) free(fs_options.sftp.usermapping_user_nobody);
     if (fs_options.sftp.usermapping_user_unknown) free(fs_options.sftp.usermapping_user_unknown);

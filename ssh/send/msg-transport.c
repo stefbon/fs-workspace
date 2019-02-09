@@ -44,6 +44,7 @@
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
 #include "ssh-send.h"
+#include "extensions/extension.h"
 
 #include "ssh-utils.h"
 #include "ssh-keyexchange.h"
@@ -436,7 +437,7 @@ static unsigned int _send_ext_info_message(struct msg_buffer_s *mb, unsigned int
     msg_write_byte(mb, SSH_MSG_EXT_INFO);
 
     pos=msg_start_count(mb);
-    msg_write_uint32(mb, 0);
+    msg_store_uint32(mb, 0);
 
     if (requested & SSH_EXTENSION_SERVER_SIG_ALGS) {
 

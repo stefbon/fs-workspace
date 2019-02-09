@@ -1,10 +1,10 @@
 sbin_PROGRAMS = fs-workspace
 
-fs_workspace_CFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O2 -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wunused-function
-fs_workspace_CPPFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -fPIC -lm -I common-utils -I ssh -O2 -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wunused-function
-fs_workspace_LDADD = $(GLIB_LIBS) $(LIBGCRYPT_LIBS) $(SYSTEMD_LIBS) $(AVAHI_CORE_LIBS) $(AVAHI_CLIENT_LIBS) $(LDFLAGS)
+fs_workspace_CFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(QT5_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -lpthread -fPIC -lm -I . -I common-utils -I ssh -O2 -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wno-unused-function
+fs_workspace_CPPFLAGS = $(GLIB_CFLAGS) $(LIBGCRYPT_CFLAGS) $(SYSTEMD_CFLAGS) $(QT5_CFLAGS) $(AVAHI_CORE_CFLAGS) $(AVAHI_CLIENT_CFLAGS) -g -D_FILE_OFFSET_BITS=64 -lz -lpthread -fPIC -lm -I . -I common-utils -I ssh -O2 -Wall -Wno-unused-but-set-variable -Wno-uninitialized -Wno-unused-variable -Wno-unused-label -Wno-unused-function
+fs_workspace_LDADD = $(GLIB_LIBS) $(LIBGCRYPT_LIBS) $(SYSTEMD_LIBS) $(QT5_LIBS) $(AVAHI_CORE_LIBS) $(AVAHI_CLIENT_LIBS) $(LDFLAGS)
 
-fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-management.c common-utils/entry-utils.c common-utils/path-caching.c \
+fs_workspace_SOURCES =  common-utils/fuse-directory.c common-utils/fuse-dentry.c common-utils/fuse-utils.c common-utils/path-caching.c \
 			common-utils/fuse-interface.c common-utils/fuse-fs.c \
 			common-utils/fuse-fs-common.c common-utils/fuse-fs-virtual.c common-utils/fuse-fs-special.c \
 			common-utils/fuse-context-fs-common.c common-utils/fuse-context-fs-root.c common-utils/fuse-context-fs.c \
@@ -14,8 +14,9 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			options.c \
 			main.c \
 			common-utils/localsocket.c \
-			discover.c discover/discover-avahi.c discover/discover-staticfile.c \
+			discover.c discover/discover-staticfile.c discover/discover-avahi.c \
 			common-utils/workspaces.c common-utils/workspace-utils.c common-utils/workspace-session.c common-utils/workspace-context.c \
+			common-utils/workspace-address.c \
 			common-utils/utils.c common-utils/network-utils.c common-utils/pathinfo.c \
 			common-utils/workerthreads.c \
 			common-utils/simple-hash.c common-utils/simple-list.c common-utils/simple-locking.c \
@@ -23,11 +24,15 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			common-utils/mountinfo-monitor.c common-utils/mountinfo-utils.c common-utils/mountinfo.c \
 			common-utils/monitorsessions.c \
 			common-utils/fschangenotify.c \
+			common-utils/logging.c \
+			handlemime.c \
+			mimetype.cpp \
+			backup/backup-common.c \
 			fuse-sftp.c fuse-backup.c fuse-network.c \
 			sftp/fuse-sftp-common.c \
 			sftp/fuse-sftp-fs-init.c sftp/fuse-sftp-lock.c  sftp/fuse-sftp-mk.c sftp/fuse-sftp-fsnotify.c \
 			sftp/fuse-sftp-getattr.c sftp/fuse-sftp-lookup.c sftp/fuse-sftp-open.c sftp/fuse-sftp-opendir.c sftp/fuse-sftp-symlink.c \
-			sftp/fuse-sftp-rm.c sftp/fuse-sftp-setattr.c sftp/fuse-sftp-statfs.c sftp/fuse-sftp-realpath.c \
+			sftp/fuse-sftp-rm.c sftp/fuse-sftp-setattr.c sftp/fuse-sftp-statfs.c sftp/fuse-sftp-realpath.c sftp/fuse-sftp-xattr.c \
 			sftp/sftp-attr-common.c sftp/sftp-attr-v03.c sftp/sftp-attr-v04.c sftp/sftp-attr-v05.c sftp/sftp-attr-v06.c \
 			sftp/sftp-common.c sftp/sftp-request-hash.c sftp/sftp-common-admin.c sftp/sftp-common-utils.c \
 			sftp/sftp-recv-common.c sftp/sftp-recv-v03.c sftp/sftp-recv-v04.c sftp/sftp-recv-v05.c sftp/sftp-recv-v06.c \
@@ -49,7 +54,7 @@ fs_workspace_SOURCES =  common-utils/directory-management.c common-utils/entry-m
 			ssh/pk/pk-types.c ssh/pk/pk-keys.c ssh/pk/pk-compare.c ssh/pk/pk-keystore.c ssh/pk/pk-keystore-openssh.c \
 			ssh/pk/pk-layout.c ssh/pk/pk-read-private.c ssh/pk/pk-readwrite-public.c ssh/pk/pk-sign.c ssh/pk/pk-utils.c ssh/pk/pk-verify.c \
 			ssh/ssh-utils.c \
-			ssh/ssh-userauth.c ssh/userauth/pubkey.c ssh/userauth/utils.c ssh/userauth/hostbased.c ssh/userauth/none.c \
+			ssh/ssh-userauth.c ssh/userauth/pubkey.c ssh/userauth/utils.c ssh/userauth/hostbased.c ssh/userauth/none.c ssh/userauth/password.c \
 			ssh/receive/decompress.c ssh/receive/decompress-none.c ssh/receive/decompressors.c ssh/receive/decrypt.c ssh/receive/decrypt-chacha20-poly1305.c \
 			ssh/receive/decrypt-generic.c ssh/receive/decryptors.c ssh/receive/greeter.c ssh/receive/init.c ssh/receive/msg-channel.c ssh/receive/msg-transport.c ssh/receive/msg-userauth.c \
 			ssh/receive/payload.c ssh/receive/read-buffer.c ssh/receive/read-socket.c \

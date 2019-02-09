@@ -22,6 +22,6 @@
 
 /* prototypes */
 
-int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_s *pkey, const char *what);
+int check_serverkey_openssh(struct fs_connection_s *c, struct passwd *pwd, struct ssh_key_s *pkey, const char *what);
 
 #endif

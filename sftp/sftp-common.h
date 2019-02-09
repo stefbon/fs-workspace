@@ -20,6 +20,11 @@
 #ifndef FS_WORKSPACE_SFTP_COMMON_H
 #define FS_WORKSPACE_SFTP_COMMON_H
 
+#include "ssh-common.h"
+
+#define SFTP_SUBSYSTEM_FLAG_READDIRPLUS				1
+#define SFTP_SUBSYSTEM_FLAG_NEWREADDIR				2
+
 struct sftp_subsystem_s;
 
 struct sftp_header_s {
@@ -32,10 +37,6 @@ struct sftp_header_s {
 
 /* interface specific data like prefix */
 
-struct sftp_data_s {
-    char				*prefix;
-    unsigned int			len;
-};
 
 struct sftp_send_ops_s {
     unsigned int			version;
@@ -67,7 +68,8 @@ struct sftp_send_ops_s {
 struct sftp_attr_ops_s {
     unsigned int 			(* read_attributes)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
     unsigned int 			(* write_attributes)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
-    void				(* read_name_response)(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr);
+    void				(* read_name_response)(struct sftp_subsystem_s *sftp, struct name_response_s *r, char **name, unsigned int *len);
+    unsigned int			(* read_attr_response)(struct sftp_subsystem_s *sftp, struct name_response_s *r, struct fuse_sftp_attr_s *f);
     void				(* read_sftp_features)(struct sftp_subsystem_s *sftp);
     unsigned int			(* get_attribute_mask)(struct sftp_subsystem_s *sftp);
 };
@@ -91,10 +93,10 @@ struct sftp_supported_s {
 	    unsigned int			open_flags;
 	    unsigned int			access_mask;
 	    unsigned int			max_read_size;
-//    unsigned int			open_block_vector;
-//    unsigned int			block_vector;
-//    unsigned int			attrib_extension_count;
-//    unsigned int			extension_count;
+	    unsigned int			open_block_vector;
+	    unsigned int			block_vector;
+	    unsigned int			attrib_extension_count;
+	    unsigned int			extension_count;
 	} v06;
 	struct v05_s {
 	    unsigned char			init;
@@ -170,11 +172,11 @@ struct sftp_send_hash_s {
 #define SFTP_STATUS_UP			2
 
 struct sftp_subsystem_s {
+    unsigned int			flags;
     pthread_mutex_t			mutex;
     unsigned int			status;
     unsigned int			refcount;
     struct ssh_string_s			remote_home;
-    unsigned int 			client_version;
     unsigned int 			server_version;
     struct sftp_send_ops_s		*send_ops;
     struct sftp_recv_ops_s		*recv_ops;
@@ -191,12 +193,13 @@ void set_sftp_protocol(struct sftp_subsystem_s *sftp_subsystem);
 void get_sftp_request_timeout(struct timespec *timeout);
 
 unsigned int get_sftp_version(struct sftp_subsystem_s *sftp);
+unsigned int get_sftp_version_ctx(void *ptr);
 void set_sftp_server_version(struct sftp_subsystem_s *sftp, unsigned int version);
 
 unsigned int get_sftp_request_id(struct sftp_subsystem_s *sftp);
 
-void *connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-int start_sftp_common(struct context_interface_s *interface, void *data);
+int connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
+int start_sftp_common(struct context_interface_s *interface, int fd, void *data);
 void umount_sftp_subsystem(struct context_interface_s *interface);
 
 unsigned char get_sftp_features(void *ptr);

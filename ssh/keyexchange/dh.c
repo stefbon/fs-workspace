@@ -392,7 +392,7 @@ static int dh_init_keyx(struct ssh_keyx_s *keyx, unsigned char *p, unsigned int 
 
     }
 
-    if (read_ssh_mpint(&dh->p, p, lenp, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
+    if (read_ssh_mpint(&dh->p, (char *)p, lenp, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
 
     if (create_ssh_mpint(&dh->p)==-1) {
 
@@ -401,7 +401,7 @@ static int dh_init_keyx(struct ssh_keyx_s *keyx, unsigned char *p, unsigned int 
 
     }
 
-    if (read_ssh_mpint(&dh->g, g, leng, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
+    if (read_ssh_mpint(&dh->g, (char *)g, leng, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
 
     keyx->create_client_key 		= dh_create_client_key;
     keyx->msg_write_client_key		= dh_msg_write_client_key;

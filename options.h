@@ -31,7 +31,11 @@
 #define _OPTIONS_FUSE_ENTRY_TIMEOUT			1.0
 #define _OPTIONS_FUSE_NEGATIVE_TIMEOUT			1.0
 
+#define _OPTIONS_FUSE_FLAG_NETWORK_IGNORE_SERVICE	1
+
 /* NETWORK */
+
+#define _OPTIONS_NETWORK_FLAG_SPECIALFILE_READDIR	1
 
 #define _OPTIONS_NETWORK_DISCOVER_METHOD_AVAHI		1
 #define _OPTIONS_NETWORK_DISCOVER_METHOD_FILE		2
@@ -78,8 +82,21 @@
 
 #define _OPTIONS_SFTP_NETWORK_NAME_DEFAULT		"SFTP"
 
-#define _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME		1
-#define _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME		2
+#define _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME			1
+#define _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME			2
+#define _OPTIONS_SFTP_FLAG_SYMLINKS_DISABLE			4
+#define _OPTIONS_SFTP_FLAG_SYMLINK_ALLOW_PREFIX			8
+#define _OPTIONS_SFTP_FLAG_SYMLINK_ALLOW_CROSS_INTERFACE	16
+
+/* NFS */
+
+#define _OPTIONS_NFS_PACKET_MAXSIZE			8192
+
+#define _OPTIONS_NFS_NETWORK_NAME_DEFAULT		"NFS"
+
+#define _OPTIONS_NFS_FLAG_SHOW_DOMAINNAME		1
+#define _OPTIONS_NFS_FLAG_HOME_USE_REMOTENAME		2
+#define _OPTIONS_NFS_FLAG_USE_VERSION_4			4
 
 struct ssh_options_s {
     unsigned int			flags;
@@ -106,18 +123,27 @@ struct sftp_options_s {
     char				*network_name;
 };
 
+struct nfs_options_s {
+    unsigned int 			flags;
+    unsigned int			packet_maxsize;
+    char				*network_name;
+};
+
 struct network_options_s {
     unsigned int 			flags;
     char 				*discover_static_file;
+    char				*path_icon_network;
     char				*path_icon_domain;
     char				*path_icon_server;
     char				*path_icon_share;
+    unsigned int			network_icon;
     unsigned int			domain_icon;
     unsigned int			server_icon;
     unsigned int			share_icon;
 };
 
 struct fuse_options_s {
+    unsigned int			flags;
     struct timespec			attr_timeout;
     struct timespec			entry_timeout;
     struct timespec			negative_timeout;
@@ -132,6 +158,7 @@ struct fs_options_s {
     struct network_options_s		network;
     struct ssh_options_s		ssh;
     struct sftp_options_s		sftp;
+    struct nfs_options_s		nfs;
 };
 
 // Prototypes

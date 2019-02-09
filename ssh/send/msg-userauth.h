@@ -31,4 +31,6 @@ int send_userauth_none_message(struct ssh_session_s *session, char *user, const 
 void msg_write_userauth_hostbased_request(struct msg_buffer_s *mb, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user);
 int send_userauth_hostbased_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *key, char *lhostname, char *luser, struct ssh_string_s *signature, unsigned int *seq);
 
+int send_userauth_password_message(struct ssh_session_s *session, char *user, char *pw, const char *service, unsigned int *seq);
+
 #endif

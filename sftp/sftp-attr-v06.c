@@ -38,7 +38,7 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-
+#include "fuse-dentry.h"
 #include "logging.h"
 #include "main.h"
 #include "utils.h"
@@ -160,6 +160,8 @@ static unsigned int read_attr_ownergroup(struct sftp_subsystem_s *sftp, char *bu
 
     }
 
+    logoutput("read_attr_ownergroup: uid %i username %.*s gid %i  groupname %.*s", fuse_attr->user.uid, attr->owner.len, attr->owner.name, fuse_attr->group.gid, attr->group.len, attr->group.name);
+
     return 8 + attr->owner.len + attr->group.len;
 }
 
@@ -180,7 +182,7 @@ static unsigned int read_attr_permissions(struct sftp_subsystem_s *sftp, char *b
 
 static unsigned int read_attr_accesstime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->accesstime=get_int64(buffer);
+    attr->accesstime=get_uint64(buffer);
     fuse_attr->atime=attr->accesstime;
     fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_ATIME;
@@ -190,16 +192,13 @@ static unsigned int read_attr_accesstime(struct sftp_subsystem_s *sftp, char *bu
 static unsigned int read_attr_accesstime_n(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
     attr->accesstime_n=get_uint32(buffer);
-
     fuse_attr->atime_n=attr->accesstime_n;
-
     return 4;
 }
 
 static unsigned int read_attr_createtime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-
-    attr->createtime=get_int64(buffer);
+    attr->createtime=get_uint64(buffer);
     return 8;
 }
 
@@ -212,7 +211,7 @@ static unsigned int read_attr_createtime_n(struct sftp_subsystem_s *sftp, char *
 static unsigned int read_attr_modifytime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
 
-    attr->modifytime=get_int64(buffer);
+    attr->modifytime=get_uint64(buffer);
     fuse_attr->mtime=attr->modifytime;
     fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_MTIME;
@@ -222,15 +221,13 @@ static unsigned int read_attr_modifytime(struct sftp_subsystem_s *sftp, char *bu
 static unsigned int read_attr_modifytime_n(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
     attr->modifytime_n=get_uint32(buffer);
-
     fuse_attr->mtime_n=attr->modifytime_n;
-
     return 4;
 }
 
 static unsigned int read_attr_changetime(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct sftp_attr_s *attr, struct fuse_sftp_attr_s *fuse_attr)
 {
-    attr->changetime=get_int64(buffer);
+    attr->changetime=get_uint64(buffer);
     fuse_attr->ctime=attr->changetime;
     fuse_attr->valid[FUSE_SFTP_INDEX_CTIME]=1;
     fuse_attr->received|=FUSE_SFTP_ATTR_CTIME;
@@ -413,6 +410,8 @@ static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned
     }
 
     pos++;
+    fuse_attr->valid[FUSE_SFTP_INDEX_TYPE]=1;
+    fuse_attr->received|=FUSE_SFTP_ATTR_TYPE;
 
     /*
 	size
@@ -528,6 +527,8 @@ static unsigned int read_sftp_attributes(struct sftp_subsystem_s *sftp, unsigned
 
     pos += (* read_attr_acb[18][vb[18]])(sftp, pos, (unsigned int)(buffer + size - pos + 1), sftp_attr, fuse_attr);
 
+    // logoutput("read_sftp_attributes: ready");
+
     return (unsigned int) (pos - buffer);
 
 }
@@ -538,11 +539,11 @@ static unsigned int read_attributes_v06(struct sftp_subsystem_s *sftp, char *buf
     char *pos=buffer;
     unsigned int valid=0;
 
+    logoutput("read_attributes_v06");
+
     memset(&sftp_attr, 0, sizeof(struct sftp_attr_s));
-
-    valid=get_uint32((unsigned char *) pos);
+    valid=get_uint32(pos);
     pos+=4;
-
     pos+=read_sftp_attributes(sftp, valid, pos, size-4, &sftp_attr, fuse_attr);
 
     return (unsigned int) (pos - buffer);
@@ -730,6 +731,8 @@ static unsigned int write_attributes_v06(struct sftp_subsystem_s *sftp, char *bu
 	len += fuse_attr->valid[FUSE_SFTP_INDEX_MTIME] * 12; /* modify time (8+4)*/
 	len += fuse_attr->valid[FUSE_SFTP_INDEX_CTIME] * 12; /* change time (8+4)*/
 
+	logoutput("write_attributes_v06: len %i", len);
+
 	return len;
 
     } else {
@@ -780,7 +783,7 @@ static unsigned int write_attributes_v06(struct sftp_subsystem_s *sftp, char *bu
 
 	store_uint32(buffer, valid);
 
-	logoutput("write_attributes_v06: valid %i", valid);
+	logoutput("write_attributes_v06: valid %i size %i", valid, (unsigned int) (pos - buffer));
 
 	return (unsigned int) (pos - buffer);
 
@@ -802,30 +805,42 @@ static unsigned int write_attributes_v06(struct sftp_subsystem_s *sftp, char *bu
     byte				end-of-list [optional]
 */
 
-static void read_name_response_v06(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len, struct fuse_sftp_attr_s *fuse_attr)
+static void read_name_response_v06(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
 {
-    char *pos=response->pos;
 
-    *len=get_uint32(pos);
-    pos+=4;
+    logoutput("read_name_response_v06: pos %i", (unsigned int)(response->pos - response->buff));
 
-    *name=(char *) pos; /* name without trailing zero */
-    pos+=*len;
+    *len=get_uint32(response->pos);
+    response->pos+=4;
 
-    pos+=read_attributes_v06(sftp, pos, (unsigned int) (response->buff + response->size - pos), fuse_attr);
+    *name=(char *) response->pos; /* name without trailing zero */
+    response->pos+=*len;
 
-    response->pos=pos;
-    response->left--;
+}
 
-    if (response->left==0 && (unsigned int) (response->buff + response->size - pos) == 1) {
+static unsigned int read_attr_response_v06(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *sftp_attr)
+{
+    char *keep=response->pos;
+
+    memset(sftp_attr, 0, sizeof(struct fuse_sftp_attr_s));
+
+    logoutput("read_attr_response_v06: pos %i", (unsigned int)(response->pos - response->buff));
+
+    response->pos+=read_attributes_v06(sftp, response->pos, (unsigned int) (response->buff + response->size - response->pos), sftp_attr);
+    response->count--;
+
+    if (response->count==0 && (unsigned int) (response->buff + response->size - response->pos) > 0 ) {
 
 	/* version 6 supports an optional end-of-file indicator */
 
-	response->eof=(unsigned char) *pos;
+	response->eof=(unsigned char) *response->pos;
 	response->pos++;
 
     }
 
+    logoutput("read_attr_response_v06: m %i p %i", sftp_attr->type, sftp_attr->permissions);
+
+    return (unsigned int)(response->pos - keep);
 }
 
 /* translate the mask of supported sftp attributes to a fuse mask */
@@ -921,6 +936,7 @@ static struct sftp_attr_ops_s attr_ops_v06 = {
     .read_attributes			= read_attributes_v06,
     .write_attributes			= write_attributes_v06,
     .read_name_response			= read_name_response_v06,
+    .read_attr_response			= read_attr_response_v06,
     .read_sftp_features			= read_sftp_features_v06,
     .get_attribute_mask			= get_attribute_mask_v06,
 };

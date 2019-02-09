@@ -48,7 +48,7 @@
 
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 #include "path-caching.h"
 #include "fuse-fs-common.h"
@@ -69,7 +69,7 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -87,7 +87,7 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
     sftp_r.call.block.offset=0;
     sftp_r.call.block.size=0;
     sftp_r.call.block.type=type;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_block_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -139,7 +139,7 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -156,7 +156,7 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
     sftp_r.call.unblock.len=openfile->handle.name.len;
     sftp_r.call.unblock.offset=0;
     sftp_r.call.unblock.size=0;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_unblock_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;

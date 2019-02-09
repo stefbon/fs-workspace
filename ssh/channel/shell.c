@@ -130,7 +130,7 @@ int start_remote_shell(struct ssh_channel_s *channel, unsigned int *error)
 		memcpy(buffer, &payload->buffer[9], len);
 		buffer[len]='\0';
 
-		replace_cntrl_char(buffer, len);
+		replace_cntrl_char(buffer, len, REPLACE_CNTRL_FLAG_TEXT);
 		// replace_newline_char(buffer, &len);
 
 		logoutput("start_remote_shell: received %s", buffer);
@@ -172,7 +172,9 @@ unsigned int start_remote_command_shell(struct ssh_channel_s *channel, char *com
 
     }
 
-    memcpy(buffer, command, len);
+    logoutput("start_remote_command_shell");
+
+    memcpy(buffer, command, len+2);
 
     /* add CRLF to command (CR=ascii 13 LF=ascii 10) */
 
@@ -207,10 +209,12 @@ unsigned int start_remote_command_shell(struct ssh_channel_s *channel, char *com
 	    server_reply->reply=SSH_MSG_CHANNEL_DATA;
 	    server_reply->response.data.size=get_uint32(&payload->buffer[5]);
 
+	    logoutput("start_remote_command_shell: received SSH_MSG_CHANNEL_DATA");
+
 	    if (server_reply->response.data.size>0) {
 
-		//replace_cntrl_char((char *) &payload->buffer[9], server_reply->response.data.size);
-		replace_newline_char((char *) &payload->buffer[9], &server_reply->response.data.size);
+		//replace_cntrl_char((char *) &payload->buffer[9], server_reply->response.data.size, REPLACE_CNTRL_FLAG_TEXT);
+		replace_newline_char((char *) &payload->buffer[9], server_reply->response.data.size);
 
 		server_reply->response.data.ptr=malloc(server_reply->response.data.size);
 
@@ -231,6 +235,7 @@ unsigned int start_remote_command_shell(struct ssh_channel_s *channel, char *com
 	    unsigned int code=get_uint32(&payload->buffer[5]);
 
 	    server_reply->reply=SSH_MSG_CHANNEL_EXTENDED_DATA;
+	    logoutput("start_remote_command_shell: received SSH_MSG_CHANNEL_EXTENDED_DATA");
 
 	    if (code==SSH_EXTENDED_DATA_STDERR) {
 		unsigned int size=0;
@@ -243,7 +248,7 @@ unsigned int start_remote_command_shell(struct ssh_channel_s *channel, char *com
 		    char errorstring[size+1];
 
 		    memcpy(errorstring, (char *) &payload->buffer[13], size);
-		    replace_cntrl_char(errorstring, size);
+		    replace_cntrl_char(errorstring, size, REPLACE_CNTRL_FLAG_TEXT);
 		    errorstring[size]='\0';
 
 		    logoutput("start_remote_command_shell: error %s", errorstring);

@@ -42,6 +42,7 @@
 #include "main.h"
 #include "utils.h"
 #include "network-utils.h"
+#include "localsocket.h"
 
 #include "ssh-datatypes.h"
 #include "ssh-utils.h"
@@ -324,7 +325,7 @@ static int _check_serverkey_pk(FILE *fp, char *remotehost, char *remoteipv4, str
 
 /* check the server hostkey against the personal known_hosts file */
 
-int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_s *pkey, const char *what)
+int check_serverkey_openssh(struct fs_connection_s *conn, struct passwd *pwd, struct ssh_key_s *pkey, const char *what)
 {
     FILE *fp = NULL;
     unsigned int error=0;
@@ -332,7 +333,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
     char *remoteipv4=NULL;
     int result=-1;
 
-    remotehost=get_connection_hostname(fd, 1, &error);
+    remotehost=get_connection_hostname(conn, conn->io.socket.xdata.fd, 1, &error);
 
     if (remotehost==NULL) {
 
@@ -341,7 +342,7 @@ int check_serverkey_openssh(unsigned int fd, struct passwd *pwd, struct ssh_key_
 
     }
 
-    remoteipv4=get_connection_ipv4(fd, 1, &error);
+    remoteipv4=get_connection_ipv4(conn, conn->io.socket.xdata.fd, 1, &error);
 
     if (remoteipv4==NULL) {
 

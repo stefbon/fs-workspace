@@ -47,7 +47,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -68,16 +68,17 @@ extern void get_sftp_request_timeout(struct timespec *timeout);
 
 void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_request, struct entry_s *entry, struct pathinfo_s *pathinfo, struct stat *st)
 {
+    struct service_context_s *rootcontext=get_root_context(context);
     struct context_interface_s *interface=&context->interface;
     struct sftp_request_s sftp_r;
     struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, FATTR_MODE | FATTR_UID | FATTR_GID, &fuse_attr); /* uid and gid by server ?*/
-    unsigned char buffer[size];
+    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, FATTR_MODE | FATTR_UID | FATTR_GID, &fuse_attr, 0); /* uid and gid by server ?*/
+    char buffer[size];
     unsigned int error=EIO;
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -93,8 +94,8 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
     sftp_r.call.mkdir.path=(unsigned char *) pathinfo->path;
     sftp_r.call.mkdir.len=pathinfo->len;
     sftp_r.call.mkdir.size=size;
-    sftp_r.call.mkdir.buff=buffer;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.call.mkdir.buff=(unsigned char *) buffer;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_mkdir_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -115,7 +116,7 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 			struct entry_s *parent=entry->parent;
 
 			inode->nlookup++;
-			inode->nlink=2;
+			inode->st.st_nlink=2;
 
 			get_current_time(&inode->stim);
 			add_inode_context(context, inode);
@@ -141,14 +142,7 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 
     }
 
-    struct inode_s *inode=entry->inode;
-    unsigned int tmp_error=0;
-
-    remove_entry(entry, &tmp_error);
-    entry->inode=NULL;
-    destroy_entry(entry);
-
-    remove_inode(inode);
+    queue_inode_2forget(entry->inode->st.st_ino, context->unique, 0, 0);
 
     out:
 

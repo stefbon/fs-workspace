@@ -50,13 +50,14 @@
 
 int write_socket(struct ssh_session_s *session, struct ssh_packet_s *packet, unsigned int *error)
 {
+    struct socket_ops_s *sops=session->connection.io.socket.sops;
     ssize_t written=0;
     char *pos=packet->buffer;
     unsigned int left=packet->size;
 
     writesocket:
 
-    written=write(session->connection.fd, pos, left);
+    written=(* sops->send)(&session->connection.io.socket, pos, left, 0);
 
     if (written==-1) {
 

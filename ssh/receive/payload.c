@@ -70,7 +70,7 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 	int result=pthread_cond_timedwait(signal->cond, signal->mutex, expire);
 
 	if (result==ETIMEDOUT) {
-	    struct ssh_connection_s *connection=&session->connection;
+	    struct fs_connection_s *connection=&session->connection;
 
 	    pthread_mutex_unlock(signal->mutex);
 	    *error=ETIMEDOUT;
@@ -78,7 +78,7 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 	    /* is there a better error causing this timeout?
 		the timeout is possibly caused by connection problems */
 
-	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED)
+	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED)
 		*error=(connection->error>0) ? connection->error : ENOTCONN;
 
 	    return NULL;
@@ -94,11 +94,11 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 	    return NULL;
 
 	} else {
-	    struct ssh_connection_s *connection=&session->connection;
+	    struct fs_connection_s *connection=&session->connection;
 
 	    /* it's possible that a broadcast is send cause of connection problems */
 
-	    if (connection->status==SSH_CONNECTION_STATUS_DISCONNECTED) {
+	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED) {
 
 		*error=(connection->error>0) ? connection->error : ENOTCONN;
 		pthread_mutex_unlock(signal->mutex);
@@ -154,7 +154,9 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 
 void queue_ssh_payload(struct payload_queue_s *queue, struct ssh_payload_s *payload)
 {
-    struct ssh_signal_s *signal=queue->signal;
+    struct ssh_signal_s *signal=NULL;
+
+    signal=queue->signal;
 
     pthread_mutex_lock(signal->mutex);
 

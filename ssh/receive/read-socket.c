@@ -57,6 +57,7 @@
 
 static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 {
+    struct socket_ops_s *sops=session->connection.io.socket.sops;
     struct ssh_receive_s *receive=&session->receive;
     unsigned int error=0;
     int bytesread=0;
@@ -67,7 +68,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
     readbuffer:
 
-    bytesread=recv(fd, (void *) (receive->buffer + receive->read), (size_t)(receive->size - receive->read), 0);
+    bytesread=(* sops->recv)(&session->connection.io.socket, (void *) (receive->buffer + receive->read), (size_t)(receive->size - receive->read), 0);
     error=errno;
 
     // logoutput("read_ssh_data: bytesread %i", bytesread);
@@ -76,7 +77,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	pthread_mutex_unlock(&receive->mutex);
 
-	logoutput_warning("read_ssh_data: bytesread %i", bytesread);
+	logoutput_info("read_ssh_data: bytesread %i", bytesread);
 
 	/* handle error */
 
@@ -119,13 +120,13 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 		    this thread decrypt the first bytes to determine the length of the packet
 		    and will set receive->read to zero again */
 
-		logoutput("read_ssh_data: start thread");
+		// logoutput("read_ssh_data: start thread");
 
 		read_ssh_buffer(session);
 
 	    } else {
 
-		logoutput("read_ssh_data: broadcast");
+		// logoutput("read_ssh_data: broadcast");
 
 		pthread_cond_broadcast(&receive->cond);
 
@@ -146,7 +147,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 }
 
-int read_incoming_data(int fd, void *ptr, uint32_t events)
+int read_incoming_signal_ssh(int fd, void *ptr, uint32_t events)
 {
     struct ssh_session_s *session=(struct ssh_session_s *) ptr;
     int result=0;

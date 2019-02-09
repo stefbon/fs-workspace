@@ -59,8 +59,7 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
     send->flags=0;
     pthread_mutex_init(&send->mutex, NULL);
     pthread_cond_init(&send->cond, NULL);
-    send->senders.head=NULL;
-    send->senders.tail=NULL;
+    init_list_header(&send->senders, SIMPLE_LIST_TYPE_EMPTY, NULL);
     send->sending=0;
     send->newkeys.tv_sec=0;
     send->newkeys.tv_nsec=0;
@@ -72,13 +71,10 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
     encrypt->flags=0;
     memset(encrypt->ciphername, '\0', sizeof(encrypt->ciphername));
     memset(encrypt->hmacname, '\0', sizeof(encrypt->hmacname));
-    encrypt->encryptors.head=NULL;
-    encrypt->encryptors.tail=NULL;
+    init_list_header(&encrypt->encryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     encrypt->count=0;
     encrypt->max_count=0;
-    encrypt->waiters.head=NULL;
-    encrypt->waiters.tail=NULL;
-    encrypt->waiting=0;
+    init_simple_locking(&encrypt->waiters);
     encrypt->ops=NULL;
     init_ssh_string(&encrypt->cipher_key);
     init_ssh_string(&encrypt->cipher_iv);
@@ -92,16 +88,14 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
 
     compress->flags=0;
     memset(compress->name, '\0', sizeof(compress->name));
-    compress->compressors.head=NULL;
-    compress->compressors.tail=NULL;
+    init_list_header(&compress->compressors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     compress->count=0;
     compress->max_count=0; /* no limit */
-    compress->waiters.head=NULL;
-    compress->waiters.tail=NULL;
-    compress->waiting=0;
+    init_simple_locking(&compress->waiters);
     compress->ops=NULL;
 
     set_compress_none(compress);
+    return 0;
 
 }
 

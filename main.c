@@ -55,25 +55,26 @@
 #include "main.h"
 #include "utils.h"
 #include "pathinfo.h"
+#include "options.h"
 
 #include "workerthreads.h"
 #include "beventloop.h"
 #include "beventloop-signal.h"
 #include "beventloop-timer.h"
 #include "beventloop-xdata.h"
-#include "entry-management.h"
-#include "directory-management.h"
-#include "entry-utils.h"
-
-#include "options.h"
-
+#include "fuse-dentry.h"
+#include "fuse-directory.h"
+#include "fuse-utils.h"
 #include "fuse-fs.h"
 #include "fuse-interface.h"
+
 #include "workspaces.h"
 #include "workspace-utils.h"
 #include "workspace-session.h"
 #include "workspace-context.h"
 #include "fuse-fs-virtual.h"
+#include "fuse-fs-special.h"
+#include "backup/backup-common.h"
 
 #include "fschangenotify.h"
 #include "monitorsessions.h"
@@ -139,7 +140,7 @@ void run_finish_scripts()
 
 	finish_scripts=script->next;
 
-	if (script->name) logoutput("run_finish_scripts: run script %s", script->name);
+	if (script->name) logoutput_info("run_finish_scripts: run script %s", script->name);
 
 	(* script->finish)(script->ptr);
 	free(script);
@@ -157,20 +158,16 @@ void end_finish_scripts()
     pthread_mutex_destroy(&finish_scripts_mutex);
 }
 
-static void _disconnect_service(struct entry_s *entry, void *ptr)
-{
-    struct inode_s *inode=entry->inode;
-    if (inode) (* inode->fs->forget)(inode);
-}
-
 static void _disconnect_workspace(struct context_interface_s *interface)
 {
     struct service_context_s *root=get_service_context(interface);
     struct workspace_mount_s *workspace=NULL;
     unsigned int error=0;
     struct directory_s *root_directory=NULL;
+    struct list_element_s *list=NULL;
+    struct service_context_s *context=NULL;
 
-    logoutput("_disconnect_workspace");
+    logoutput_info("_disconnect_workspace");
 
     workspace=root->workspace;
     if (! workspace) return;
@@ -179,18 +176,20 @@ static void _disconnect_workspace(struct context_interface_s *interface)
     workspace->status=WORKSPACE_STATUS_UNMOUNTING;
     pthread_mutex_unlock(&workspace->mutex);
 
-    logoutput("_disconnect_workspace: umount");
+    (* interface->signal_interface)(interface, "disconnecting");
+    (* interface->signal_interface)(interface, "close");
 
-    free_fuse_interface(interface);
+    logoutput_info("_disconnect_workspace: umount");
+
     if (workspace->mountpoint.path && workspace->mountpoint.len>0) {
 
 	if (umount2(workspace->mountpoint.path, MNT_DETACH)==0) {
 
-	    logoutput("_disconnect_workspace: umounted %s", workspace->mountpoint.path);
+	    logoutput_info("_disconnect_workspace: umounted %s", workspace->mountpoint.path);
 
 	} else {
 
-	    logoutput("_disconnect_workspace: error %i (%s) umounting %s", errno, strerror(errno), workspace->mountpoint.path);
+	    logoutput_info("_disconnect_workspace: error %i (%s) umounting %s", errno, strerror(errno), workspace->mountpoint.path);
 
 	}
 
@@ -200,76 +199,61 @@ static void _disconnect_workspace(struct context_interface_s *interface)
     workspace->status=WORKSPACE_STATUS_UNMOUNTED;
     pthread_mutex_unlock(&workspace->mutex);
 
-    logoutput("_disconnect_workspace: remove inodes, entries and directories");
+    logoutput_info("_disconnect_workspace: remove inodes, entries and directories");
 
     root_directory=remove_directory(&workspace->rootinode, &error);
 
     if (root_directory) {
 
 	/* this will also close and free connections */
-	clear_directory(root_directory, _disconnect_service, NULL);
+	clear_directory(interface, root_directory);
 	destroy_directory(root_directory);
 
     }
 
-    if (workspace->contexes.head) {
-	struct list_element_s *list=NULL;
-	struct service_context_s *context=NULL;
+    list=get_list_head(&workspace->contexes, SIMPLE_LIST_FLAG_REMOVE);
 
-	list=get_list_head(&workspace->contexes.head, &workspace->contexes.tail);
+    while (list) {
 
-	while (list) {
+	context=get_container_context(list);
 
-	    context=get_container_context(list);
+	/* TODO: build some protection here */
 
-	    /* TODO: build some protection here */
+	if (context->refcount==0 || (context->flags & SERVICE_CTX_FLAG_REFCOUNTNONZERO)) {
 
-	    if (context->refcount==0 || (context->flags & SERVICE_CTX_FLAG_REFCOUNTNONZERO)) {
+	    logoutput_info("_disconnect_workspace: disconnect service %s context", context->name);
 
-		logoutput("_disconnect_workspace: disconnect service %s context", context->name);
+	    (* context->interface.signal_interface)(&context->interface, "disconnecting");
+	    (* context->interface.signal_interface)(&context->interface, "close");
+	    (* context->interface.signal_interface)(&context->interface, "free");
+	    if (context->parent) context->parent->refcount--;
+	    free_service_context(context);
 
-		(* context->interface.free)(&context->interface);
+	} else {
 
-		if (context->parent) {
-
-		    logoutput("_disconnect_workspace: parent service %s refcount %i->%i", context->parent->name, context->parent->refcount, context->parent->refcount-1);
-		    context->parent->refcount--;
-
-		}
-
-		logoutput("_disconnect_workspace: free service");
-
-		free_service_context(context);
-
-	    } else {
-
-		logoutput("_disconnect_workspace: service %s refcount %i", context->name, context->refcount);
-		add_list_element_last(&workspace->contexes.head, &workspace->contexes.tail, list);
-		context->flags|=SERVICE_CTX_FLAG_REFCOUNTNONZERO;
-
-	    }
-
-	    list=get_list_head(&workspace->contexes.head, &workspace->contexes.tail);
+	    logoutput_info("_disconnect_workspace: service %s refcount %i", context->name, context->refcount);
+	    add_list_element_last(&workspace->contexes, list);
+	    context->flags|=SERVICE_CTX_FLAG_REFCOUNTNONZERO;
 
 	}
 
+	list=get_list_head(&workspace->contexes, SIMPLE_LIST_FLAG_REMOVE);
+
     }
+
+    (* interface->signal_interface)(interface, "free");
 
 }
 
-static void disconnect_workspace(struct context_interface_s *interface)
+static void signal_workspace_context(struct context_interface_s *interface, const char *what)
 {
     struct service_context_s *context=get_service_context(interface);
     struct workspace_mount_s *workspace=context->workspace;
     struct fuse_user_s *user=workspace->user;
 
-    logoutput("disconnect_workspace");
+    logoutput_info("signal_workspace_context: what %s", what);
 
-    _disconnect_workspace(interface);
-
-    (* user->remove_workspace)(user, workspace);
-    free_service_context(context);
-    free_workspace_mount(workspace);
+    /* what to do here ? */
 
 }
 
@@ -279,7 +263,7 @@ static void disconnect_workspace(struct context_interface_s *interface)
     - xattr ?
 */
 
-static unsigned int get_option_mount(struct context_interface_s *interface, const char *name, struct context_option_s *option)
+static unsigned int get_mount_context_option(struct context_interface_s *interface, const char *name, struct context_option_s *option)
 {
     struct service_context_s *context=get_service_context(interface);
     struct workspace_base_s *base=context->workspace->base;
@@ -361,12 +345,12 @@ static unsigned int get_option_mount(struct context_interface_s *interface, cons
     } else if (strcmp(name, "do-readdirplus")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=1;
+	option->value.number=0;
 
     } else if (strcmp(name, "readdirplus-auto")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=1;
+	option->value.number=0;
 
     } else if (strcmp(name, "async-dio")==0) {
 
@@ -408,99 +392,106 @@ struct service_context_s *create_mount_context(struct fuse_user_s *user, struct 
     struct service_context_s *context=NULL;
     struct workspace_mount_s *workspace=NULL;
     unsigned int error=0;
+    char source[64];
+    char name[32];
 
     logoutput("create_mount_context: uid %i", (int) user->uid);
 
     workspace=malloc(sizeof(struct workspace_mount_s));
-    context=create_service_context(NULL, SERVICE_CTX_TYPE_WORKSPACE);
+    if (workspace==NULL || init_workspace_mount(workspace, &error)==-1) goto error;
 
-    if (! context || ! workspace) goto error;
-
-    context->workspace=workspace;
-    //add_list_element_first(&workspace->contexes.head, &workspace->contexes.tail, &context->list);
+    context=create_service_context(workspace, SERVICE_CTX_TYPE_WORKSPACE);
+    if (context==NULL) goto error;
     strcpy(context->name, "virtual");
 
-    if (init_workspace_mount(workspace, &error)==0) {
-	char source[64];
-	char name[32];
+    snprintf(source, 64, "fs-workspace");
 
-	snprintf(source, 64, "fs-workspace");
+    workspace->base=base;
+    workspace->user=user;
+    workspace->context=context;
 
-	workspace->base=base;
-	workspace->user=user;
-	workspace->context=context;
+    workspace->mountpoint.path=pathinfo->path;
+    workspace->mountpoint.len=pathinfo->len;
+    workspace->mountpoint.flags=pathinfo->flags;
+    workspace->mountpoint.refcount=pathinfo->refcount;
 
-	workspace->mountpoint.path=pathinfo->path;
-	workspace->mountpoint.len=pathinfo->len;
-	workspace->mountpoint.flags=pathinfo->flags;
-	workspace->mountpoint.refcount=pathinfo->refcount;
+    pathinfo->path=NULL;
+    pathinfo->len=0;
+    pathinfo->flags=0;
+    pathinfo->refcount=0;
 
-	pathinfo->path=NULL;
-	pathinfo->len=0;
-	pathinfo->flags=0;
-	pathinfo->refcount=0;
+    /* choose a good name for fuse fs */
 
-	if (base->type==WORKSPACE_TYPE_NETWORK) {
+    if (base->type==WORKSPACE_TYPE_NETWORK) {
 
-	    snprintf(name, 32, "network");
+	snprintf(name, 32, "network");
 
-	} else if (base->type==WORKSPACE_TYPE_DEVICES) {
+    } else if (base->type==WORKSPACE_TYPE_DEVICES) {
 
-	    snprintf(name, 32, "devices");
+	snprintf(name, 32, "devices");
 
-	} else if (base->type==WORKSPACE_TYPE_BACKUP) {
+    } else if (base->type==WORKSPACE_TYPE_BACKUP) {
 
-	    snprintf(name, 32, "backup");
+	snprintf(name, 32, "backup");
 
-	} else if (base->type==WORKSPACE_TYPE_FILE) {
+    } else if (base->type==WORKSPACE_TYPE_FILE) {
 
-	    snprintf(name, 32, "file");
+	snprintf(name, 32, "file");
 
-	} else {
+    } else {
 
-	    snprintf(name, 32, "unknown");
+	snprintf(name, 32, "unknown");
+
+    }
+
+    logoutput_info("create_mount_context: init fuse");
+
+    if (init_fuse_interface(&context->interface)==0) {
+	struct context_address_s address;
+	struct inode_link_s link;
+	int fd=-1;
+
+	context->interface.signal_context=signal_workspace_context;
+	context->interface.get_context_option=get_mount_context_option;
+
+	register_fuse_functions(&context->interface);
+	use_virtual_fs(context, &workspace->rootinode);
+	set_directory_dump(&workspace->rootinode, get_dummy_directory());
+	link.type=INODE_LINK_TYPE_CONTEXT;
+	link.link.ptr=(void *) context;
+	set_inode_link_directory(&workspace->rootinode, &link);
+
+	/* connect to the fuse interface: mount */
+	/* target address of interface is a local mountpoint */
+
+	memset(&address, 0, sizeof(struct context_address_s));
+	address.network.type=_INTERFACE_ADDRESS_NONE;
+	address.service.type=_INTERFACE_SERVICE_FUSE;
+	address.service.target.fuse.source=source;
+	address.service.target.fuse.mountpoint=workspace->mountpoint.path;
+	address.service.target.fuse.name=name;
+
+	fd=(* context->interface.connect)(user->uid, &context->interface, &address, &error);
+
+	if (fd==-1) {
+
+	    logoutput("create_mount_context: failed to mount %s", workspace->mountpoint.path);
+	    goto error;
 
 	}
 
-	logoutput("create_mount_context: init fuse");
+	if ((* context->interface.start)(&context->interface, fd, NULL)==0) {
 
-	if (init_fuse_interface(&context->interface)==0) {
-	    struct context_address_s fuse_address;
-	    union datalink_u *link=&workspace->rootinode.link;
-
-	    context->interface.disconnect=disconnect_workspace;
-	    context->interface.get_interface_option=get_option_mount;
-
-	    register_fuse_functions(&context->interface);
-	    link->data=(void *) get_dummy_directory();
-	    use_virtual_fs(context, &workspace->rootinode);
-
-	    /* connect to the fuse interface: mount */
-	    /* target address of interface is a local mountpoint */
-
-	    memset(&fuse_address, 0, sizeof(struct context_address_s));
-	    fuse_address.type=_INTERFACE_FUSE_MOUNT;
-	    fuse_address.target.fuse.source=source;
-	    fuse_address.target.fuse.mountpoint=workspace->mountpoint.path;
-	    fuse_address.target.fuse.name=name;
-
-	    if ((* context->interface.connect)(user->uid, &context->interface, &fuse_address, &error)) {
-
-		(* user->add_workspace)(user, workspace);
-		user->options |= base->type;
-
-		logoutput("create_mount_context: %s mounted", workspace->mountpoint.path);
-
-	    } else {
-
-		logoutput("create_mount_context: failed to mount %s", workspace->mountpoint.path);
-		goto error;
-
-	    }
-
+	    (* user->add_workspace)(user, workspace);
+	    user->options |= base->type;
+	    logoutput("create_mount_context: %s mounted", workspace->mountpoint.path);
+	    create_personal_workspace_mount(workspace);
 	    return context;
 
 	}
+
+	logoutput("create_mount_context: failed to start %s", workspace->mountpoint.path);
+	close(fd);
 
     }
 
@@ -520,7 +511,7 @@ static void terminate_user_workspaces(struct fuse_user_s *user)
 
     logoutput("terminate_user_workspaces");
 
-    list=get_list_head(&user->workspaces.head, &user->workspaces.tail);
+    list=get_list_head(&user->workspaces, 0);
 
     while (list) {
 
@@ -530,7 +521,6 @@ static void terminate_user_workspaces(struct fuse_user_s *user)
 	    struct service_context_s *context=workspace->context;
 
 	    _disconnect_workspace(&context->interface);
-
 	    context->workspace=NULL;
 	    free_service_context(context);
 	    workspace->context=NULL;
@@ -539,7 +529,7 @@ static void terminate_user_workspaces(struct fuse_user_s *user)
 	logoutput("terminate_user_workspaces: free mount");
 
 	free_workspace_mount(workspace);
-	list=get_list_head(&user->workspaces.head, &user->workspaces.tail);
+	list=get_list_head(&user->workspaces, 0);
 
     }
 
@@ -567,7 +557,7 @@ static void terminate_fuse_users(void *ptr)
     unsigned int hashvalue=0;
     struct simple_lock_s wlock;
 
-    logoutput("terminate_fuse_users");
+    logoutput_info("terminate_fuse_users");
     init_wlock_users_hash(&wlock);
 
     getuser:
@@ -588,7 +578,7 @@ static void terminate_fuse_users(void *ptr)
 
     }
 
-    logoutput("terminate_fuse_users: ready");
+    logoutput_info("terminate_fuse_users: ready");
 
 }
 
@@ -597,7 +587,7 @@ static void add_usersession(uid_t uid, char *what)
     struct fuse_user_s *user=NULL;
     unsigned int error=0;
 
-    logoutput("add_usersession: %i", (int) uid);
+    logoutput_info("add_usersession: %i", (int) uid);
 
     user=add_fuse_user(uid, what, &error);
 
@@ -610,7 +600,7 @@ static void add_usersession(uid_t uid, char *what)
 
 	while (base) {
 
-	    logoutput("add_usersession: testing %s", base->name);
+	    logoutput_info("add_usersession: testing %s", base->name);
 
 	    if (use_workspace_base(user, base)==1) {
 		struct pathinfo_s pathinfo=PATHINFO_INIT;
@@ -655,7 +645,7 @@ static void change_usersession(uid_t uid, char *status)
     struct fuse_user_s *user=NULL;
     struct simple_lock_s wlock;
 
-    logoutput("change_usersession");
+    logoutput_info("change_usersession");
 
     init_wlock_users_hash(&wlock);
     lock_users_hash(&wlock);
@@ -683,7 +673,7 @@ static void change_usersession(uid_t uid, char *status)
 
     unlock_users_hash(&wlock);
 
-    logoutput("change_usersession: done");
+    logoutput_info("change_usersession: done");
 
 }
 
@@ -716,33 +706,44 @@ static void workspace_signal_handler(struct beventloop_s *bloop, void *data, str
 {
     unsigned int signo=fdsi->ssi_signo;
 
+    logoutput("workspace_signal_handler: received %i", signo);
+
     if ( signo==SIGHUP || signo==SIGINT || signo==SIGTERM ) {
 
 	logoutput("workspace_signal_handler: got signal (%i): terminating", signo);
 	bloop->status=BEVENTLOOP_STATUS_DOWN;
 
+	/*
+	    TODO: send a signal to all available io contexes to stop waiting
+	*/
+
     } else if ( signo==SIGIO ) {
 
-	logoutput("workspace_signal_handler: received SIGIO signal");
+	logoutput("workspace_signal_handler: SIGIO");
 
 	/*
 	    TODO:
 	    when receiving an SIGIO signal another application is trying to open a file
 	    is this really the case?
 	    then the fuse fs is the owner!?
+
+	    note 	fdsi->ssi_pid
+			fdsi->ssi_fd
 	*/
 
     } else if ( signo==SIGPIPE ) {
 
-	logoutput("workspace_signal_handler: received SIGPIPE signal");
+	logoutput("workspace_signal_handler: SIGPIPE");
 
     } else if ( signo==SIGCHLD ) {
 
-	logoutput("workspace_signal_handler: received SIGCHLD signal");
+	logoutput("workspace_signal_handler: SIGCHLD");
 
     } else if ( signo==SIGUSR1 ) {
 
-	logoutput("workspace_signal_handler: received SIGUSR1 signal");
+	logoutput("workspace_signal_handler: SIGUSR1");
+
+	/* TODO: use to reread the configuration ?*/
 
     } else {
 
@@ -751,18 +752,17 @@ static void workspace_signal_handler(struct beventloop_s *bloop, void *data, str
     }
 
 }
-
 /* accept only connections from users with a complete session
     what api??
     SSH_MSG_CHANNEL_REQUEST...???
 */
 
-struct fs_connection_s *accept_client_connection(uid_t uid, gid_t gid, pid_t pid, void *ptr)
+struct fs_connection_s *accept_client_connection(uid_t uid, gid_t gid, pid_t pid, struct fs_connection_s *s_conn)
 {
     struct fuse_user_s *user=NULL;
     struct simple_lock_s wlock;
 
-    logoutput("accept_client_connection");
+    logoutput_info("accept_client_connection");
     init_wlock_users_hash(&wlock);
 
     lock_users_hash(&wlock);
@@ -770,12 +770,20 @@ struct fs_connection_s *accept_client_connection(uid_t uid, gid_t gid, pid_t pid
     user=lookup_fuse_user(uid);
 
     if (user) {
+	struct fs_connection_s *c_conn=malloc(sizeof(struct fs_connection_s));
+
+	if (c_conn) {
+
+	    init_connection(c_conn, FS_CONNECTION_TYPE_LOCAL, FS_CONNECTION_ROLE_CLIENT);
+	    unlock_users_hash(&wlock);
+	    return c_conn;
+
+	}
 
     }
 
     unlock:
     unlock_users_hash(&wlock);
-
     return NULL;
 }
 
@@ -785,6 +793,11 @@ int main(int argc, char *argv[])
     unsigned int error=0;
     struct bevent_xdata_s *xdata=NULL;
     struct fs_connection_s socket;
+
+    switch_logging_backend("std");
+    setlogmask(LOG_UPTO(LOG_DEBUG));
+
+    logoutput_info("%s started", argv[0]);
 
     /* parse commandline options and initialize the fuse options */
 
@@ -808,30 +821,32 @@ int main(int argc, char *argv[])
 
     if (res<0) {
 
-        fprintf(stderr, "MAIN: error daemonize.");
+        logoutput_error("MAIN: error daemonize.");
         return 1;
 
     } else if (res>0) {
 
-	fprintf(stdout, "MAIN: created a service with pid %i.\n", res);
+	logoutput_info("MAIN: created a service with pid %i.", res);
 	return 0;
 
     }
 
+    /* output to stdout/stderr is useless since daemonized */
+
+    switch_logging_backend("syslog");
+
     if (fs_options.basemap.path) {
 
-	logoutput("MAIN: reading workspaces from %s.", fs_options.basemap.path);
+	logoutput_info("MAIN: reading workspaces from %s.", fs_options.basemap.path);
 	read_workspace_files(fs_options.basemap.path);
 
     } else {
 
-	logoutput("MAIN: reading workspaces from %s.", _OPTIONS_MAIN_BASEMAP);
+	logoutput_info("MAIN: reading workspaces from %s.", _OPTIONS_MAIN_BASEMAP);
 	read_workspace_files(_OPTIONS_MAIN_BASEMAP);
 
     }
 
-    init_workerthreads(NULL);
-    set_max_numberthreads(NULL, 6); /* depends on the number of users and connected workspaces, 6 is a reasonable amount for this moment */
     init_directory_calls();
     init_special_fs();
 
@@ -842,7 +857,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput("MAIN: initialized discover group");
+	logoutput_info("MAIN: initialized discover group");
 
     }
 
@@ -855,12 +870,22 @@ int main(int argc, char *argv[])
 
     }
 
+    if (initialize_context_hashtable()==-1) {
+
+	logoutput_error("MAIN: error, cannot initialize service context hash table.");
+	goto post;
+
+    }
+
     if (initialize_fuse_users(&error)==-1) {
 
 	logoutput_error("MAIN: error, cannot initialize fuse users hash table, error: %i (%s).", error, strerror(error));
 	goto post;
 
     }
+
+    init_backuphash();
+    init_directory_hashtable();
 
     if (init_beventloop(NULL, &error)==-1) {
 
@@ -869,7 +894,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput("MAIN: creating eventloop");
+	logoutput_info("MAIN: creating eventloop");
 
     }
 
@@ -880,7 +905,7 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput("MAIN: adding signal handler");
+	logoutput_info("MAIN: adding signal handler");
 
     }
 
@@ -891,9 +916,16 @@ int main(int argc, char *argv[])
 
     } else {
 
-	logoutput("MAIN: open mountmonitor");
+	logoutput_info("MAIN: open mountmonitor");
 
     }
+
+    /* Initialize and start default threads
+	NOTE: important to start these after initializing the signal handler, if not doing this this way any signal will make the program crash */
+
+    init_workerthreads(NULL);
+    set_max_numberthreads(NULL, 6); /* depends on the number of users and connected workspaces, 6 is a reasonable amount for this moment */
+    start_default_workerthreads(NULL);
 
     if (init_fschangenotify(NULL, &error)==-1) {
 
@@ -921,34 +953,61 @@ int main(int argc, char *argv[])
 
 	    if (stat(procpath, &st)==-1) {
 
-		/* pid file found, but no process */
+		/* pid file found, but no process, so it's not running: remove the pid file */
 
 		remove_pid_file(&fs_options.socket, (pid_t) alreadyrunning);
 		alreadyrunning=0;
 		count++;
 		goto checkpidfile;
 
+	    } else {
+		int fd=0;
+
+		/* check the contents of the procfile cmdline: it should be the same as argv[0] */
+
+		fd=open(procpath, O_RDONLY);
+
+		if (fd>0) {
+		    char buffer[PATH_MAX];
+		    ssize_t bytesread=0;
+
+		    memset(buffer, '\0', PATH_MAX);
+		    bytesread=read(fd, buffer, PATH_MAX);
+		    if (bytesread>0) {
+
+			// if (strcmp(buffer, argv[0]) != 0) {
+
+			    logoutput_info("MAIN: cmdline pid %i is %s", alreadyrunning, buffer);
+
+			//}
+
+		    }
+
+		    close(fd);
+
+		}
+
 	    }
 
 	}
 
 	if (check_socket_path(&fs_options.socket, alreadyrunning)==-1) goto out;
-	init_connection(&socket, FS_CONNECTION_TYPE_LOCALSERVER);
+	init_connection(&socket, FS_CONNECTION_TYPE_LOCAL, FS_CONNECTION_ROLE_SERVER);
 
 	if (create_local_serversocket(fs_options.socket.path, &socket, NULL, accept_client_connection, &error)>=0) {
 
-	    logoutput("MAIN: created socket %s", fs_options.socket.path);
+	    logoutput_info("MAIN: created socket %s", fs_options.socket.path);
 
 	} else {
 
-	    logoutput("MAIN: error creating socket %s", fs_options.socket.path);
+	    logoutput_info("MAIN: error %i creating socket %s (%s)", error, fs_options.socket.path, strerror(error));
 	    goto out;
 
 	}
 
     } else {
 
-	logoutput("MAIN: error creating directory for socket %s", fs_options.socket.path);
+	logoutput_info("MAIN: error creating directory for socket %s", fs_options.socket.path);
 
     }
 
@@ -980,38 +1039,39 @@ int main(int argc, char *argv[])
     }
 
     process_current_sessions();
+
     res=start_beventloop(NULL);
 
     out:
 
-    // logoutput("MAIN: stop browse avahi");
+    // logoutput_info("MAIN: stop browse avahi");
     // stop_browse_avahi();
 
-    logoutput("MAIN: close sessions monitor");
+    logoutput_info("MAIN: close sessions monitor");
     close_sessions_monitor();
-
     terminate_fuse_users(NULL);
 
-    logoutput("MAIN: end fschangenotify");
+    logoutput_info("MAIN: end fschangenotify");
     end_fschangenotify();
     free_workspaces_base();
+    free_directory_hashtable();
 
-    //logoutput("MAIN: stop workerthreads");
-    //stop_workerthreads(NULL);
+    logoutput_info("MAIN: stop workerthreads");
+    stop_workerthreads(NULL);
 
     post:
 
-    logoutput("MAIN: terminate workerthreads");
+    logoutput_info("MAIN: terminate workerthreads");
 
-    // remove_special_files();
+    free_special_fs();
     // stop_workerthreads(NULL);
-
-    terminate_workerthreads(NULL, 0);
 
     run_finish_scripts();
     end_finish_scripts();
 
-    logoutput("MAIN: destroy eventloop");
+    terminate_workerthreads(NULL, 0);
+
+    logoutput_info("MAIN: destroy eventloop");
     clear_beventloop(NULL);
 
     free_fuse_users();
@@ -1021,7 +1081,7 @@ int main(int argc, char *argv[])
 
     options:
 
-    logoutput("MAIN: free options");
+    logoutput_info("MAIN: free options");
     free_options();
 
     if (error>0) {

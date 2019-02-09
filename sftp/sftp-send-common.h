@@ -48,6 +48,12 @@ int send_sftp_fsync_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_statvfs_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_fstatvfs_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_fsnotify_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_createbackup_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_comparebackup_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_getmime_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_createfile_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_writefile_ctx(void *ptr, struct sftp_request_s *sftp_r);
+int send_sftp_releasefile_ctx(void *ptr, struct sftp_request_s *sftp_r);
 
 int get_support_sftp_ctx(void *ptr, const char *name);
 void set_support_sftp_ctx(void *ptr, const char *name, int flag);

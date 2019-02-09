@@ -44,7 +44,7 @@
 #include "ssh-utils.h"
 #include "ssh-send.h"
 
-static struct list_header_s list_compress_ops={NULL, NULL};
+static struct list_header_s list_compress_ops=INIT_LIST_HEADER;
 
 struct compress_ops_s *get_compress_ops_container(struct list_element_s *list)
 {
@@ -53,13 +53,13 @@ struct compress_ops_s *get_compress_ops_container(struct list_element_s *list)
 
 void add_compress_ops(struct compress_ops_s *ops)
 {
-    add_list_element_last(&list_compress_ops.head, &list_compress_ops.tail, &ops->list);
+    add_list_element_last(&list_compress_ops, &ops->list);
 }
 
 struct compress_ops_s *get_next_compress_ops(struct compress_ops_s *ops)
 {
     if (ops) {
-	struct list_element_s *next=ops->list.next;
+	struct list_element_s *next=ops->list.n;
 
 	return (next) ? get_compress_ops_container(next) : NULL;
 

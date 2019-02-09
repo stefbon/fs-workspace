@@ -109,7 +109,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
     unsigned int pos=9;
     unsigned int len=0;
 
-    logoutput("receive_sftp_reply");
+    //logoutput_info("receive_sftp_reply");
 
     len=get_uint32(&payload->buffer[pos]);
 
@@ -144,7 +144,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
     pos++;
     sftp_header.len--;
 
-    logoutput("receive_sftp_reply: type %i", sftp_header.type);
+    // logoutput("receive_sftp_reply: type %i", sftp_header.type);
 
     switch (sftp_header.type) {
 
@@ -214,11 +214,18 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
 	    pos+=4;
 	    sftp_header.len-=4;
 
+	    //logoutput("receive_sftp_reply: A1");
+
 	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
+
+	    //logoutput("receive_sftp_reply: A2");
 
 	    (* sftp_subsystem->recv_ops->attr)(sftp_subsystem, &sftp_header);
 
+	    //logoutput("receive_sftp_reply: A3 buffer %s", (sftp_header.buffer) ? "defined" : "empty");
+
 	    if (sftp_header.buffer) free(sftp_header.buffer);
+	    //logoutput("receive_sftp_reply: A4");
 	    payload=NULL;
 	    }
 
@@ -260,7 +267,11 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
 
     }
 
+    // logoutput("receive_sftp_reply: B");
+
     if (*p_payload) free_payload(p_payload);
+
+    // logoutput("receive_sftp_reply: C");
 
 
 }

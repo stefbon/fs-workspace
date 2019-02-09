@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #define LOGGING
@@ -36,8 +37,11 @@
 #include <avahi-common/thread-watch.h>
 #include <avahi-common/malloc.h>
 #include <avahi-common/error.h>
+#include <avahi-common/domain.h>
 
+#include "utils.h"
 #include "workspace-interface.h"
+#include "discover.h"
 
 static AvahiThreadedPoll *threadedpoll = NULL;
 static AvahiClient *client = NULL;
@@ -58,7 +62,7 @@ static void service_resolver_cb(AvahiServiceResolver *r, AvahiIfIndex interface,
     		char ipv4[AVAHI_ADDRESS_STR_MAX];
 
 		avahi_address_snprint(ipv4, AVAHI_ADDRESS_STR_MAX, a);
-		add_net_service_avahi(type, hostname, ipv4, port);
+		add_net_service_generic(type, (char *)hostname, ipv4, port, DISCOVER_METHOD_AVAHI);
 
 	    }
 
@@ -87,7 +91,7 @@ static void service_browser_cb(AvahiServiceBrowser *b, AvahiIfIndex interface, A
 
 	    if (! avahi_service_resolver_new(client, interface, protocol, name, type, domain, AVAHI_PROTO_UNSPEC, 0, service_resolver_cb, NULL)) {
 
-		logoutput("service_browser_cb: failed to resolve %s", name, domain, avahi_strerror(avahi_client_errno(client)));
+		logoutput_info("service_browser_cb: failed to resolve %s", name, domain, avahi_strerror(avahi_client_errno(client)));
 
 	    }
 
@@ -98,7 +102,7 @@ static void service_browser_cb(AvahiServiceBrowser *b, AvahiIfIndex interface, A
         case AVAHI_BROWSER_REMOVE: {
 
 	    if (flags & AVAHI_LOOKUP_RESULT_LOCAL) break;
-            logoutput("service_browser_cb: remove %s %s %s", name, type, domain);
+            logoutput_info("service_browser_cb: remove %s %s %s", name, type, domain);
 
             /* send main message
         	howto translate this into ipv4, is this actual required? */
@@ -118,7 +122,7 @@ static void service_browser_cb(AvahiServiceBrowser *b, AvahiIfIndex interface, A
 
         case AVAHI_BROWSER_ALL_FOR_NOW:
 
-	    logoutput("service_browser_cb: ALL_FOR_NOW");
+	    logoutput_info("service_browser_cb: ALL_FOR_NOW");
             break;
 
     }
@@ -140,7 +144,7 @@ static void browse_servicetype(const char *type, const char *domain)
 
     if (! servicebrowser) {
 
-        logoutput("avahi_service_browser_new() failed: %s", avahi_strerror(avahi_client_errno(client)));
+        logoutput_info("avahi_service_browser_new() failed: %s", avahi_strerror(avahi_client_errno(client)));
         return;
     }
 
@@ -155,7 +159,7 @@ static void browse_cb(AvahiServiceTypeBrowser *b, AvahiIfIndex interface, AvahiP
 
         case AVAHI_BROWSER_FAILURE:
 
-            logoutput("browse_cb: failure %s", avahi_strerror(avahi_client_errno(client)));
+            logoutput_info("browse_cb: failure %s", avahi_strerror(avahi_client_errno(client)));
             return;
 
         case AVAHI_BROWSER_NEW:
@@ -164,13 +168,13 @@ static void browse_cb(AvahiServiceTypeBrowser *b, AvahiIfIndex interface, AvahiP
 
         case AVAHI_BROWSER_REMOVE:
 
-            logoutput("browse_cb: remove type '%s' in domain '%s'", type, domain);
+            logoutput_info("browse_cb: remove type '%s' in domain '%s'", type, domain);
             break;
 
         case AVAHI_BROWSER_ALL_FOR_NOW:
         case AVAHI_BROWSER_CACHE_EXHAUSTED:
 
-            logoutput("browse_cb %s", event == AVAHI_BROWSER_CACHE_EXHAUSTED ? "CACHE_EXHAUSTED" : "ALL_FOR_NOW");
+            logoutput_info("browse_cb %s", event == AVAHI_BROWSER_CACHE_EXHAUSTED ? "CACHE_EXHAUSTED" : "ALL_FOR_NOW");
             break;
     }
 
@@ -179,7 +183,7 @@ static void browse_cb(AvahiServiceTypeBrowser *b, AvahiIfIndex interface, AvahiP
 static void client_cb(AvahiClient *c, AvahiClientState state, AVAHI_GCC_UNUSED void * userdata)
 {
     if (state == AVAHI_CLIENT_FAILURE) {
-        logoutput("server connection failure: %s", avahi_strerror(avahi_client_errno(c)));
+        logoutput_info("server connection failure: %s", avahi_strerror(avahi_client_errno(c)));
         avahi_threaded_poll_quit(threadedpoll);
     }
 }
@@ -208,12 +212,12 @@ void browse_services_avahi() {
 
     if (! browser) {
 
-        logoutput("browse_services_avahi: failed to create service browser: %s", avahi_strerror(avahi_client_errno(client)));
+        logoutput_info("browse_services_avahi: failed to create service browser: %s", avahi_strerror(avahi_client_errno(client)));
         goto fail;
 
     }
 
-    logoutput("browse_services_avahi: start threaded poll");
+    logoutput_info("browse_services_avahi: start threaded poll");
 
     avahi_threaded_poll_start(threadedpoll);
     return;
@@ -245,7 +249,7 @@ fail:
 void stop_browse_avahi()
 {
 
-    logoutput("stop_browse_avahi: stop poll");
+    logoutput_info("stop_browse_avahi: stop poll");
 
     if (threadedpoll) {
 	avahi_threaded_poll_lock(threadedpoll);
@@ -253,19 +257,19 @@ void stop_browse_avahi()
 	avahi_threaded_poll_unlock(threadedpoll);
     }
 
-    logoutput("stop_browse_avahi: free client");
+    logoutput_info("stop_browse_avahi: free client");
     if (client) {
 	avahi_client_free(client);
 	client=NULL;
     }
 
-    logoutput("stop_browse_avahi: free types found");
+    logoutput_info("stop_browse_avahi: free types found");
     if (types) {
 	avahi_string_list_free(types);
 	types=NULL;
     }
 
-    logoutput("stop_browse_avahi: free poll");
+    logoutput_info("stop_browse_avahi: free poll");
     if (threadedpoll) {
 
 	avahi_threaded_poll_free(threadedpoll);

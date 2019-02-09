@@ -43,7 +43,7 @@
 #include "logging.h"
 #include "main.h"
 #include "pathinfo.h"
-#include "entry-management.h"
+#include "fuse-dentry.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"

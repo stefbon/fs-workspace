@@ -52,6 +52,9 @@ int start_channel(struct ssh_channel_s *channel, unsigned int *error)
     int result=-1;
     unsigned int seq=0;
     struct ssh_session_s *session=channel->session;
+    unsigned int dummy=0;
+
+    if (error==NULL) error=&dummy;
 
     if (!(channel->flags & CHANNEL_FLAG_TABLE)) {
 
@@ -136,6 +139,15 @@ int start_channel(struct ssh_channel_s *channel, unsigned int *error)
     }
 
     out:
+
+    if (result==0) {
+	struct ssh_signal_s *signal=channel->payload_queue.signal;
+
+	pthread_mutex_lock(signal->mutex);
+	pthread_cond_broadcast(signal->cond);
+	pthread_mutex_unlock(signal->mutex);
+
+    }
 
     return result;
 

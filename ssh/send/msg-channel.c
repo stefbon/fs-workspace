@@ -131,9 +131,15 @@ static int _send_channel_open_message(struct msg_buffer_s *mb, struct ssh_channe
 	msg_store_uint32(mb, 0);
 
     } else if (channel->type==_CHANNEL_TYPE_DIRECT_TCPIP) {
+	char *hostname=NULL, *ipv4=NULL, *ipv6=NULL;
+	char *target=NULL;
 
-	msg_write_ssh_string(mb, 'c', (void *) channel->target.tcpip.host);
-	msg_store_uint32(mb, channel->target.tcpip.port);
+	/* one of these will be set */
+	get_host_address(&channel->target.network.host, &hostname, &ipv4, &ipv6);
+	target=(hostname) ? hostname : ((ipv4) ? ipv4 : ipv6);
+
+	msg_write_ssh_string(mb, 'c', (void *) target);
+	msg_store_uint32(mb, channel->target.network.port);
 	msg_write_ssh_string(mb, 'c', (void *) "127.0.0.1");
 	msg_store_uint32(mb, 0);
 

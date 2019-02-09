@@ -20,7 +20,7 @@
 #ifndef FS_WORKSPACE_SFTP_FS_INIT_H
 #define FS_WORKSPACE_SFTP_FS_INIT_H
 
-void init_sftp_subsystem_interface(struct context_interface_s *interface);
-void set_sftp_subsystem_interface_disconnected(struct context_interface_s *interface);
+void init_sftp_filesystem_context(struct service_context_s *context);
+void set_sftp_filesystem_disconnected(struct context_interface_s *interface);
 
 #endif

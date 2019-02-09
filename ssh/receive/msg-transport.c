@@ -199,6 +199,8 @@ static void receive_msg_service_request(struct ssh_session_s *session, struct ss
 static void receive_msg_service_accept(struct ssh_session_s *session, struct ssh_payload_s *payload)
 {
 
+    logoutput("receive_msg_service_accept");
+
     pthread_mutex_lock(&session->status.mutex);
 
     if (session->status.sessionphase.status & SESSION_STATUS_DISCONNECTING) {

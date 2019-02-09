@@ -371,10 +371,11 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 	unsigned int done = fs_options.ssh.trustdb;
 
 	if (fs_options.ssh.trustdb & _OPTIONS_SSH_TRUSTDB_OPENSSH) {
+	    struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
 	    done-=_OPTIONS_SSH_TRUSTDB_OPENSSH;
 
-	    if (check_serverkey_openssh(session->connection.fd, &session->identity.pwd, pkey, (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) ? "ca" : "pk")==0) {
+	    if (check_serverkey_openssh(&session->connection, &session->identity.pwd, pkey, (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) ? "ca" : "pk")==0) {
 
 		logoutput_info("start_keyexchange: check public key server success");
 
@@ -383,6 +384,22 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 		logoutput_info("start_keyexchange: check public key server failed");
 		set_sessionphase_failed(sessionphase);
 		goto error;
+
+	    }
+
+	    /* store fp of servers hostkey */
+
+	    /* encode/decode first ?? */
+
+	    logoutput_info("start_keyexchange: creating fp server public hostkey");
+
+	    if (create_ssh_string(&hostinfo->fp, create_hash("sha1", NULL, 0, NULL, &error))>0) {
+
+		if (create_hash("sha1", keydata.ptr, keydata.len, &hostinfo->fp, &error)>0) {
+
+		    logoutput("start_keyexchange: servers fp %.*s (len=%i)", hostinfo->fp.len, hostinfo->fp.ptr, hostinfo->fp.len);
+
+		}
 
 	    }
 

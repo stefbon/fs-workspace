@@ -41,8 +41,10 @@
 
 #define LOGGING
 #include "logging.h"
+#include "utils.h"
 
-#include "workspace-interface.h"
+#include "ssh/ssh-utils.h"
+#include "discover.h"
 
 extern void add_net_service_staticfile(const char *type, char *hostname, char *ipv4, unsigned int port);
 
@@ -81,7 +83,7 @@ void browse_services_staticfile(char *file)
 	}
 
 	if (len==0) continue;
-	replace_cntrl_char(line, len);
+	replace_cntrl_char(line, len, REPLACE_CNTRL_FLAG_TEXT);
 	if (line[0] == '#' || line[0] == '|') continue;
 	start=line;
 
@@ -150,10 +152,16 @@ void browse_services_staticfile(char *file)
 
 	}
 
-	add_net_service_staticfile(type, hostname, ipv4, port);
+	add_net_service_generic(type, hostname, ipv4, port, DISCOVER_METHOD_STATICFILE);
 
     }
 
+    if (line) {
+
+	free(line);
+	line=NULL;
+
+    }
     fclose(fp);
 
 }

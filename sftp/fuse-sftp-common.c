@@ -60,91 +60,71 @@ extern void correct_time_s2c_ctx(void *ptr, struct timespec *time);
 extern void correct_time_c2s_ctx(void *ptr, struct timespec *time);
 extern unsigned char get_sftp_features(void *ptr);
 
-typedef void (* copy_attr_cb)(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr);
+typedef void (* copy_attr_cb)(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr);
 
-static void copy_attr_size(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+static void copy_attr_size(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
-    inode->size=fuse_attr->size;
+    st->st_size=fuse_attr->size;
 }
 
-static void copy_attr_mode(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+static void copy_attr_mode(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
-    mode_t mode_keep=(inode->mode & S_IFMT);
-    mode_t perm_keep=inode->mode - mode_keep;
-
-    inode->mode=perm_keep | fuse_attr->type;
+    mode_t mode_keep=(st->st_mode & S_IFMT);
+    mode_t perm_keep=st->st_mode - mode_keep;
+    st->st_mode=perm_keep | fuse_attr->type;
 }
 
-static void copy_attr_permissions(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+static void copy_attr_permissions(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
-    mode_t mode_keep=(inode->mode & S_IFMT);
+    unsigned int keep=st->st_mode;
 
-    if (mode_keep==0) {
-	inode->mode=fuse_attr->permissions | fuse_attr->type;
+    if (fuse_attr->valid[FUSE_SFTP_INDEX_TYPE]==1) {
+
+	st->st_mode=fuse_attr->permissions | fuse_attr->type;
 
     } else {
+	mode_t mode_keep=(st->st_mode & S_IFMT);
 
-	inode->mode=fuse_attr->permissions | mode_keep;
-
-    }
-
-}
-
-static void copy_attr_uid(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
-{
-    inode->uid=fuse_attr->user.uid;
-}
-
-static void copy_attr_gid(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
-{
-    inode->gid=fuse_attr->group.gid;
-}
-
-static void copy_attr_atim(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
-{
-
-    inode->atim.tv_sec=fuse_attr->atime;
-    inode->atim.tv_nsec=fuse_attr->atime_n;
-
-    correct_time_s2c_ctx(ptr, &inode->atim);
-}
-
-static void copy_attr_mtim(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
-{
-    struct timespec time;
-
-    time.tv_sec=fuse_attr->mtime;
-    time.tv_nsec=fuse_attr->mtime_n;
-
-    correct_time_s2c_ctx(ptr, &time);
-
-    /*
-	keep track the remote entry has a newer mtime
-	- when a file the remote file is changed
-    */
-
-    if (time.tv_sec>inode->mtim.tv_sec || (time.tv_sec==inode->mtim.tv_sec && time.tv_nsec>inode->mtim.tv_nsec)) {
-	struct entry_s *entry=inode->alias;
-
-	entry->flags |= _ENTRY_FLAG_REMOTECHANGED;
+	st->st_mode=fuse_attr->permissions | mode_keep;
 
     }
 
-    inode->mtim.tv_sec=time.tv_sec;
-    inode->mtim.tv_nsec=time.tv_nsec;
+    logoutput("copy_attr_permissions: pre %i post %i", keep, st->st_mode);
 
 }
 
-static void copy_attr_ctim(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+static void copy_attr_uid(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
-    inode->ctim.tv_sec=fuse_attr->ctime;
-    inode->ctim.tv_nsec=fuse_attr->ctime_n;
-
-    correct_time_s2c_ctx(ptr, &inode->ctim);
-
+    st->st_uid=fuse_attr->user.uid;
 }
 
-static void copy_attr_nothing(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+static void copy_attr_gid(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
+{
+    st->st_gid=fuse_attr->group.gid;
+}
+
+static void copy_attr_atim(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
+{
+    st->st_atim.tv_sec=fuse_attr->atime;
+    st->st_atim.tv_nsec=fuse_attr->atime_n;
+    correct_time_s2c_ctx(ptr, &st->st_atim);
+}
+
+static void copy_attr_mtim(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
+{
+    st->st_mtim.tv_sec=fuse_attr->mtime;
+    st->st_mtim.tv_nsec=fuse_attr->mtime_n;
+    correct_time_s2c_ctx(ptr, &st->st_mtim);
+}
+
+static void copy_attr_ctim(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
+{
+    st->st_ctim.tv_sec=fuse_attr->ctime;
+    st->st_ctim.tv_nsec=fuse_attr->ctime_n;
+    correct_time_s2c_ctx(ptr, &st->st_ctim);
+}
+
+static void copy_attr_nothing(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
 }
 
@@ -166,36 +146,36 @@ static copy_attr_cb copy_attr_acb[][2] = {
     - fuse_sftp_attr_s			values received from server
 */
 
-void fill_inode_attr_sftp(void *ptr, struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
+void fill_inode_attr_sftp(void *ptr, struct stat *st, struct fuse_sftp_attr_s *fuse_attr)
 {
 
     /* size */
 
-    (* copy_attr_acb[0][fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[0][fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]])(ptr, st, fuse_attr);
 
     /* owner */
 
-    (* copy_attr_acb[1][fuse_attr->valid[FUSE_SFTP_INDEX_USER]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[1][fuse_attr->valid[FUSE_SFTP_INDEX_USER]])(ptr, st, fuse_attr);
 
     /* group */
 
-    (* copy_attr_acb[2][fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[2][fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]])(ptr, st, fuse_attr);
 
     /* permissions */
 
-    (* copy_attr_acb[3][fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[3][fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]])(ptr, st, fuse_attr);
 
     /* atime */
 
-    (* copy_attr_acb[4][fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[4][fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]])(ptr, st, fuse_attr);
 
     /* mtime */
 
-    (* copy_attr_acb[5][fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[5][fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]])(ptr, st, fuse_attr);
 
     /* ctime */
 
-    (* copy_attr_acb[6][fuse_attr->valid[FUSE_SFTP_INDEX_CTIME]])(ptr, inode, fuse_attr);
+    (* copy_attr_acb[6][fuse_attr->valid[FUSE_SFTP_INDEX_CTIME]])(ptr, st, fuse_attr);
 
 }
 
@@ -235,14 +215,22 @@ void fill_inode_attr_sftp(void *ptr, struct inode_s *inode, struct fuse_sftp_att
 
 */
 
-unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_set, struct fuse_sftp_attr_s *fuse_attr)
+unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_set, struct fuse_sftp_attr_s *fuse_attr, unsigned char raw)
 {
     unsigned int fuse_supported=get_sftp_features(ptr);
     unsigned int set=0;
 
     memset(fuse_attr, 0, sizeof(struct fuse_sftp_attr_s));
 
-    set=fuse_set & fuse_supported;
+    if (raw==0) {
+
+	set=fuse_set & fuse_supported;
+
+    } else {
+
+	set=fuse_set;
+
+    }
 
     if (set & FATTR_SIZE) {
 
@@ -340,6 +328,24 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
 
     }
 
+    if (set & FATTR_ATIME) {
+	struct timespec time;
+
+	logoutput("get_attr_buffer_size: set atime");
+
+	fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]=1;
+
+	time.tv_sec=st->st_atim.tv_sec;
+	time.tv_nsec=st->st_atim.tv_nsec;
+
+	correct_time_c2s_ctx(ptr, &time);
+
+	fuse_attr->atime=time.tv_sec;
+	fuse_attr->atime_n=time.tv_nsec;
+	fuse_attr->asked |= FUSE_SFTP_ATTR_ATIME;
+
+    }
+
     fuse_attr->type=(st->st_mode & S_IFMT);
 
     /* call the write_attributes with NULL buffer: get the required length */
@@ -352,4 +358,3 @@ void init_sftp_request(struct sftp_request_s *r)
 {
     memset(r, 0, sizeof(struct sftp_request_s));
 }
-

@@ -64,29 +64,29 @@ extern void get_sftp_request_timeout(struct timespec *timeout);
 static void set_local_attributes(struct inode_s *inode, struct fuse_sftp_attr_s *fuse_attr)
 {
 
-    if (fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]==1) inode->size=fuse_attr->size;
-    if (fuse_attr->valid[FUSE_SFTP_INDEX_USER]==1) inode->uid=fuse_attr->user.uid;
-    if (fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]==1) inode->gid=fuse_attr->group.gid;
-    if (fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]==1) inode->mode=fuse_attr->permissions & fuse_attr->type;
+    if (fuse_attr->valid[FUSE_SFTP_INDEX_SIZE]==1) inode->st.st_size=fuse_attr->size;
+    if (fuse_attr->valid[FUSE_SFTP_INDEX_USER]==1) inode->st.st_uid=fuse_attr->user.uid;
+    if (fuse_attr->valid[FUSE_SFTP_INDEX_GROUP]==1) inode->st.st_gid=fuse_attr->group.gid;
+    if (fuse_attr->valid[FUSE_SFTP_INDEX_PERMISSIONS]==1) inode->st.st_mode=fuse_attr->permissions & fuse_attr->type;
 
     if (fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]==1) {
 
-	inode->atim.tv_sec=fuse_attr->atime;
-	inode->atim.tv_nsec=fuse_attr->atime_n;
+	inode->st.st_atim.tv_sec=fuse_attr->atime;
+	inode->st.st_atim.tv_nsec=fuse_attr->atime_n;
 
     }
 
     if (fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]==1) {
 
-	inode->mtim.tv_sec=fuse_attr->mtime;
-	inode->mtim.tv_nsec=fuse_attr->mtime_n;
+	inode->st.st_mtim.tv_sec=fuse_attr->mtime;
+	inode->st.st_mtim.tv_nsec=fuse_attr->mtime_n;
 
     }
 
     if (fuse_attr->valid[FUSE_SFTP_INDEX_CTIME]==1) {
 
-	inode->ctim.tv_sec=fuse_attr->ctime;
-	inode->ctim.tv_nsec=fuse_attr->ctime_n;
+	inode->st.st_ctim.tv_sec=fuse_attr->ctime;
+	inode->st.st_ctim.tv_nsec=fuse_attr->ctime_n;
 
     }
 
@@ -100,12 +100,12 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
     struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, set, &fuse_attr);
-    unsigned char buffer[size];
+    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, set, &fuse_attr, 0);
+    char buffer[size];
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
@@ -114,15 +114,15 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
-    size=write_attributes_ctx(context->interface.ptr, (char *)buffer, size, &fuse_attr);
+    size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
     sftp_r.id=0;
-    sftp_r.call.setstat.path=pathinfo->path;
+    sftp_r.call.setstat.path=(unsigned char *)pathinfo->path;
     sftp_r.call.setstat.len=pathinfo->len;
     sftp_r.call.setstat.size=size;
-    sftp_r.call.setstat.buff=buffer;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.call.setstat.buff=(unsigned char *)buffer;
+    sftp_r.fuse_request=f_request;
 
     if (send_sftp_setstat_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -181,25 +181,25 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
     struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, set, &fuse_attr);
-    unsigned char buffer[size];
+    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, set, &fuse_attr, 0);
+    char buffer[size];
 
-    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+    if ((* f_request->is_interrupted)(f_request)) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
 
     }
 
-    size=write_attributes_ctx(context->interface.ptr, (char *)buffer, size, &fuse_attr);
+    size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
     sftp_r.id=0;
-    sftp_r.call.fsetstat.handle=openfile->handle.name.name;
+    sftp_r.call.fsetstat.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.fsetstat.len=openfile->handle.name.len;
     sftp_r.call.fsetstat.size=size;
-    sftp_r.call.fsetstat.buff=buffer;
-    sftp_r.fusedata_flags=&f_request->flags;
+    sftp_r.call.fsetstat.buff=(unsigned char *)buffer;
+    sftp_r.fuse_request=f_request;
 
     /* send fsetstat cause a handle is available */
 

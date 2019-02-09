@@ -22,7 +22,11 @@
 
 /* prototypes */
 
-unsigned int get_timeinfo_server(struct ssh_session_s *session, unsigned char *buffer, unsigned int len, struct timespec *send, struct timespec *recv, unsigned int *error);
-unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, unsigned char *buffer, unsigned int size, unsigned int *error);
+unsigned int get_result_common(struct ssh_session_s *session, const char *command, struct common_buffer_s *buffer);
+
+unsigned int get_timeinfo_server(struct ssh_session_s *session, struct common_buffer_s *buffer, struct timespec *send, struct timespec *recv);
+unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
+
+unsigned int get_supported_services(struct ssh_session_s *session, struct common_buffer_s *b);
 
 #endif

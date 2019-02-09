@@ -284,6 +284,8 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
     char *r_user=NULL;
     unsigned int error=0;
 
+    logoutput("ssh_auth_pubkey");
+
     /* browse the identities */
 
     user_identity=get_next_pk_identity(pkeys, "user");
@@ -293,7 +295,11 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
 	struct ssh_pksign_s *pksign=NULL;
 	int result=-1;
 
+	logoutput("ssh_auth_pubkey: A");
+
 	init_ssh_key(&pkey, SSH_KEY_TYPE_PUBLIC, NULL);
+
+	logoutput("ssh_auth_pubkey: B");
 
 	if (read_key_param(user_identity, &pkey)==-1) {
 
@@ -301,6 +307,8 @@ struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_l
 	    goto next;
 
 	}
+
+	logoutput("ssh_auth_pubkey: C");
 
 	/* if there is a remote user with this identity take that one
 	    otherwise fall back to the local user */

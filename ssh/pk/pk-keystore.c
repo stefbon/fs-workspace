@@ -72,19 +72,18 @@ struct pk_identity_s *create_pk_identity(struct pk_list_s *pkeys, unsigned char 
 	identity->source=source;
 	identity->scope=scope;
 
-	identity->list.next=NULL;
-	identity->list.prev=NULL;
+	init_list_element(&identity->list, NULL);
 	identity->pk_list=pkeys;
 
 	identity->size=size;
 
 	if (scope==PK_IDENTITY_SCOPE_HOST) {
 
-	    add_list_element_last(&pkeys->host_list_header.head, &pkeys->host_list_header.tail, &identity->list);
+	    add_list_element_last(&pkeys->host_list_header, &identity->list);
 
 	} else {
 
-	    add_list_element_last(&pkeys->user_list_header.head, &pkeys->user_list_header.tail, &identity->list);
+	    add_list_element_last(&pkeys->user_list_header, &identity->list);
 
 	}
 
@@ -96,14 +95,14 @@ struct pk_identity_s *create_pk_identity(struct pk_list_s *pkeys, unsigned char 
 
 static void free_list_pk_identities(struct list_header_s *header)
 {
-    struct list_element_s *list = get_list_head(&header->head, &header->tail);
+    struct list_element_s *list = get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
     struct pk_identity_s *identity = NULL;
 
     while (list) {
 
 	identity = get_container_pk_identity(list);
 	free(identity);
-	list = get_list_head(&header->head, &header->tail);
+	list = get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
 
     }
 
@@ -117,14 +116,10 @@ void free_lists_public_keys(struct pk_list_s *pkeys)
 
 void init_list_public_keys(struct passwd *pwd, struct pk_list_s *pkeys)
 {
-
     memset(pkeys, 0, sizeof(struct pk_list_s));
     pkeys->pwd=pwd;
-    pkeys->user_list_header.head=NULL;
-    pkeys->user_list_header.tail=NULL;
-    pkeys->host_list_header.head=NULL;
-    pkeys->host_list_header.tail=NULL;
-
+    init_list_header(&pkeys->user_list_header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&pkeys->host_list_header, SIMPLE_LIST_TYPE_EMPTY, NULL);
 }
 
 int populate_list_public_keys(struct pk_list_s *pkeys, unsigned char source, const char *what)
@@ -172,7 +167,10 @@ int populate_list_public_keys(struct pk_list_s *pkeys, unsigned char source, con
 struct pk_identity_s *get_next_pk_identity(struct pk_list_s *pkeys, const char *what)
 {
     struct list_header_s *header=(strcmp(what, "host")==0) ? &pkeys->host_list_header : &pkeys->user_list_header;
-    struct list_element_s *list=get_list_head(&header->head, &header->tail);
+    struct list_element_s *list=get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
+
+    logoutput("get_next_pk_identity");
+
     return (list) ? get_container_pk_identity(list) : NULL;
 }
 

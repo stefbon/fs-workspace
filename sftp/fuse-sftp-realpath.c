@@ -47,7 +47,7 @@
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-#include "entry-utils.h"
+#include "fuse-utils.h"
 #include "fuse-interface.h"
 
 #include "path-caching.h"
@@ -62,9 +62,9 @@
 #include "fuse-sftp-common.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
+extern unsigned char wait_sftp_response_simple_ctx(void *ptr, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *t);
-extern unsigned int get_uint32(unsigned char *b);
+extern unsigned int get_uint32(char *b);
 
 char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *target, unsigned char **path)
 {
@@ -74,7 +74,7 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 
     sftp_r.id=0;
     sftp_r.call.realpath.path=target;
-    sftp_r.call.realpath.len=strlen(target);
+    sftp_r.call.realpath.len=strlen((const char *)target);
 
     if (send_sftp_realpath_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -90,7 +90,7 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 	    if (wait_sftp_response_simple_ctx(interface->ptr, request, &timeout, &error)==1) {
 
 		if (sftp_r.type==SSH_FXP_NAME) {
-		    unsigned char *pos=sftp_r.response.names.buff;
+		    char *pos=sftp_r.response.names.buff;
 		    unsigned int len=0;
 
 		    /*
@@ -99,9 +99,9 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 			- ATTRS
 		    */
 
-		    len=get_uint32(pos);
+		    len=get_uint32((char *)pos);
 		    memmove(pos, pos+4, len);
-		    *path=pos;
+		    *path=(unsigned char *) pos;
 		    pos+=len;
 		    *pos='\0';
 
@@ -125,6 +125,6 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 
     }
 
-    return *path;
+    return (char *) *path;
 
 }

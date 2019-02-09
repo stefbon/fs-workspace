@@ -20,6 +20,8 @@
 #ifndef FS_WORKSPACE_SFTP_STATFS_H
 #define FS_WORKSPACE_SFTP_STATFS_H
 
+#include <sys/vfs.h>
+
 void _fs_sftp_statfs(struct service_context_s *c, struct fuse_request_s *r, struct pathinfo_s *pathinfo);
 void set_fallback_statfs_sftp(struct statfs *fallback);
 

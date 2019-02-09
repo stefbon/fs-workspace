@@ -44,7 +44,7 @@
 #include "ssh-utils.h"
 #include "ssh-receive.h"
 
-static struct list_header_s list_decompress_ops={NULL, NULL};
+static struct list_header_s list_decompress_ops=INIT_LIST_HEADER;
 
 struct decompress_ops_s *get_decompress_ops_container(struct list_element_s *list)
 {
@@ -53,13 +53,13 @@ struct decompress_ops_s *get_decompress_ops_container(struct list_element_s *lis
 
 void add_decompress_ops(struct decompress_ops_s *ops)
 {
-    add_list_element_last(&list_decompress_ops.head, &list_decompress_ops.tail, &ops->list);
+    add_list_element_last(&list_decompress_ops, &ops->list);
 }
 
 struct decompress_ops_s *get_next_decompress_ops(struct decompress_ops_s *ops)
 {
     if (ops) {
-	struct list_element_s *next=ops->list.next;
+	struct list_element_s *next=ops->list.n;
 
 	return (next) ? get_decompress_ops_container(next) : NULL;
 

@@ -139,7 +139,7 @@ static unsigned int get_sftp_userinfo_command(struct ssh_session_s *session, voi
 
 }
 
-unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, char *buffer, unsigned int len, unsigned int *error)
+unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, struct common_buffer_s *buffer)
 {
     unsigned int size=get_sftp_sharedmap_command(session, name, NULL);
     char command[size+1];
@@ -149,11 +149,11 @@ unsigned int get_sftp_sharedmap(struct ssh_session_s *session, char *name, char 
 
     logoutput("get_sftp_sharedmap: command %s", command);
 
-    return get_result_common(session, command, buffer, len, error);
+    return get_result_common(session, command, buffer);
 
 }
 
-unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, char *buffer, unsigned int len, unsigned int *error)
+unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, struct common_buffer_s *buffer)
 {
     unsigned int size=get_sftp_userinfo_command(session, data, NULL);
     char command[size+1];
@@ -163,7 +163,7 @@ unsigned int get_sftp_userinfo(struct ssh_session_s *session, void *data, char *
 
     logoutput("get_sftp_userinfo: command %s", command);
 
-    return get_result_common(session, command, buffer, len, error);
+    return get_result_common(session, command, buffer);
 
 }
 
@@ -176,7 +176,7 @@ void get_timeinfo_sftp_server(struct sftp_subsystem_s *sftp)
 
 }
 
-unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, char *buffer, unsigned int size, unsigned int *error)
+unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer)
 {
     struct ssh_session_s *session=NULL;
 
@@ -198,7 +198,13 @@ unsigned int get_sftp_interface_info(struct context_interface_s *interface, cons
 
     if (strcmp(what, "sftp.userinfo")==0) {
 
-	return get_sftp_userinfo(session, data, buffer, size, error);
+	return get_sftp_userinfo(session, data, buffer);
+
+    } else if (strcmp(what, "status")==0) {
+	struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
+	struct ssh_channel_s *channel=(sftp_subsystem) ? &sftp_subsystem->channel : NULL;
+
+	return (channel) ? get_channel_interface_info(channel, buffer->ptr, buffer->size) : 0;
 
     }
 

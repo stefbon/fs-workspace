@@ -45,7 +45,7 @@
 #include "ssh-receive.h"
 #include "encryptors.h"
 
-static struct list_header_s list_encrypt_ops={NULL, NULL};
+static struct list_header_s list_encrypt_ops=INIT_LIST_HEADER;
 
 struct encrypt_ops_s *get_encrypt_ops_container(struct list_element_s *list)
 {
@@ -54,19 +54,17 @@ struct encrypt_ops_s *get_encrypt_ops_container(struct list_element_s *list)
 
 void add_encrypt_ops(struct encrypt_ops_s *ops)
 {
-    add_list_element_last(&list_encrypt_ops.head, &list_encrypt_ops.tail, &ops->list);
+    add_list_element_last(&list_encrypt_ops, &ops->list);
 }
 
 struct encrypt_ops_s *get_next_encrypt_ops(struct encrypt_ops_s *ops)
 {
     if (ops) {
-	struct list_element_s *next=ops->list.next;
-
+	struct list_element_s *next=ops->list.n;
 	return (next) ? get_encrypt_ops_container(next) : NULL;
 
     } else {
 	struct list_element_s *head=list_encrypt_ops.head;
-
 	return (head) ? get_encrypt_ops_container(head) : NULL;
 
     }

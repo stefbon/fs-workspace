@@ -51,6 +51,9 @@
 #include "ssh-send.h"
 #include "ssh-hostinfo.h"
 #include "ssh-utils.h"
+#include "utils.h"
+#include "network-utils.h"
+
 
 /*
     generic function to read the comma seperated name list of names of authentications that can continue
@@ -137,4 +140,297 @@ int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s 
 
     return result;
 
+}
+
+void init_pwlist(struct pw_list_s *pwlist)
+{
+    pwlist->type=0;
+    pwlist->pword.user=NULL;
+    pwlist->pword.pw=NULL;
+    pwlist->next=NULL;
+}
+
+void free_pwlist(struct pw_list_s *pwlist)
+{
+    struct pw_list_s *list=pwlist;
+
+    dofree:
+
+    if (list) {
+	struct pw_list_s *next=list->next;
+
+	if (list->pword.user) free(list->pword.user);
+	if (list->pword.pw) free(list->pword.pw);
+
+	free(list);
+	list=next;
+	goto dofree;
+
+    }
+
+}
+
+
+#define READ_CREDENTIALS_USER					1
+#define READ_CREDENTIALS_PW					2
+
+int read_credentials(char *path, struct pword_s *pword)
+{
+    FILE *fp=fopen(path, "r");
+    int result=0;
+
+    if (fp) {
+	size_t size=0;
+	char *line=NULL;
+	char *sep=NULL;
+
+	logoutput("read_credentials: found %s", path);
+
+	while (getline(&line, &size, fp)>0) {
+
+	    sep=memchr(line, '\n', size);
+	    if (sep) *sep='\0';
+	    size=strlen(line);
+	    if (size==0) continue;
+
+	    sep=memchr(line, '=', size);
+
+	    if (sep) {
+		char option[sep - line + 1];
+		char *value=sep + 1;
+
+		memcpy(option, line, (unsigned int)(sep - line));
+		option[(unsigned int)(sep - line + 1)]='\0';
+
+		if (strcmp(option, "user")==0) {
+
+		    pword->user=strdup(value);
+		    if (pword->user) result|=READ_CREDENTIALS_USER;
+
+		} else if (strcmp(option, "pw")==0) {
+
+		    pword->pw=strdup(value);
+		    if (pword->pw) result|=READ_CREDENTIALS_PW;
+
+		}
+
+	    }
+
+	}
+
+	if (line) free(line);
+	fclose(fp);
+
+    } else {
+
+	logoutput("read_credentials: %s tried, not open", path);
+
+    }
+
+    logoutput("read_credentials: result %i", result);
+
+    return result;
+
+}
+
+unsigned int read_private_pwlist(struct ssh_session_s *session, struct pw_list_s **pwlist)
+{
+    struct fs_connection_s *connection=&session->connection;
+    struct pw_list_s *list=*pwlist;
+    unsigned int len = strlen(session->identity.pwd.pw_dir) + 2;
+    char *hostname=NULL;
+    char *ipv4=NULL;
+    unsigned int count=0;
+    unsigned int error=0;
+    int fd=-1;
+
+    if (list) {
+	struct pword_s *pword=NULL;
+	struct pw_list_s *element=list;
+
+	while (element) {
+
+	    list=element->next;
+	    free_pwlist(element);
+	    element=list;
+
+	}
+
+	*pwlist=NULL;
+	list=NULL;
+
+    }
+
+    /* first: most generic:
+	look for the pw in ~/.auth/cred */
+
+    len = strlen(session->identity.pwd.pw_dir) + 2 + strlen(".auth/cred");
+
+    if (len>0) {
+	char path[len];
+
+	if (snprintf(path, len, "%s/.auth/cred", session->identity.pwd.pw_dir)>0) {
+	    struct pw_list_s *element=NULL;
+
+	    element=malloc(sizeof(struct pw_list_s));
+	    if (element==NULL) goto credhostname;
+	    init_pwlist(element);
+	    element->type=PW_TYPE_GLOBAL;
+
+	    if (read_credentials(path, &element->pword)==(READ_CREDENTIALS_USER|READ_CREDENTIALS_PW)) {
+
+		element->next=*pwlist;
+		*pwlist=element;
+		count++;
+
+	    } else {
+
+		free_pwlist(element);
+
+	    }
+
+	}
+
+    }
+
+    credhostname:
+
+    fd=connection->io.socket.xdata.fd;
+    if (fd>0) hostname=get_connection_hostname(connection, fd, 1, &error);
+
+    if (hostname) {
+	char *sep=NULL;
+
+	/* look the credentials file for the domain */
+
+	sep=strchr(hostname, '.');
+
+	if (sep) {
+	    char *domain=NULL;
+
+	    domain=sep+1;
+	    *sep='\0';
+
+	    if (strlen(domain)>0) {
+
+		len = strlen(session->identity.pwd.pw_dir) + 2 + strlen(".auth/cred.") + strlen(domain);
+
+		char path[len];
+
+		if (snprintf(path, len, "%s/.auth/cred.%s", session->identity.pwd.pw_dir, domain)>0) {
+		    struct pw_list_s *element=NULL;
+
+		    element=malloc(sizeof(struct pw_list_s));
+		    if (element==NULL) goto credfullhostname;
+		    init_pwlist(element);
+		    element->type=PW_TYPE_DOMAIN;
+
+		    if (read_credentials(path, &element->pword)==(READ_CREDENTIALS_USER|READ_CREDENTIALS_PW)) {
+
+			element->next=*pwlist;
+			*pwlist=element;
+			count++;
+
+		    } else {
+
+			free_pwlist(element);
+
+		    }
+
+		}
+
+	    }
+
+	    *sep='.';
+
+	}
+
+	credfullhostname:
+
+	len = strlen(session->identity.pwd.pw_dir) + 2 + strlen(".auth/cred.") + strlen(hostname);
+	char path[len];
+
+	if (snprintf(path, len, "%s/.auth/cred.%s", session->identity.pwd.pw_dir, hostname)>0) {
+	    struct pw_list_s *element=NULL;
+
+	    element=malloc(sizeof(struct pw_list_s));
+	    if (element==NULL) {
+
+		free(hostname);
+		goto credipv4;
+
+	    }
+	    init_pwlist(element);
+	    element->type=PW_TYPE_HOSTNAME;
+
+	    if (read_credentials(path, &element->pword)==(READ_CREDENTIALS_USER|READ_CREDENTIALS_PW)) {
+
+		element->next=*pwlist;
+		*pwlist=element;
+		count++;
+
+	    } else {
+
+		free_pwlist(element);
+
+	    }
+
+	}
+
+	free(hostname);
+
+    }
+
+    credipv4:
+
+    fd=connection->io.socket.xdata.fd;
+    if (fd>0) ipv4=get_connection_ipv4(connection, fd, 1, &error);
+
+    if (ipv4) {
+
+	len = strlen(session->identity.pwd.pw_dir) + 2 + strlen(".auth/cred.") + strlen(ipv4);
+	char path[len];
+
+	if (snprintf(path, len, "%s/.auth/cred.%s", session->identity.pwd.pw_dir, ipv4)>0) {
+	    struct pw_list_s *element=NULL;
+
+	    element=malloc(sizeof(struct pw_list_s));
+	    if (element==NULL) {
+
+		free(ipv4);
+		goto out;
+
+	    }
+	    init_pwlist(element);
+	    element->type=PW_TYPE_IPV4;
+
+	    if (read_credentials(path, &element->pword)==(READ_CREDENTIALS_USER|READ_CREDENTIALS_PW)) {
+
+		element->next=*pwlist;
+		*pwlist=element;
+		count++;
+
+	    } else {
+
+		free_pwlist(element);
+
+	    }
+
+	}
+
+	free(ipv4);
+
+    }
+
+    out:
+
+    logoutput("read_private_pwlist: count %i", count);
+    return count;
+
+}
+
+struct pw_list_s *get_next_pwlist(struct pw_list_s *pwlist, struct pw_list_s *element)
+{
+    if (element==NULL) return pwlist;
+    return element->next;
 }

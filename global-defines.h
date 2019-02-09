@@ -20,10 +20,13 @@
 #ifndef _GLOBAL_DEFINES_H
 #define _GLOBAL_DEFINES_H
 
-#define FUSE_USE_VERSION 30
-//#define _REENTRANT
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
+
+#ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 500
+#endif
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
