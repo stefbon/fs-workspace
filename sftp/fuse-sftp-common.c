@@ -52,9 +52,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
+#include "common-protocol.h"
 #include "fuse-sftp-common.h"
-#include "sftp-attr-common.h"
+#include "attr-common.h"
 
 extern void correct_time_s2c_ctx(void *ptr, struct timespec *time);
 extern void correct_time_c2s_ctx(void *ptr, struct timespec *time);
@@ -294,8 +294,6 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
     if (set & FATTR_MTIME) {
 	struct timespec time;
 
-	logoutput("get_attr_buffer_size: set mtime");
-
 	fuse_attr->valid[FUSE_SFTP_INDEX_MTIME]=1;
 	if (set & FATTR_MTIME_NOW) get_current_time(&st->st_mtim);
 
@@ -307,6 +305,8 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
 	fuse_attr->mtime=time.tv_sec;
 	fuse_attr->mtime_n=time.tv_nsec;
 	fuse_attr->asked |= FUSE_SFTP_ATTR_MTIME;
+
+	logoutput("get_attr_buffer_size: set mtime: %li:%li corrected %li:%li", st->st_mtim.tv_sec, st->st_mtim.tv_nsec, time.tv_sec, time.tv_nsec);
 
     }
 
@@ -325,24 +325,6 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
 	fuse_attr->ctime=time.tv_sec;
 	fuse_attr->ctime_n=time.tv_nsec;
 	fuse_attr->asked |= FUSE_SFTP_ATTR_CTIME;
-
-    }
-
-    if (set & FATTR_ATIME) {
-	struct timespec time;
-
-	logoutput("get_attr_buffer_size: set atime");
-
-	fuse_attr->valid[FUSE_SFTP_INDEX_ATIME]=1;
-
-	time.tv_sec=st->st_atim.tv_sec;
-	time.tv_nsec=st->st_atim.tv_nsec;
-
-	correct_time_c2s_ctx(ptr, &time);
-
-	fuse_attr->atime=time.tv_sec;
-	fuse_attr->atime_n=time.tv_nsec;
-	fuse_attr->asked |= FUSE_SFTP_ATTR_ATIME;
 
     }
 

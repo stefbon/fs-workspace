@@ -53,10 +53,10 @@
 #include "path-caching.h"
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-common.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "common.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 #include "fuse-fs-special.h"
@@ -96,24 +96,6 @@ static void _cb_created(struct entry_s *entry, struct create_entry_s *ce)
     struct inode_s *inode=entry->inode;
     struct fuse_opendir_s *fo=ce->tree.opendir;
     struct directory_s *directory=(* ce->get_directory)(ce);
-
-    if (directory) {
-
-	if (directory->flags & _DIRECTORY_FLAG_DUMMY) {
-
-	    logoutput("_cb_created: directory DUMMY");
-
-	} else {
-
-	    logoutput("_cb_created: directory NOT DUMMY");
-
-	}
-
-    } else {
-
-	logoutput("_cb_created: directory NOT defined");
-
-    }
 
     fill_inode_stat(inode, &ce->cache.st); /* from ce cache */
     inode->st.st_mode=ce->cache.st.st_mode;

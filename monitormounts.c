@@ -35,6 +35,7 @@
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <sys/mount.h>
+#include <sys/sysmacros.h>
 
 #include <pthread.h>
 
@@ -82,9 +83,11 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 
     while (entry) {
 
-	logoutput("update_mountinfo: found %s at %s", entry->fs, entry->mountpoint);
+	if (entry->fs==NULL || entry->source==NULL || entry->mountpoint==NULL) goto next;
 
-	if (strncmp(entry->fs, "fuse.", 5)==0 ) {
+	logoutput("update_mountinfo: found %s:%s at %s", entry->source, entry->fs, entry->mountpoint);
+
+	if (((strlen(entry->fs)==4 && memcmp(entry->fs, "fuse", 4)==0) || (strlen(entry->fs)>5 && memcmp(entry->fs, "fuse.", 5)==0)) && strcmp(entry->source, "fs-workspace")==0) {
 	    struct service_context_s *context=NULL;
 
 	    error=0;
@@ -98,7 +101,16 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 		if (context->workspace) {
 		    struct workspace_mount_s *workspace=context->workspace;
 
-		    if (strcmp(entry->mountpoint, workspace->mountpoint.path)==0) break;
+		    if (strcmp(entry->mountpoint, workspace->mountpoint.path)==0) {
+
+			if (workspace->dev==0) {
+
+			    workspace->dev=makedev(entry->major, entry->minor);
+			    break;
+
+			}
+
+		    }
 
 		}
 
@@ -132,7 +144,7 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 
 	}
 
-	logoutput("update_mountinfo: next");
+	next:
 	entry=next(&index, generation, MOUNTLIST_ADDED);
 
     }
@@ -141,45 +153,10 @@ static int update_mountinfo(unsigned long generation, struct mountentry_s *(*nex
 
 }
 
-void umount_workspace_mounts(struct workspace_mount_s *workspace)
-{
-    unsigned int error=0;
-    void *index=NULL;
-    struct mountentry_s *entry=NULL;
-    unsigned int len=0;
-
-    lock_mountlist("write", &error);
-
-    entry=get_next_mountentry(&index, 0, MOUNTLIST_CURRENT);
-
-    while (entry) {
-
-	len=strlen(entry->mountpoint);
-
-	if (len>workspace->mountpoint.len) {
-
-	    if (strncmp(entry->mountpoint, workspace->mountpoint.path, len)==0 && entry->mountpoint[len]=='/') {
-
-		umount2(entry->mountpoint, MNT_DETACH);
-
-	    }
-
-	}
-
-	entry=get_next_mountentry(&index, 0, MOUNTLIST_CURRENT);
-
-    }
-
-    unlock_mountlist("write", &error);
-
-}
-
 static unsigned char ignore_mountinfo (char *source, char *fs, char *path)
 {
-
-    if (strncmp(fs, "fuse.", 5)==0) return 0;
+    if (fs && ((strlen(fs)==4 && strcmp(fs, "fuse")==0) || (strlen(fs)>5 && strncmp(fs, "fuse.", 5)==0)) && source && strcmp(source, "fs-workspace")==0) return 0;
     return 1;
-
 }
 
 int add_mountinfo_watch(struct beventloop_s *loop, unsigned int *error)
@@ -215,5 +192,106 @@ int add_mountinfo_watch(struct beventloop_s *loop, unsigned int *error)
     }
 
     return -1;
+
+}
+
+void umount_mounts_found(struct fuse_user_s *user, unsigned int flags)
+{
+    unsigned int error=0;
+    struct mountentry_s *entry=NULL;
+    void *index=NULL;
+    struct simple_lock_s lock;
+
+    lock_mountlist_read(&lock);
+
+    entry=get_next_mountentry(&index, 0, MOUNTLIST_CURRENT);
+
+    while (entry) {
+
+	if (entry->fs==NULL || entry->source==NULL || entry->mountpoint==NULL) goto nextmountentry;
+
+	if (((strlen(entry->fs)==4 && memcmp(entry->fs, "fuse", 4)==0) || (strlen(entry->fs)>5 && memcmp(entry->fs, "fuse.", 5)==0)) && strcmp(entry->source, "fs-workspace")==0) {
+	    struct service_context_s *context=NULL;
+
+	    error=0;
+
+	    context=get_next_service_context(NULL, "FUSE");
+
+	    while (context) {
+
+		if (context->workspace) {
+		    struct workspace_mount_s *workspace=context->workspace;
+
+		    if (user && workspace->user!=user) goto nextcontext;
+
+		    /* dealing with the root of the workspace ? */
+
+    		    if (strlen(entry->mountpoint)==workspace->mountpoint.len && memcmp(entry->mountpoint, workspace->mountpoint.path, workspace->mountpoint.len)==0) {
+
+			if (flags & UMOUNT_WORKSPACE_FLAG_MOUNT) {
+
+			    logoutput("umount_mounts_found: umount %s", entry->mountpoint);
+			    umount2(entry->mountpoint, MNT_DETACH);
+
+			} else {
+
+			    logoutput("umount_mounts_found: found %s", entry->mountpoint);
+
+			}
+
+			goto nextmountentry;
+
+		    }
+
+		    /* dealing with a mount on another location? (same major:minor) */
+
+		    if (workspace->dev==makedev(entry->major, entry->minor)) {
+
+			if (flags & UMOUNT_WORKSPACE_FLAG_EXTRA) {
+
+			    logoutput("umount_mounts_found: umount %s", entry->mountpoint);
+			    umount2(entry->mountpoint, MNT_DETACH);
+
+			} else {
+
+			    logoutput("umount_mounts_found: found %s", entry->mountpoint);
+
+			}
+
+			goto nextmountentry;
+
+		    }
+
+		}
+
+		nextcontext:
+		context=get_next_service_context(context, "FUSE");
+
+	    }
+
+	    /* when here and no context found: it's an unmanaged mount */
+
+	    if (context==NULL) {
+
+		if (flags & (UMOUNT_WORKSPACE_FLAG_EXTRA | UMOUNT_WORKSPACE_FLAG_MOUNT)) {
+
+		    logoutput("umount_mounts_found: umount %s", entry->mountpoint);
+
+		} else {
+
+		    logoutput("umount_mounts_found: found %s", entry->mountpoint);
+
+		}
+
+	    }
+
+	}
+
+	nextmountentry:
+	entry=get_next_mountentry(&index, 0, MOUNTLIST_CURRENT);
+
+    }
+
+    unlock_mountlist(&lock);
 
 }

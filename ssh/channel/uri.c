@@ -53,7 +53,7 @@ static int reverse_check_uri_socket(char *path, char *uri)
 
     if (snprintf(test, len+10, "socket://%s", path)>0) {
 
-	logoutput("reverse_check_uri_socket: compare %s with uri %s", test, uri);
+	logoutput_debug("reverse_check_uri_socket: compare %s with uri %s", test, uri);
 
 	if (strcmp(uri, test)==0) result=0;
 
@@ -236,7 +236,7 @@ unsigned char get_channel_type_uri(char *uri)
 {
     unsigned int len=strlen(uri);
 
-    logoutput("get_channel_type_uri");
+    logoutput_debug("get_channel_type_uri");
 
     if (len>9 && strncmp(uri, "socket://", 9)==0) {
 	char *path=(char *)(uri + 9);

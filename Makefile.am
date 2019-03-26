@@ -27,17 +27,17 @@ fs_workspace_SOURCES =  common-utils/fuse-directory.c common-utils/fuse-dentry.c
 			common-utils/logging.c \
 			handlemime.c \
 			mimetype.cpp \
-			backup/backup-common.c \
+			backup/backup-common.c backup/send.c \
 			fuse-sftp.c fuse-backup.c fuse-network.c \
-			sftp/fuse-sftp-common.c \
-			sftp/fuse-sftp-fs-init.c sftp/fuse-sftp-lock.c  sftp/fuse-sftp-mk.c sftp/fuse-sftp-fsnotify.c \
-			sftp/fuse-sftp-getattr.c sftp/fuse-sftp-lookup.c sftp/fuse-sftp-open.c sftp/fuse-sftp-opendir.c sftp/fuse-sftp-symlink.c \
+			sftp/fuse-sftp-common.c sftp/fuse-sftp-extensions.c \
+			sftp/fuse-sftp-fs-init.c sftp/fuse-sftp-lock.c  sftp/fuse-sftp-mk.c \
+			sftp/fuse-sftp-getattr.c sftp/fuse-sftp-lookup.c sftp/fuse-sftp-fsnotify.c sftp/fuse-sftp-open.c sftp/fuse-sftp-opendir.c sftp/fuse-sftp-symlink.c \
 			sftp/fuse-sftp-rm.c sftp/fuse-sftp-setattr.c sftp/fuse-sftp-statfs.c sftp/fuse-sftp-realpath.c sftp/fuse-sftp-xattr.c \
-			sftp/sftp-attr-common.c sftp/sftp-attr-v03.c sftp/sftp-attr-v04.c sftp/sftp-attr-v05.c sftp/sftp-attr-v06.c \
-			sftp/sftp-common.c sftp/sftp-request-hash.c sftp/sftp-common-admin.c sftp/sftp-common-utils.c \
-			sftp/sftp-recv-common.c sftp/sftp-recv-v03.c sftp/sftp-recv-v04.c sftp/sftp-recv-v05.c sftp/sftp-recv-v06.c \
-			sftp/sftp-send-common.c sftp/sftp-send-v03.c sftp/sftp-send-v04.c sftp/sftp-send-v05.c sftp/sftp-send-v06.c \
-			sftp/sftp-user-v03.c sftp/sftp-user-v04.c sftp/sftp-usermapping.c \
+			sftp/attr-common.c sftp/attr-v03.c sftp/attr-v04.c sftp/attr-v05.c sftp/attr-v06.c \
+			sftp/common.c sftp/extensions.c sftp/request-hash.c sftp/common-admin.c sftp/common-utils.c \
+			sftp/recv-common.c sftp/recv-v03.c sftp/recv-v04.c sftp/recv-v05.c sftp/recv-v06.c \
+			sftp/send-common.c sftp/send-v03.c sftp/send-v04.c sftp/send-v05.c sftp/send-v06.c \
+			sftp/user-v03.c sftp/user-v04.c sftp/usermapping.c sftp/time.c \
 			ssh/fuse-ssh-fs-init.c \
 			ssh/channel/command.c ssh/channel/exec.c ssh/channel/init.c ssh/channel/payload.c ssh/channel/shell.c ssh/channel/startclose.c \
 			ssh/channel/table.c ssh/channel/uri.c ssh/channel/utils.c \

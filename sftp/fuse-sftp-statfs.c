@@ -56,9 +56,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 
@@ -70,7 +70,6 @@ extern void get_sftp_request_timeout(struct timespec *timeout);
 
 extern unsigned int get_uint32(unsigned char *buf);
 extern uint64_t get_uint64(unsigned char *buf);
-
 static struct statfs fallback_statfs;
 
 static void _fs_sftp_statfs_unsupp(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo)
@@ -87,7 +86,6 @@ static void _fs_sftp_statfs_unsupp(struct service_context_s *context, struct fus
     statfs_out.st.frsize=fallback_statfs.f_bsize;
 
     statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
-    // statfs_out.st.ffree=(uint64_t) (UINT64_MAX - statfs_out.st.files);
     statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
 
     statfs_out.st.namelen=255;
@@ -114,7 +112,7 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 
     }
 
-    if (get_support_sftp_ctx(context->interface.ptr, "statvfs@openssh.com")==-1) {
+    if ((context->interface.backend.sftp.flags & CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH)==0) {
 
 	_fs_sftp_statfs_unsupp(context, f_request, pathinfo);
 	return;
@@ -126,11 +124,13 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
     sftp_r.id=0;
-    sftp_r.call.statvfs.path=(unsigned char *) pathinfo->path;
-    sftp_r.call.statvfs.len=pathinfo->len;
+    sftp_r.call.extension.len=strlen("statvfs@openssh.com");
+    sftp_r.call.extension.name="statvfs@openssh.com";
+    sftp_r.call.extension.size=pathinfo->len;
+    sftp_r.call.extension.data=pathinfo->path;
     sftp_r.fuse_request=f_request;
 
-    if (send_sftp_statvfs_ctx(context->interface.ptr, &sftp_r)==0) {
+    if (send_sftp_extension_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
 
 	request=create_sftp_request_ctx(context->interface.ptr, &sftp_r, &error);
@@ -184,7 +184,6 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 		    statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
 		    pos+=8;
 
-		    // statfs_out.st.ffree=(uint64_t) ((uint64_t) -1) - statfs_out.st.files;
 		    statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
 		    pos+=8;
 
@@ -207,16 +206,14 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 		    statfs_out.st.padding=0;
 
 		    reply_VFS_data(f_request, (char *) &statfs_out, sizeof(struct fuse_statfs_out));
-
 		    free(sftp_r.response.extension.buff);
-
 		    return;
 
 		} else if (sftp_r.type==SSH_FXP_STATUS) {
 
 		    if (sftp_r.response.status.linux_error==EOPNOTSUPP) {
 
-			set_support_sftp_ctx(context->interface.ptr, "statvfs@openssh.com", -1);
+			context->interface.backend.sftp.flags -= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH;
 			_fs_sftp_statfs_unsupp(context, f_request, pathinfo);
 			return;
 

@@ -25,10 +25,6 @@ void free_hostinfo(struct ssh_session_s *session);
 
 void set_time_correction_server_behind(struct ssh_session_s *session, struct timespec *delta);
 void set_time_correction_server_ahead(struct ssh_session_s *session, struct timespec *delta);
-
-void correct_time_s2c(struct ssh_session_s *session, struct timespec *time);
-void correct_time_c2s(struct ssh_session_s *session, struct timespec *time);
-
 void set_time_delta(struct ssh_session_s *session, struct timespec *send, struct timespec *recv, struct timespec *output);
 
 #endif

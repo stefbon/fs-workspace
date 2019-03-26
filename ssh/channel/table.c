@@ -71,26 +71,16 @@ struct ssh_channel_s *lookup_session_channel_for_data(struct channel_table_s *ta
     unsigned int hashvalue = 0;
     struct ssh_channel_s *channel=NULL;
 
-    //logoutput("lookup_session_channel_for_data: table %s nr %i size %i", (table) ? "defined" : "notdefined", nr, table->table_size);
-
     hashvalue = nr % CHANNELS_TABLE_SIZE;
     channel=table->hash[hashvalue].head;
 
-    // logoutput("lookup_session_channel_for_data: head %s", (channel) ? "defined" : "notdefined");
-
     while (channel) {
-
-	// logoutput("lookup_session_channel_for_data: found %i", channel->local_channel);
 
 	if (channel->local_channel==nr) {
 	    struct ssh_payload_s *payload=*p_payload;
 
-	    // logoutput("lookup_session_channel_for_data: a");
-
 	    (* channel->process_incoming_bytes)(channel, payload->len);
-	    // logoutput("lookup_session_channel_for_data: b");
 	    (* channel->receive_msg_channel_data)(channel, p_payload);
-	    // logoutput("lookup_session_channel_for_data: c");
 	    break;
 
 	}

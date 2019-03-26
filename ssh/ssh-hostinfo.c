@@ -136,18 +136,6 @@ void init_hostinfo(struct ssh_session_s *session)
 
 }
 
-void correct_time_s2c(struct ssh_session_s *session, struct timespec *time)
-{
-    struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
-    (* hostinfo->correct_time_s2c)(session, time);
-}
-
-void correct_time_c2s(struct ssh_session_s *session, struct timespec *time)
-{
-    struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
-    (* hostinfo->correct_time_c2s)(session, time);
-}
-
 /*
     this function will get the remote user to use to connect
     if there is a remote user set in the configuration

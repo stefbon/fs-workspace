@@ -127,7 +127,34 @@ static unsigned int get_ssh_context_option(struct context_interface_s *interface
 	option->type=_INTERFACE_OPTION_INT;
 	option->value.number=(unsigned int) fs_options.ssh.exec_timeout;
 
-    } else if (strcmp(name, "option:sftp.usermapping.user-unknown")==0) {
+    } else if (strcmp(name, "io:shared-mutex")==0) {
+	struct service_context_s *root_context=get_root_context(context);
+
+	/* get the "root" shared mutex from fuse */
+
+	option->type=_INTERFACE_OPTION_PVOID;
+	option->value.data=(void *) get_fuse_pthread_mutex(&root_context->interface);
+
+    } else if (strcmp(name, "io:shared-cond")==0) {
+	struct service_context_s *root_context=get_root_context(context);
+
+	/* get the "root" shared cond from fuse */
+
+	option->type=_INTERFACE_OPTION_PVOID;
+	option->value.data=(void *) get_fuse_pthread_cond(&root_context->interface);
+
+    }
+
+    return (unsigned int) option->type;
+}
+
+static unsigned int get_sftp_context_option(struct context_interface_s *interface, const char *name, struct context_option_s *option)
+{
+    struct service_context_s *context=get_service_context(interface);
+
+    logoutput_info("get_sftp_context_option: name %s", name);
+
+    if (strcmp(name, "option:sftp.usermapping.user-unknown")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
 	option->value.ptr=fs_options.sftp.usermapping_user_unknown;
@@ -165,36 +192,64 @@ static unsigned int get_ssh_context_option(struct context_interface_s *interface
 	option->type=_INTERFACE_OPTION_INT;
 	option->value.number=fs_options.sftp.packet_maxsize;
 
-    } else if (strcmp(name, "option:sftp.show_domainname")==0) {
+    } else if (strcmp(name, "option:sftp:correcttime")==0) {
 
 	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=(fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SHOW_DOMAINNAME) ? 1 : 0;
+	option->value.number=1;
 
-    } else if (strcmp(name, "option:sftp.home_use_remotename")==0) {
+    }
 
-	option->type=_INTERFACE_OPTION_INT;
-	option->value.number=(fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME) ? 1 : 0;
+    return (unsigned int) option->type;
+}
 
-    } else if (strcmp(name, "option:sftp.network_name")==0) {
+static unsigned int get_backup_context_option(struct context_interface_s *interface, const char *name, struct context_option_s *option)
+{
+    struct service_context_s *context=get_service_context(interface);
+
+    logoutput_info("get_backup_context_option: name %s", name);
+
+    if (strcmp(name, "option:sftp.usermapping.user-unknown")==0) {
 
 	option->type=_INTERFACE_OPTION_PCHAR;
-	option->value.ptr=fs_options.sftp.network_name;
+	option->value.ptr=fs_options.sftp.usermapping_user_unknown;
 
-    } else if (strcmp(name, "fuse:mount.shared-mutex")==0) {
-	struct service_context_s *root_context=get_root_context(context);
+    } else if (strcmp(name, "option:sftp.usermapping.user-nobody")==0) {
 
-	/* get the "root" shared mutex from fuse */
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.usermapping_user_nobody;
 
-	option->type=_INTERFACE_OPTION_PVOID;
-	option->value.data=(void *) get_fuse_pthread_mutex(&root_context->interface);
+    } else if (strcmp(name, "option:sftp.usermapping.type")==0) {
 
-    } else if (strcmp(name, "fuse:mount.shared-cond")==0) {
-	struct service_context_s *root_context=get_root_context(context);
+	option->type=_INTERFACE_OPTION_PCHAR;
 
-	/* get the "root" shared cond from fuse */
+	if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_NONE) {
 
-	option->type=_INTERFACE_OPTION_PVOID;
-	option->value.data=(void *) get_fuse_pthread_cond(&root_context->interface);
+	    option->value.ptr="none";
+
+	} else if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_MAP) {
+
+	    option->value.ptr="map";
+
+	} else if (fs_options.sftp.usermapping_type==_OPTIONS_SFTP_USERMAPPING_FILE) {
+
+	    option->value.ptr="file";
+
+	}
+
+    } else if (strcmp(name, "option:sftp.usermapping.file")==0) {
+
+	option->type=_INTERFACE_OPTION_PCHAR;
+	option->value.ptr=fs_options.sftp.usermapping_file;
+
+    } else if (strcmp(name, "option:sftp.packet.maxsize")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=fs_options.sftp.packet_maxsize;
+
+    } else if (strcmp(name, "option:sftp:correcttime")==0) {
+
+	option->type=_INTERFACE_OPTION_INT;
+	option->value.number=0; /* no correction of timestamps due to clock skew */
 
     }
 
@@ -220,22 +275,9 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 
     replace_cntrl_char(name, len, REPLACE_CNTRL_FLAG_TEXT);
     count=skip_heading_spaces(name, len);
-
-    if (count>0) {
-
-	logoutput("add_shared_map_sftp: skipped heading %i spaces name");
-	len-=count;
-
-    }
-
+    if (count>0) len-=count;
     count=skip_trailing_spaces(name, len, SKIPSPACE_FLAG_REPLACEBYZERO);
-
-    if (count>0) {
-
-	logoutput("add_shared_map_sftp: skipped trailing %i spaces name");
-	len-=count;
-
-    }
+    if (count>0) len-=count;
 
     if (strcmp(name, "home")==0 && (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_HOME_USE_REMOTENAME)) {
 	struct common_buffer_s buffer;
@@ -255,22 +297,9 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 
 	    replace_cntrl_char(tmp, size, REPLACE_CNTRL_FLAG_TEXT);
 	    count=skip_heading_spaces(tmp, size);
-
-	    if (count>0) {
-
-		logoutput("add_shared_map_sftp: skipped heading %i spaces name");
-		size-=count;
-
-	    }
-
+	    if (count>0) size-=count;
 	    count=skip_trailing_spaces(tmp, size, SKIPSPACE_FLAG_REPLACEBYZERO);
-
-	    if (count>0) {
-
-		logoutput("add_shared_map_sftp: skipped trailing %i spaces name");
-		size-=count;
-
-	    }
+	    if (count>0) size-=count;
 
 	    xname.name=tmp;
 	    xname.len=strlen(tmp);
@@ -377,14 +406,22 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
     memset(&address, 0, sizeof(struct context_address_s));
     address.network.type=_INTERFACE_ADDRESS_NONE;
     address.service.type=_INTERFACE_SERVICE_SFTP;
-
-    strncpy(address.service.target.sftp.name, name, sizeof(address.service.target.sftp.name));
-
+    address.service.target.sftp.name=name;
     strcpy(context->name, "sftp");
     context->service.filesystem.inode=inode;
     context->parent=ssh_context;
     ssh_context->refcount++;
-    context->interface.get_context_option=get_ssh_context_option;
+
+    if (strcmp(name, "backup")==0) {
+
+	context->interface.get_context_option=get_backup_context_option;
+
+    } else {
+
+	context->interface.get_context_option=get_sftp_context_option;
+
+    }
+
     init_sftp_filesystem_context(context);
 
     if ((* context->interface.connect)(workspace->user->uid, &context->interface, &address, &error)==-1) {
@@ -506,7 +543,7 @@ static struct service_context_s *connect_ssh_server(struct workspace_mount_s *wo
     char *target=NULL;
     unsigned int port=0;
 
-    logoutput("connect_ssh_server: workspace %s", (workspace) ? "defined" : "notdef");
+    logoutput("connect_ssh_server");
 
     *error=ENOMEM;
     context=create_service_context(workspace, SERVICE_CTX_TYPE_CONNECTION);
@@ -528,7 +565,7 @@ static struct service_context_s *connect_ssh_server(struct workspace_mount_s *wo
 
 	translate_context_address_network(&address, &target, &port, NULL);
 	logoutput("connect_ssh_server: failed to connect to %s:%i : error %i (%s)", target, port, *error, strerror(*error));
-
+	goto error;
 
     }
 
@@ -639,10 +676,8 @@ static int test_buffer_ip(struct common_buffer_s *buffer)
 
     memcpy(tmp, buffer->ptr, buffer->size);
     tmp[buffer->size]='\0';
-
     if (check_family_ip_address(tmp, "ipv4")==1) return 0;
     if (check_family_ip_address(tmp, "ipv6")==1) return 0;
-
     return -1;
 }
 
@@ -725,24 +760,12 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 		*sep='\0';
 		domain=sep+1;
 		len=(unsigned int)(buffer.ptr + size - domain);
+
 		replace_cntrl_char(domain, len, REPLACE_CNTRL_FLAG_TEXT);
 		count=skip_heading_spaces(domain, len);
-
-		if (count>0) {
-
-		    logoutput_info("install_ssh_server: skipped heading %i spaces domain");
-		    len-=count;
-
-		}
-
+		if (count>0) len-=count;
 		count=skip_trailing_spaces(domain, len, SKIPSPACE_FLAG_REPLACEBYZERO);
-
-		if (count>0) {
-
-		    logoutput_info("install_ssh_server: skipped trailing %i spaces domain");
-		    len-=count;
-
-		}
+		if (count>0) len-=count;
 
 		logoutput("install_ssh_server: found domain %s", domain);
 

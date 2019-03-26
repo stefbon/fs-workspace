@@ -56,9 +56,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 
@@ -66,82 +66,11 @@ extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, u
 extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
-extern unsigned int get_uint32(unsigned char *buf);
-extern uint64_t get_uint64(unsigned char *buf);
-
 /* FSNOTIFY (note: no reply to fuse)
 */
 
 void _fs_sftp_fsnotify(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask)
 {
-    struct context_interface_s *interface=&context->interface;
-    struct sftp_request_s sftp_r;
-    unsigned int error=EIO;
-    unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
-    char path[pathlen];
-
-    if (get_support_sftp_ctx(context->interface.ptr, "fsnotify@bononline.nl")==-1) return;
-
-    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-    init_sftp_request(&sftp_r);
-
-    sftp_r.id=0;
-    sftp_r.call.fsnotify.path=(unsigned char *) pathinfo->path;
-    sftp_r.call.fsnotify.len=pathinfo->len;
-    sftp_r.call.fsnotify.unique=unique;
-    sftp_r.call.fsnotify.mask=mask;
-    sftp_r.fuse_request=f_request;
-
-    if (send_sftp_fsnotify_ctx(context->interface.ptr, &sftp_r)==0) {
-	void *request=NULL;
-
-	request=create_sftp_request_ctx(context->interface.ptr, &sftp_r, &error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-		if (sftp_r.type==SSH_FXP_EXTENDED_REPLY) {
-		    unsigned char *pos=sftp_r.response.extension.buff;
-		    unsigned int reply_mask=get_uint32(pos);
-
-		    // set_fsnotify_mask_sftp(unique, reply_mask);
-
-		    free(sftp_r.response.extension.buff);
-		    return;
-
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    if (sftp_r.response.status.linux_error==EOPNOTSUPP) {
-
-			set_support_sftp_ctx(context->interface.ptr, "fsnotify@bononline.nl", -1);
-			return;
-
-		    }
-
-		    error=sftp_r.response.status.linux_error;
-
-		} else {
-
-		    error=EPROTO;
-
-		}
-
-	    }
-
-	}
-
-    } else {
-
-	error=sftp_r.error;
-
-    }
-
-    logoutput("_fs_sftp_fsnotify: error %i fsnotify (%s)", error, strerror(error));
-
 }
 
 void _fs_sftp_fsnotify_disconnected(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo, uint64_t unique, uint32_t mask)

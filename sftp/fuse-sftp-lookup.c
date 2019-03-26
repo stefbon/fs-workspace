@@ -54,9 +54,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 
@@ -85,11 +85,6 @@ static void _sftp_lookup_cb_created(struct entry_s *entry, struct create_entry_s
     struct inode_s *inode=entry->inode;
     struct entry_s *parent=entry->parent;
 
-    logoutput("_sftp_lookup_cb_created: name %s ino %li", entry->name.name, inode->st.st_ino);
-
-    /* do something here with comparing the cached values in inode->cache (inode->cache_size bytes) with
-	fuse_attr */
-
     memset(&fuse_attr, 0, sizeof(struct fuse_sftp_attr_s));
     read_attributes_ctx(context->interface.ptr, (char *) attr->buff, attr->size, &fuse_attr);
 
@@ -104,6 +99,12 @@ static void _sftp_lookup_cb_created(struct entry_s *entry, struct create_entry_s
 
 	inode->st.st_nlink++;
 	parent->inode->st.st_nlink++;
+	logoutput("_sftp_lookup_cb_created: dir name %s ino %li", entry->name.name, inode->st.st_ino);
+	set_directory_dump(inode, get_dummy_directory());
+
+    } else {
+
+	logoutput("_sftp_lookup_cb_created: nondir name %s ino %li", entry->name.name, inode->st.st_ino);
 
     }
 
@@ -175,7 +176,7 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    logoutput("_fs_sftp_lookup_new");
+    // logoutput("_fs_sftp_lookup_new");
 
     // if (get_sftp_version_ctx(context->interface.ptr)<=3) {
 
@@ -284,7 +285,7 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
-    logoutput("_fs_sftp_lookup_existing: %i %s ino %li", pathinfo->len, pathinfo->path, entry->inode->st.st_ino);
+    logoutput("_fs_sftp_lookup_existing: (ino=%li) %i %s", entry->inode->st.st_ino, pathinfo->len, pathinfo->path);
 
     init_sftp_request(&sftp_r);
 

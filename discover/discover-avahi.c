@@ -62,6 +62,7 @@ static void service_resolver_cb(AvahiServiceResolver *r, AvahiIfIndex interface,
     		char ipv4[AVAHI_ADDRESS_STR_MAX];
 
 		avahi_address_snprint(ipv4, AVAHI_ADDRESS_STR_MAX, a);
+		logoutput("service_resolver_cb: found ipv4 %s", ipv4);
 		add_net_service_generic(type, (char *)hostname, ipv4, port, DISCOVER_METHOD_AVAHI);
 
 	    }

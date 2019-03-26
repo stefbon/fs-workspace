@@ -106,7 +106,10 @@ unsigned int read_ssh_string(char *buffer, unsigned int size, struct ssh_string_
 
     if (s==NULL) s=&dummy;
 
-    if (size > 4) {
+    s->len=0;
+    s->ptr=NULL;
+
+    if (size >= 4) {
 
 	s->len=get_uint32(buffer);
 

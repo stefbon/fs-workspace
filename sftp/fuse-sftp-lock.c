@@ -53,9 +53,9 @@
 #include "path-caching.h"
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 

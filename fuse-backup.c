@@ -57,24 +57,18 @@
 #include "workerthreads.h"
 #include "simple-hash.h"
 
-#include "sftp/sftp-common-protocol.h"
-#include "sftp/sftp-send-common.h"
+#include "sftp/common-protocol.h"
+#include "sftp/send-common.h"
 #include "backup/backup-common.h"
 #include "sftp/fuse-sftp-common.h"
-#include "sftp/sftp-attr-common.h"
+#include "sftp/attr-common.h"
 #include "ssh/datatypes/ssh-uint.h"
-#include "ssh/datatypes/ssh-namelist.h"
 #include "ssh/ssh-utils.h"
 
 #include "handlemime.h"
+#include "backup/send.h"
 
-extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
-extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
-extern void get_sftp_request_timeout(struct timespec *timeout);
-extern unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
 extern unsigned char wait_sftp_service_complete_ctx(struct context_interface_s *interface, struct timespec *timeout, unsigned int *error);
-extern unsigned char name_found_commalist(char *, char *);
-
 extern struct fs_options_s fs_options;
 
 static void process_backupscripts(void *ptr)
@@ -87,13 +81,7 @@ static unsigned int get_mimetype_common(char *path, char *name, char *buffer, un
     unsigned int len=strlen(path) + strlen(name) + 2;
     char fullpath[len];
 
-    if (snprintf(fullpath, len, "%s/%s", path, name)>0) {
-
-	logoutput_info("get_mimetype: path %s", fullpath);
-	return get_mimetype(fullpath, buffer, size);
-
-    }
-
+    if (snprintf(fullpath, len, "%s/%s", path, name)>0) return get_mimetype(fullpath, buffer, size);
     return 0;
 }
 
@@ -102,226 +90,97 @@ static int get_stat(char *path, char *name, struct stat *st)
     unsigned int len=strlen(path) + strlen(name) + 2;
     char fullpath[len];
 
-    if (snprintf(fullpath, len, "%s/%s", path, name)>0) {
-
-	logoutput_info("get_stat: %s", fullpath);
-	return stat(fullpath, st);
-
-    }
-
+    if (snprintf(fullpath, len, "%s/%s", path, name)>0) return stat(fullpath, st);
     return -1;
+
 }
 
-static void copy_localfile_remote(struct context_interface_s *interface, struct backup_s *backup, char *name, struct stat *st)
+/* synchronize the local file with the version on the server
+    - interface				reference to sftp subsystem
+    - backup				reference to backup on server
+    - name				name of file relative to the backup directory
+    - st				stat attributes
+    - what				bits to synchronize (FATTR_MTIME, FATTR_UID, FATTR_SIZE etc from linux/fuse.h)
+    */
+
+static void sync_localfile_remote(struct context_interface_s *interface, struct backup_s *backup, char *name, int fd, struct stat *st, int what)
 {
-    /* copy local file to server, how?
-	- create file in remote directory
-	- write/copy contents
-	- compare result and release
-    */
-
-    /*
-	createfile@backup.bononline.nl
-	writefile@backup.bononline.nl
-	releasefile@backup.bononline.nl
-    */
-
-    /* TODO: for existing files only copy the region which is relevant: which has been changed */
-
-    struct sftp_request_s sftp_r;
-    char handle[128]; /* 128 must be enough */
-    unsigned int lenhandle=0;
-    char connectionstatus[4];
-    struct common_buffer_s bufferstatus;
+    struct backuphandle_s handle;
     struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(interface->ptr, st, FATTR_UID | FATTR_GID | FATTR_MODE | FATTR_SIZE | FATTR_MTIM, &fuse_attr, 1);
-    char attrbuffer[size];
-    char path[backup->len + strlen(name) + 2];
+    unsigned int size=get_attr_buffer_size(interface->ptr, st, what, &fuse_attr, 1); 
+    char attrbuffer[size]; /* buffer for sending and receiving sftp attributes */
+    int result=0;
 
-    snprintf(path, backup->len + strlen(name) + 2, "%.*s/%s", backup->len, backup->path, name);
+    memset(handle.buffer, '\0', BACKUPHANDLE_SIZE);
+    handle.flags=0;
+    handle.len=0;
+    handle.fd=fd;
+    handle.valid=0;
+    handle.set=0;
+    handle.error=0;
 
-    logoutput("copy_localfile_remote: copy %s to server", path);
+    size=write_attributes_ctx(interface->ptr, attrbuffer, size, &fuse_attr);
+    if (size>=4) handle.valid=get_uint32(attrbuffer); /* first four bytes are the valid parameter */
 
-    bufferstatus.ptr=connectionstatus;
-    bufferstatus.size=4;
-    bufferstatus.len=bufferstatus.size;
-    bufferstatus.pos=bufferstatus.ptr;
+    result=send_createfile_backup(interface, backup, name, &handle, attrbuffer, size);
 
-    if (get_sftp_interface_info(interface, "status", NULL, &bufferstatus)==4) {
-	unsigned int error=get_uint32(connectionstatus);
+    if (result==-1) {
 
-	logoutput_info("copy_localfile_remote: error %i (%s)", error, strerror(error));
+	logoutput_info("sync_localfile_remote: send createfile failed");
+	return;
+
+    } else if (result==0) {
+
+	logoutput_info("sync_localfile_remote: ready");
 	return;
 
     }
 
-    size=write_attributes_ctx(interface->ptr, attrbuffer, size, &fuse_attr);
+    /* check the mtime is requested and differs:
+	only then the backup file differs and sync of the file contents is required */
 
-    memset(handle, '\0', 128);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    /* TODO:
+	use librsync to use a method using less io
+	- create and keep signature every file on server
+	- clients get signature (eventually keep) and make delta with current version
+	- client copies delta to server (if there is a signaficant difference) and server patches the backup */
 
-    sftp_r.id=0;
-    sftp_r.call.createfile.id=backup->id;
-    sftp_r.call.createfile.name=name;
-    sftp_r.call.createfile.len=strlen(name);
-    sftp_r.call.createfile.buffer=(unsigned char *) attrbuffer;
-    sftp_r.call.createfile.size=size;
-    sftp_r.fuse_request=NULL;
+    if (get_attribute_info_ctx(interface->ptr, handle.valid, "mtime")>0 && get_attribute_info_ctx(interface->ptr, handle.set, "mtime")>0) {
+	unsigned int blocksize=4096; /* default, get it from somewhere, a statvfs call to remote server */
+	off_t offset=0;
+	char bytes[blocksize];
+	ssize_t read=0;
 
-    if (send_sftp_createfile_ctx(interface->ptr, &sftp_r)>=0) {
-	unsigned int error=0;
-	void *request=create_sftp_request_ctx(interface->ptr, &sftp_r, &error);
+	logoutput_warning("sync_localfile_remote: send whole file (%i bytes)", st->st_size);
 
-	if (request) {
-	    struct timespec timeout;
+	while (offset < st->st_size) {
+	    unsigned char eof=0;
 
-	    get_sftp_request_timeout(&timeout);
-	    error=0;
+	    read=pread(handle.fd, bytes, blocksize, offset); /* pread will automatically read less bytes then requested when offset + blocksize exceeds the file size */
+	    if (offset + blocksize >= size) eof=1;
 
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
+	    if (read>0) {
+		int written=send_writefile_backup(interface, &handle, offset, bytes, read, &eof);
 
-		if (sftp_r.type==SSH_FXP_HANDLE) {
-		    unsigned long long id=get_uint64(sftp_r.response.handle.name);
+		if (written==-1) {
 
-		    memcpy(handle, sftp_r.response.handle.name, sftp_r.response.handle.len);
-		    logoutput("copy_localfile_remote: received handle %lli", id);
-		    lenhandle=sftp_r.response.handle.len;
+		    break;
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+		} else if (read != written) {
 
-		    if (sftp_r.response.status.code==0) {
-
-			logoutput("copy_localfile_remote: %s created on server", name);
-
-		    } else {
-
-			logoutput("copy_localfile_remote: received status %i", sftp_r.response.status.code);
-
-		    }
+		    if (eof==0) logoutput_warning("sync_localfile_remote: bytes written on server %i differs from bytes read %i", write, read);
 
 		}
 
 	    }
 
-	}
-
-    }
-
-    unsigned int blocksize=4096;
-    uint64_t offset=0;
-    char bytes[blocksize];
-    ssize_t read=0;
-    unsigned int fd=open(path, O_RDONLY);
-
-    logoutput("copy_localfile_remote: path %s fd %i", path, fd);
-
-    while (fd>0 && offset + blocksize < st->st_size) {
-
-	if (get_sftp_interface_info(interface, "status", NULL, &bufferstatus)==4) {
-	    unsigned int error=get_uint32(connectionstatus);
-
-	    logoutput_warning("copy_localfile_remote: error %i (%s)", error, strerror(error));
-	    if (fd>0) close(fd);
-	    return;
-
-	}
-
-	read=pread(fd, bytes, blocksize, offset);
-
-	logoutput_warning("copy_localfile_remote: read %i", read);
-
-	if (read>0) {
-
-	    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-	    sftp_r.id=0;
-	    sftp_r.call.writefile.len=lenhandle;
-	    sftp_r.call.writefile.handle=(unsigned char *)handle;
-	    sftp_r.call.writefile.offset=offset;
-	    sftp_r.call.writefile.size=read;
-	    sftp_r.call.writefile.bytes=bytes;
-	    sftp_r.fuse_request=NULL;
-
-	    logoutput_warning("copy_localfile_remote: offset %lli size %lli", offset, read);
-
-	    if (send_sftp_writefile_ctx(interface->ptr, &sftp_r)>=0) {
-		unsigned int error=0;
-		void *request=create_sftp_request_ctx(interface->ptr, &sftp_r, &error);
-
-		if (request) {
-		    struct timespec timeout;
-
-		    get_sftp_request_timeout(&timeout);
-		    error=0;
-
-		    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-			if (sftp_r.type==SSH_FXP_STATUS) {
-
-			    if (sftp_r.response.status.code==0) {
-
-				logoutput_info("copy_localfile_remote: %s created on server", name);
-
-			    } else {
-
-				logoutput_info("copy_localfile_remote: received status %i", sftp_r.response.status.code);
-
-			    }
-
-			}
-
-		    }
-
-		}
-
-		if (read < blocksize) break;
-		offset+=read;
-
-	    }
+	    offset+=read;
 
 	}
 
     }
 
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    sftp_r.id=0;
-    sftp_r.call.releasefile.size=lenhandle;
-    sftp_r.call.releasefile.handle=(unsigned char *)handle;
-    sftp_r.fuse_request=NULL;
-    if (fd>0) close(fd);
-
-    if (send_sftp_releasefile_ctx(interface->ptr, &sftp_r)>=0) {
-	unsigned int error=0;
-	void *request=create_sftp_request_ctx(interface->ptr, &sftp_r, &error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-	    error=0;
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-		if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    if (sftp_r.response.status.code==0) {
-
-			logoutput_info("copy_localfile_remote: %s released on server", name);
-
-		    } else {
-
-			logoutput_info("copy_localfile_remote: received status %i while releasing %s", sftp_r.response.status.code, name);
-
-		    }
-
-		}
-
-	    }
-
-	}
-
-    }
+    send_releasefile_backup(interface, &handle, name);
 
 }
 
@@ -329,223 +188,32 @@ static void backup_directory(struct backup_s *backup)
 {
 }
 
-static int send_create_backup(struct service_context_s *context, struct backup_s *backup)
+static int match_backup_mimetype(struct list_element_s *list, void *ptr)
 {
-    struct context_interface_s *interface=&context->interface;
-    struct sftp_request_s sftp_r;
-    int result=-1;
+    struct backupmime_s *nmime=(struct backupmime_s *) (((char *) list) - offsetof(struct backupmime_s, list));
+    struct backupmime_s *mime=(struct backupmime_s *) ptr;
 
-    replace_cntrl_char(backup->path, backup->len, REPLACE_CNTRL_FLAG_TEXT);
-
-    logoutput("send_create_backup: %.*s", backup->len, backup->path);
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    sftp_r.id=0;
-    sftp_r.call.createbackup.path=(unsigned char *) backup->path;
-    sftp_r.call.createbackup.len=backup->len;
-    sftp_r.fuse_request=NULL; /* not initiated by fuse/VFS */
-
-    if (send_sftp_createbackup_ctx(interface->ptr, &sftp_r)>=0) {
-	unsigned int error=0;
-	void *request=create_sftp_request_ctx(interface->ptr, &sftp_r, &error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-	    error=0;
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-		if (sftp_r.type==SSH_FXP_DATA) {
-
-		    if (sftp_r.response.data.size>=9) {
-
-			backup->id=get_uint64(sftp_r.response.data.data);
-			if (sftp_r.response.data.data[8] > 0) backup->flags |= BACKUP_FLAG_CREATED;
-			if (sftp_r.response.data.size>9) logoutput_warning("send_create_backup: strange reply data response (size=%i)", sftp_r.response.data.size);
-			result=0;
-
-		    } else {
-
-			logoutput_warning("send_create_backup: invalid reply data response (size=%i)", sftp_r.response.data.size);
-
-		    }
-
-		    free(sftp_r.response.data.data);
-		    sftp_r.response.data.data=NULL;
-
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    logoutput("send_create_backup: received status %i while creating %s", sftp_r.response.status.code, backup->path);
-
-		} else {
-
-		    logoutput("send_create_backup: received type %i while creating %s", sftp_r.type, backup->path);
-
-		}
-
-	    }
-
-	}
-
-    }
-
-    return result;
-
+    if (nmime->len==mime->len && memcmp(nmime->name, mime->name, mime->len)==0) return 0;
+    return -1;
 }
 
-static int send_compare_file(struct service_context_s *context, struct backup_s *backup, struct stat *st, char *name)
+static void read_user_backups(uid_t uid, struct list_header_s *header)
 {
-    struct context_interface_s *interface=&context->interface;
-    struct sftp_request_s sftp_r;
-    struct fuse_sftp_attr_s fuse_attr;
-    unsigned int size=get_attr_buffer_size(context->interface.ptr, st, FATTR_SIZE | FATTR_MTIME, &fuse_attr, 1);
-    char attrbuffer[size];
-    char buffer[8 + 4 + strlen(name) + size];
-    unsigned int pos=0;
-    unsigned int len=strlen(backup->path) + 2 + strlen(name);
-    char path[len];
-    int result=-1;
-
-    snprintf(path, len, "%s/%s", backup->path, name);
-
-    logoutput("send_compare_file: file %s", path);
-
-    size=write_attributes_ctx(interface->ptr, attrbuffer, size, &fuse_attr);
-    store_uint64(&buffer[pos], backup->id);
-    pos+=8;
-    store_uint32(&buffer[pos], strlen(name));
-    pos+=4;
-    memcpy(&buffer[pos], name, strlen(name));
-    pos+=strlen(name);
-    memcpy(&buffer[pos], attrbuffer, size);
-    pos+=size;
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    sftp_r.id=0;
-    sftp_r.call.comparebackup.data=(unsigned char *) buffer;
-    sftp_r.call.comparebackup.len=pos;
-    sftp_r.fuse_request=NULL; /* not initiated by fuse/VFS */
-
-    /* compare the local stat with the remote one, only if there is a difference send the file to the remote server to backup (and create a new version) */
-
-    if (send_sftp_comparebackup_ctx(interface->ptr, &sftp_r)==0) {
-	unsigned int error=0;
-	void *request=create_sftp_request_ctx(interface->ptr, &sftp_r, &error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-	    error=0;
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-		if (sftp_r.type==SSH_FXP_DATA) {
-		    unsigned int copyresult=get_uint32((char *)sftp_r.response.data.data);
-
-		    if (copyresult==1 || copyresult==2) {
-
-			/* copy file to server TODO*/
-
-			logoutput("send_compare_file: result %i", copyresult);
-			result=0;
-
-		    }
-
-		    free(sftp_r.response.data.data);
-		    sftp_r.response.data.data=NULL;
-
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    logoutput("send_compare_file: received status %i while creating %s", sftp_r.response.status.code, backup->path);
-
-		} else {
-
-		    logoutput("send_compare_file: received type %i while creating %s", sftp_r.type, backup->path);
-
-		}
-
-	    }
-
-	}
-
-    }
-
-    return result;
-
-}
-
-static unsigned int dummy_hashfunction(void *data)
-{
-    return 0;
-}
-
-static void process_backups(void *ptr)
-{
-    struct service_context_s *context=(struct service_context_s *) ptr;
-    struct context_interface_s *interface=&context->interface;
-    uid_t uid=context->workspace->user->uid;
     struct passwd *pw=getpwuid(uid);
-    unsigned int len=strlen(pw->pw_dir) + 64;
+    unsigned int len=(pw) ? (strlen(pw->pw_dir) + 64) : 0;
     char path[len];
-    struct timespec timeout;
-    unsigned int error=0;
-    struct backup_s *backup=NULL;
-    unsigned int hashvalue=0;
-    char connectionstatus[4];
-    void *index=NULL;
-    struct common_buffer_s bufferstatus;
-    struct simple_hash_s new_backups;
-    struct list_header_s nb_list_header=INIT_LIST_HEADER;
-    struct list_element_s *list=NULL;
 
-    memset(&new_backups, 0, sizeof(struct simple_hash_s));
-    init_simple_locking(&new_backups.locking);
-    new_backups.len=1;
-    new_backups.hash=&nb_list_header;
-    new_backups.hashfunction=dummy_hashfunction;
-
-    bufferstatus.ptr=connectionstatus;
-    bufferstatus.size=4;
-    bufferstatus.len=bufferstatus.size;
-    bufferstatus.pos=bufferstatus.ptr;
-
-    /* look in $HOME/.config/backup */
-
-    logoutput("process_backups");
-
-    open_mimedb();
-
-    /* wait for context/interface/connection is complete/online and up */
-
-    timeout.tv_sec=5;
-    timeout.tv_nsec=0;
-
-    if (wait_sftp_service_complete_ctx(interface, &timeout, &error)==0) {
-
-	logoutput("process_backups: sftp service not completed, error %i:%s", error, strerror(error));
-	goto out;
-
-    }
-
-    if (snprintf(path, len, "%s/.config/backup", pw->pw_dir)>0) {
-
+    if (pw && snprintf(path, len, "%s/.config/backup", pw->pw_dir)>0) {
 	FILE *fp=fopen(path, "r");
 
 	if (fp) {
 	    char *line=NULL;
 	    size_t size=0;
-
-	    logoutput("process_backups: found file %s", path);
+	    struct backup_s *backup=NULL;
 
 	    while (getline(&line, &size, fp)!=-1) {
-
-		logoutput("process_backups: found %s", line);
 		char *sep=memchr(line, '\n', size);
+
 		if (sep) {
 
 		    *sep='\0';
@@ -566,16 +234,20 @@ static void process_backups(void *ptr)
 		    /* value is the path to backup */
 
 		    if (value) {
+			struct stat st;
 
 			value++;
-			backup=create_backup(0, value);
 
-			if (backup==NULL) {
+			if (stat(value, &st)==0 && S_ISDIR(st.st_mode)) {
 
-			    logoutput("process_backups: error creating backup");
-			    free(line);
-			    fclose(fp);
-			    goto out;
+			    backup=create_backup(0, value);
+
+			    if (backup==NULL) {
+
+				logoutput("process_backups: error creating backup");
+				goto readyout;
+
+			    }
 
 			}
 
@@ -613,13 +285,7 @@ static void process_backups(void *ptr)
 
 				*sep='\0';
 
-				if (add_backupmime(backup, name)) {
-
-				    logoutput("process_backups: added mime %s", name);
-				    backup->flags |= BACKUP_FLAG_MIMETYPES;
-
-				}
-
+				if (add_backupmime(backup, name)) backup->flags |= BACKUP_FLAG_MIMETYPES;
 				name=sep+1;
 				goto searchmime;
 
@@ -627,7 +293,8 @@ static void process_backups(void *ptr)
 
 			    if (backup->flags & BACKUP_FLAG_MIMETYPES) {
 
-				add_data_to_hash(&new_backups, backup);
+				logoutput("read_user_backups: add backup %s", backup->path);
+				add_list_element_last(header, &backup->list);
 
 			    } else {
 
@@ -641,20 +308,55 @@ static void process_backups(void *ptr)
 
 		    }
 
-		} else {
-
-		    logoutput("process_backups: found line %s", line);
-
 		}
 
 	    }
 
+	    readyout:
+
+	    if (line) free(line);
+	    if (backup && (backup->flags & BACKUP_FLAG_MIMETYPES)==0) free(backup);
 	    fclose(fp);
 
-	    if (backup) {
+	}
 
-		if ((backup->flags & BACKUP_FLAG_MIMETYPES)==0) free(backup);
-		backup=NULL;
+	if (header->count>1) {
+	    struct list_element_s *list=get_list_head(header, 0);
+
+	    /* remove any doubles */
+
+	    while (list) {
+		struct backup_s *backup=(struct backup_s *) ( ((char *) list) - offsetof(struct backup_s, list));
+		struct list_element_s *nlist=get_next_element(list);
+
+		while (nlist) {
+		    struct backup_s *nbackup=(struct backup_s *) ( ((char *) nlist) - offsetof(struct backup_s, list));
+		    struct list_element_s *next=get_next_element(nlist);
+
+		    if (strcmp(backup->path, nbackup->path)==0) {
+			struct list_element_s *mlist=NULL;
+
+			logoutput_warning("read_user_backups: directory %s mas multiple entries: change that in %s", backup->path, path);
+			mlist=get_list_head(&nbackup->mime, SIMPLE_LIST_FLAG_REMOVE);
+
+			while (mlist) {
+
+			    /* doubles are possible and harmless */
+			    add_list_element_last(&backup->mime, mlist);
+			    mlist=get_list_head(&nbackup->mime, SIMPLE_LIST_FLAG_REMOVE);
+
+			}
+
+			remove_list_element(&nbackup->list);
+			free(nbackup);
+
+		    }
+
+		    nlist=next;
+
+		}
+
+		list=get_next_element(list);
 
 	    }
 
@@ -662,76 +364,121 @@ static void process_backups(void *ptr)
 
     }
 
-    /* walk every backup, get the rules per backup, and compare every entry in backup which is of the mimetype */
+}
 
+/* get the mimetype of an entry in backup directory and match it to an mimetype belonging to this backup */
 
-    backup=(struct backup_s *) get_next_hashed_value(&new_backups, &index, 0);
-    if (backup) {
+static struct backupmime_s *match_backup_mime(struct backup_s *backup, char *name)
+{
+    char buffer[256];
+    unsigned int len=0;
+    struct backupmime_s *mime=NULL;
 
-	index=NULL;
-	remove_data_from_hash(&new_backups, (void *) backup);
+    /* get the mimetype of file */
 
-    }
+    memset(buffer, '\0', 256);
+    len=get_mimetype_common(backup->path, name, buffer, 256);
 
-    while (backup) {
+    if (len>0) {
+	struct list_element_s *list=NULL;
 
-	if (get_sftp_interface_info(interface, "status", NULL, &bufferstatus)==4) {
-	    unsigned int error=get_uint32(connectionstatus);
+	/* check the mimetype is one of the mimetypes to backup */
 
-	    logoutput("process_backups: error %i (%s)", error, strerror(error));
-	    goto out;
+	list=get_list_head(&backup->mime, 0);
+
+	while (list) {
+
+	    mime=(struct backupmime_s *) (((char *) list) - offsetof(struct backupmime_s, list));
+	    if (mime->len==len && strncmp(mime->name, buffer, len)==0) break;
+	    list=get_next_element(list);
+	    mime=NULL;
 
 	}
 
-	logoutput("process_backups: get_next_backup %.*s", backup->len, backup->path);
+    }
 
-	if (send_create_backup(context, backup)==0) {
+    return mime;
+
+}
+
+static void process_backups(void *ptr)
+{
+    struct service_context_s *context=(struct service_context_s *) ptr;
+    struct context_interface_s *interface=&context->interface;
+    unsigned int error=0;
+    struct list_header_s tmp=INIT_LIST_HEADER;
+    struct list_element_s *list=NULL;
+    struct timespec timeout;
+
+    /* create a temporary list header to store the backups found */
+
+    init_list_header(&tmp, SIMPLE_LIST_TYPE_EMPTY, NULL);
+
+    logoutput("process_backups");
+
+    /* wait for context/interface/connection is complete/online and up */
+
+    timeout.tv_sec=5;
+    timeout.tv_nsec=0;
+
+    if (wait_sftp_service_complete_ctx(interface, &timeout, &error)==0) {
+
+	logoutput("process_backups: sftp service not completed, error %i:%s", error, strerror(error));
+	goto out;
+
+    }
+
+    open_mimedb();
+    read_user_backups(context->workspace->user->uid, &tmp);
+
+    /* walk every backup, get the rules per backup, and compare every entry in backup which is of the mimetype */
+
+    list=get_list_head(&tmp, SIMPLE_LIST_FLAG_REMOVE);
+
+    while (list) {
+	struct backup_s *backup=(struct backup_s *) ( ((char *) list) - offsetof(struct backup_s, list));
+	struct stat st;
+
+	if (stat(backup->path, &st)==-1) goto nextbackup;
+
+	if (send_create_backup(context, backup, &st)==0) {
 	    DIR *dp=NULL;
 	    struct dirent *de=NULL;
-	    struct stat st;
-	    char buffer[256];
-	    unsigned int len=0;
-	    struct list_element_s *list=NULL;
-	    struct backupmime_s *mime=NULL;
+	    int dfd=0;
 
-	    logoutput("process_backups: found id %lli (path=%.*s)", backup->id, backup->len, backup->path);
+	    logoutput("process_backups: received id %lli for backup path=%.*s", backup->id, backup->len, backup->path);
 
 	    add_backup_backuphash(backup);
 	    backup->flags|=BACKUP_FLAG_HASHED;
 
 	    dp=opendir(backup->path);
-	    if (dp==NULL) goto out;
+	    if (dp==NULL) continue;
+	    dfd=dirfd(dp);
 	    de=readdir(dp);
 
 	    while (de) {
+		char buffer[256];
+		unsigned int len=0;
+		struct list_element_s *list=NULL;
+		struct backupmime_s *mime=NULL;
 
-		if (strcmp(de->d_name, ".")==0 || strcmp(de->d_name, ".")==0) goto nextfile;
+		if (strcmp(de->d_name, ".")==0 || strcmp(de->d_name, "..")==0 || de->d_type != DT_REG) goto nextfile;
 
-		/* get the mimetype of file */
+		/* get the mimetype of file and test it's a mime to backup */
 
-		memset(buffer, '\0', 256);
-		len=get_mimetype_common(backup->path, de->d_name, buffer, 256);
-		if (de->d_type != DT_REG || len==0) goto nextfile;
+		mime=match_backup_mime(backup, de->d_name);
 
-		/* check the mimetype is one of the mimetypes to backup */
+		if (mime) {
+		    int fd=0;
 
-		logoutput("process_backups: test file %s/%s (mime=%s len=%i)", backup->path, de->d_name, buffer, len);
+		    fd=openat(dfd, de->d_name, O_RDONLY);
 
-		list=get_list_head(&backup->mime, 0);
+		    if (fd>0) {
 
-		while (list) {
+			if (fstat(fd, &st)==0) sync_localfile_remote(interface, backup, de->d_name, fd, &st, FATTR_SIZE | FATTR_MTIME | FATTR_MODE | FATTR_UID | FATTR_GID);
+			close(fd);
 
-		    mime=(struct backupmime_s *) (((char *) list) - offsetof(struct backupmime_s, list));
-		    if (mime->len==len && strncmp(mime->name, buffer, len)==0) break;
-		    list=get_next_element(list);
-		    mime=NULL;
-
-		}
-
-		if (mime && get_stat(backup->path, de->d_name, &st)==0) {
-
-		    if (send_compare_file(context, backup, &st, de->d_name)==0) copy_localfile_remote(interface, backup, de->d_name, &st);
-
+		    }
 
 		}
 
@@ -745,14 +492,7 @@ static void process_backups(void *ptr)
 	}
 
 	nextbackup:
-
-	backup=(struct backup_s *) get_next_hashed_value(&new_backups, &index, 0);
-	if (backup) {
-
-	    index=NULL;
-	    remove_data_from_hash(&new_backups, (void *) backup);
-
-	}
+	list=get_list_head(&tmp, SIMPLE_LIST_FLAG_REMOVE);
 
     }
 

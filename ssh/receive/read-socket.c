@@ -161,6 +161,7 @@ int read_incoming_signal_ssh(int fd, void *ptr, uint32_t events)
 
     } else if (events & EPOLLIN) {
 
+	logoutput("read_incoming_data");
 	result=read_ssh_data(session, fd, events);
 
     }

@@ -457,9 +457,10 @@ struct service_context_s *create_mount_context(struct fuse_user_s *user, struct 
 	register_fuse_functions(&context->interface);
 	use_virtual_fs(context, &workspace->rootinode);
 	set_directory_dump(&workspace->rootinode, get_dummy_directory());
-	link.type=INODE_LINK_TYPE_CONTEXT;
-	link.link.ptr=(void *) context;
-	set_inode_link_directory(&workspace->rootinode, &link);
+	// is this required???
+	//link.type=INODE_LINK_TYPE_CONTEXT;
+	//link.link.ptr=(void *) context;
+	//set_inode_link_directory(&workspace->rootinode, &link);
 
 	/* connect to the fuse interface: mount */
 	/* target address of interface is a local mountpoint */
@@ -470,7 +471,6 @@ struct service_context_s *create_mount_context(struct fuse_user_s *user, struct 
 	address.service.target.fuse.source=source;
 	address.service.target.fuse.mountpoint=workspace->mountpoint.path;
 	address.service.target.fuse.name=name;
-
 	fd=(* context->interface.connect)(user->uid, &context->interface, &address, &error);
 
 	if (fd==-1) {
@@ -544,6 +544,7 @@ static void terminate_fuse_user(void *ptr)
     logoutput("terminate_fuse_user: %i", user->uid);
 
     terminate_user_workspaces(user);
+    umount_mounts_found(user, UMOUNT_WORKSPACE_FLAG_EXTRA | UMOUNT_WORKSPACE_FLAG_MOUNT);
     pthread_mutex_destroy(&user->mutex);
     free(user);
     user=NULL;
@@ -919,6 +920,8 @@ int main(int argc, char *argv[])
 	logoutput_info("MAIN: open mountmonitor");
 
     }
+
+    umount_mounts_found(NULL, UMOUNT_WORKSPACE_FLAG_EXTRA | UMOUNT_WORKSPACE_FLAG_MOUNT);
 
     /* Initialize and start default threads
 	NOTE: important to start these after initializing the signal handler, if not doing this this way any signal will make the program crash */

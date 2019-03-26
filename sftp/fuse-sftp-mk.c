@@ -54,9 +54,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 
@@ -122,7 +122,7 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 			add_inode_context(context, inode);
 			_fs_common_cached_lookup(context, f_request, inode);
 			adjust_pathmax(context->workspace, pathinfo->len);
-
+			set_directory_dump(inode, get_dummy_directory());
 			return;
 
 		    }

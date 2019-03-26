@@ -55,9 +55,9 @@
 
 #include "fuse-fs-common.h"
 
-#include "sftp-common-protocol.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+#include "common-protocol.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 
@@ -221,6 +221,7 @@ void _fs_sftp_create(struct fuse_openfile_s *openfile, struct fuse_request_s *f_
 		    sftp_r.response.handle.len=0;
 		    fill_inode_attr_sftp(context->interface.ptr, &openfile->inode->st, &fuse_attr);
 		    add_inode_context(context, openfile->inode);
+		    set_directory_dump(openfile->inode, get_dummy_directory());
 
 		    /* note: how the entry is created on the remote server does not have to be the same .... */
 
@@ -328,7 +329,6 @@ void _fs_sftp_read(struct fuse_openfile_s *openfile, struct fuse_request_s *f_re
     }
 
     out:
-
     reply_VFS_error(f_request, error);
 
 }
@@ -420,7 +420,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
     }
 
-    if (get_support_sftp_ctx(context->interface.ptr, "fsync@openssh.com")==-1) {
+    if ((context->interface.backend.sftp.flags & CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_FSYNC_OPENSSH)==0) {
 
 	error=0;
 	goto out;
@@ -430,11 +430,13 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     init_sftp_request(&sftp_r);
 
     sftp_r.id=0;
-    sftp_r.call.fsync.handle=(unsigned char *) openfile->handle.name.name;
-    sftp_r.call.fsync.len=openfile->handle.name.len;
+    sftp_r.call.extension.len=strlen("fsync@openssh.com");
+    sftp_r.call.extension.name=(unsigned char *) "fsync@openssh.com";
+    sftp_r.call.extension.size=openfile->handle.name.len;
+    sftp_r.call.extension.data=(unsigned char *) openfile->handle.name.name;
     sftp_r.fuse_request=f_request;
 
-    if (send_sftp_fsync_ctx(context->interface.ptr, &sftp_r)==0) {
+    if (send_sftp_extension_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
 
 	request=create_sftp_request_ctx(context->interface.ptr, &sftp_r, &error);
@@ -454,7 +456,7 @@ void _fs_sftp_fsync(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
 
 		    if (sftp_r.response.status.linux_error==EOPNOTSUPP) {
 
-			set_support_sftp_ctx(context->interface.ptr, "fsync@openssh.com", -1);
+			context->interface.backend.sftp.flags -= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_FSYNC_OPENSSH;
 
 		    } else if (sftp_r.response.status.code>0) {
 
@@ -493,7 +495,6 @@ void _fs_sftp_flush(struct fuse_openfile_s *openfile, struct fuse_request_s *f_r
     struct service_context_s *context=(struct service_context_s *) openfile->context;
 
     /* no support for flush */
-
     reply_VFS_error(f_request, 0);
 }
 

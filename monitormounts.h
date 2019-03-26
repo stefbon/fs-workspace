@@ -20,7 +20,10 @@
 #ifndef FS_WORKSPACE_MONITORMOUNTS_H
 #define FS_WORKSPACE_MONITORMOUNTS_H
 
+#define UMOUNT_WORKSPACE_FLAG_MOUNT				1
+#define UMOUNT_WORKSPACE_FLAG_EXTRA				2
+
 int add_mountinfo_watch(struct beventloop_s *loop, unsigned int *error);
-void umount_workspace_mounts(struct workspace_mount_s *workspace);
+void umount_mounts_found(struct fuse_user_s *user, unsigned int flags);
 
 #endif

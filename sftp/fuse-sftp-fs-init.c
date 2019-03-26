@@ -120,7 +120,6 @@ static struct service_fs_s sftp_fs = {
     .removexattr		= _fs_sftp_removexattr,
 
     .fsnotify			= _fs_sftp_fsnotify,
-
     .statfs			= _fs_sftp_statfs,
 
 };

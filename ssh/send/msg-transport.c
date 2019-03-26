@@ -265,7 +265,7 @@ static int _send_kexinit(struct msg_buffer_s *mb, struct ssh_session_s *session)
     char randombytes[16];
     struct kexinit_helper_s helper;
 
-    logoutput("_send_kexinit");
+    logoutput_debug("_send_kexinit");
 
     if (keyexchange==NULL) return 0;
     algos=keyexchange->data.algos;

@@ -56,14 +56,15 @@
 #include "fuse-fs-common.h"
 
 #include "ssh-common.h"
-#include "sftp-common-protocol.h"
-#include "sftp-common.h"
-#include "sftp-attr-common.h"
-#include "sftp-send-common.h"
+
+#include "common-protocol.h"
+#include "common.h"
+#include "attr-common.h"
+#include "send-common.h"
 
 #include "fuse-sftp-common.h"
 #include "fuse-sftp-realpath.h"
-#include "sftp-common-utils.h"
+#include "common-utils.h"
 
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
 extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);

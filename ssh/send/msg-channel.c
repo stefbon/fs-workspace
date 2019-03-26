@@ -99,7 +99,7 @@ static int _send_channel_open_message(struct msg_buffer_s *mb, struct ssh_channe
 {
     unsigned int len=0;
 
-    logoutput("_send_channel_open_message");
+    logoutput_debug("_send_channel_open_message");
 
     msg_write_byte(mb, SSH_MSG_CHANNEL_OPEN);
 
@@ -156,7 +156,7 @@ int send_channel_open_message(struct ssh_channel_s *channel, unsigned int *seq)
     char buffer[sizeof(struct ssh_payload_s) + len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
 
-    logoutput("send_channel_open_message");
+    logoutput_debug("send_channel_open_message");
 
     init_ssh_payload(payload, len);
     payload->type=SSH_MSG_CHANNEL_OPEN;
@@ -176,7 +176,7 @@ int send_channel_close_message(struct ssh_channel_s *channel)
     unsigned int seq=0;
     char *pos=payload->buffer;
 
-    logoutput("send_channel_close_message");
+    logoutput_debug("send_channel_close_message");
 
     init_ssh_payload(payload, 5);
     payload->type=SSH_MSG_CHANNEL_CLOSE;
@@ -200,7 +200,7 @@ int send_channel_window_adjust_message(struct ssh_channel_s *channel, unsigned i
     unsigned int seq=0;
     char *pos=payload->buffer;
 
-    logoutput("send_channel_window_adjust_message");
+    logoutput_debug("send_channel_window_adjust_message");
 
     init_ssh_payload(payload, 9);
     payload->type=SSH_MSG_CHANNEL_WINDOW_ADJUST;

@@ -666,7 +666,7 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
 
     memset(&option, 0, sizeof(struct context_option_s));
 
-    if ((* interface->get_context_option)(interface, "fuse:mount.shared-mutex", &option)>0) {
+    if ((* interface->get_context_option)(interface, "io:shared-mutex", &option)>0) {
 
 	mutex=(pthread_mutex_t *) option.value.data;
 
@@ -674,7 +674,7 @@ struct ssh_session_s *get_full_session(uid_t uid, struct context_interface_s *in
 
     memset(&option, 0, sizeof(struct context_option_s));
 
-    if ((* interface->get_context_option)(interface, "fuse:mount.shared-cond", &option)>0) {
+    if ((* interface->get_context_option)(interface, "io:shared-cond", &option)>0) {
 
 	cond=(pthread_cond_t *) option.value.data;
 
