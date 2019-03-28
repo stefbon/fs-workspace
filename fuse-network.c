@@ -105,6 +105,7 @@ static void install_net_services_context(struct host_address_s *host, struct ser
     struct inode_s *inode=NULL;
     struct directory_s *root_directory=NULL;
     struct simple_lock_s wlock;
+    unsigned int error=0;
 
     logoutput("install_net_services_context");
 
@@ -116,7 +117,7 @@ static void install_net_services_context(struct host_address_s *host, struct ser
     }
 
     inode=&workspace->rootinode;
-    root_directory=get_directory(inode);
+    root_directory=get_directory(inode, &error);
 
     if (wlock_directory(root_directory, &wlock)==-1) {
 

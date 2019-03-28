@@ -173,7 +173,7 @@ void _fs_sftp_opendir(struct fuse_opendir_s *opendir, struct fuse_request_s *f_r
     struct context_interface_s *interface=&context->interface;
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
-    struct directory_s *directory=get_directory(opendir->inode);
+    struct directory_s *directory=get_directory(opendir->inode, &error);
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
@@ -417,7 +417,7 @@ static void _fs_sftp_readdir_common(struct fuse_opendir_s *opendir, struct fuse_
 
     }
 
-    directory=get_directory(opendir->inode);
+    directory=get_directory(opendir->inode, &error);
 
     if (directory==NULL) {
 
@@ -730,7 +730,7 @@ void _fs_sftp_releasedir(struct fuse_opendir_s *opendir, struct fuse_request_s *
 
     /* remove local entries not found on server */
 
-    directory=get_directory(opendir->inode);
+    directory=get_directory(opendir->inode, &error);
 
     if (wlock_directory(directory, &wlock)==0) {
 

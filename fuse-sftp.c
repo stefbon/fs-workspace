@@ -304,7 +304,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 	    xname.name=tmp;
 	    xname.len=strlen(tmp);
 	    calculate_nameindex(&xname);
-	    directory=get_directory(inode);
+	    directory=get_directory(inode, &error);
 
 	    if (wlock_directory(directory, &wlock1)==0) {
 
@@ -357,11 +357,11 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 	xname.name=name;
 	xname.len=strlen(name);
 	calculate_nameindex(&xname);
-	directory=get_directory(parent->inode);
+	directory=get_directory(parent->inode, &error);
 
 	if (wlock_directory(directory, &wlock2)==0) {
 
-	    directory=get_directory(parent->inode);
+	    directory=get_directory(parent->inode, &error);
 	    entry=create_network_map_entry(ssh_context, directory, &xname, &error);
 	    if (entry) logoutput("add_shared_map_sftp: created shared map %s", name);
 	    unlock_directory(directory, &wlock2);
@@ -393,7 +393,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
     }
 
     inode=entry->inode;
-    directory=get_directory(inode);
+    directory=get_directory(inode, &error);
     context=create_service_context(workspace, SERVICE_CTX_TYPE_FILESYSTEM);
 
     if (context==NULL) {
@@ -437,7 +437,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 	/* create a desktp entry only if it does not exist on the server/share
 	    lock first to ensure the directory exists (and is not the dummy) */
 
-	directory=get_directory(inode);
+	directory=get_directory(inode, &error);
 
 	if (wlock_directory(directory, &wlock3)==0) {
 	    struct inode_link_s link;
@@ -468,7 +468,7 @@ static void add_shared_map_sftp(struct service_context_s *ssh_context, struct in
 
 	/* create a desktp entry only if it does not exist on the server/share */
 
-	directory=get_directory(entry->inode);
+	directory=get_directory(entry->inode, &error);
 
 	if (wlock_directory(directory, &wlock4)==0) {
 
@@ -779,7 +779,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 
 	    /* install the domain name */
 
-	    directory=get_directory(parent->inode);
+	    directory=get_directory(parent->inode, error);
 
 	    if (wlock_directory(directory, &wlock1)==0) {
 		struct name_s xname;
@@ -832,7 +832,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
     if (target==NULL) translate_context_host_address(host, &target, NULL);
     if (target==NULL) goto error;
 
-    directory=get_directory(parent->inode);
+    directory=get_directory(parent->inode, error);
 
     if (wlock_directory(directory, &wlock2)==0) {
 	struct name_s xname;
@@ -875,7 +875,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 	}
 
 	inode=entry->inode;
-	server_directory=get_directory(inode);
+	server_directory=get_directory(inode, &error);
 
 	if (wlock_directory(server_directory, &wlock3)==0) {
 	    struct inode_link_s link;
@@ -943,7 +943,7 @@ int install_ssh_server_context(struct workspace_mount_s *workspace, struct entry
 
 	xname.len=strlen(xname.name);
 	calculate_nameindex(&xname);
-	directory=get_directory(parent->inode);
+	directory=get_directory(parent->inode, error);
 
 	if (wlock_directory(directory, &wlock)==0) {
 	    struct entry_s *entry=NULL;
