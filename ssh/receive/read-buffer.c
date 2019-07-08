@@ -120,32 +120,53 @@ void read_ssh_buffer_packet(void *ptr)
 
     pthread_mutex_lock(&receive->mutex);
 
-    if (receive->threadid==0 && receive->read>0) {
+    if (receive->read==0) {
 
-	receive->threadid=pthread_self();
+	pthread_mutex_unlock(&receive->mutex);
+	queue_decryptor(decryptor);
+	return;
 
-	while (receive->read < cipher_headersize) {
+    }
+
+    if (receive->threadid>0) {
+
+	while (receive->threadid>0) {
 
 	    pthread_cond_wait(&receive->cond, &receive->mutex);
 
-	    if (receive->read >= cipher_headersize) {
+	    if (receive->threadid==0) {
 
-		break;
+		if (receive->read==0) {
 
-	    } else if (receive->flags & (SSH_RECEIVE_FLAG_ERROR | SSH_RECEIVE_FLAG_DISCONNECT)) {
+		    pthread_mutex_unlock(&receive->mutex);
+		    queue_decryptor(decryptor);
+		    return;
 
-		pthread_mutex_unlock(&receive->mutex);
-		goto disconnect;
+		}
 
 	    }
 
 	}
 
-    } else {
+    }
 
-	pthread_mutex_unlock(&receive->mutex);
-	queue_decryptor(decryptor);
-	return;
+    receive->threadid=pthread_self();
+
+    while (receive->read < cipher_headersize) {
+
+	pthread_cond_wait(&receive->cond, &receive->mutex);
+
+	if (receive->read >= cipher_headersize) {
+
+	    break;
+
+	} else if (receive->flags & (SSH_RECEIVE_FLAG_ERROR | SSH_RECEIVE_FLAG_DISCONNECT)) {
+
+	    pthread_mutex_unlock(&receive->mutex);
+	    receive->threadid=0;
+	    goto disconnect;
+
+	}
 
     }
 
@@ -187,7 +208,7 @@ void read_ssh_buffer_packet(void *ptr)
 		/* length of the packet is bigger than size of received data
 		    wait for data to arrive: signalled when data is received */
 
-		// logoutput("read_ssh_buffer_packet: packet length %i, received %i", packet.size, receive->read);
+		logoutput("read_ssh_buffer_packet: thread %i packet length %i, received %i", gettid(), packet.size, receive->read);
 
 		while (receive->read < packet.size) {
 
@@ -224,7 +245,6 @@ void read_ssh_buffer_packet(void *ptr)
 
 		memmove(receive->buffer, (char *) (receive->buffer + packet.size), (receive->read - packet.size));
 		receive->read-=packet.size;
-
 		logoutput("read_ssh_buffer_packet: still bytes in buffer (%i)", receive->read);
 
 	    }
@@ -253,6 +273,7 @@ void read_ssh_buffer_packet(void *ptr)
 
 			queue_decryptor(decryptor);
 			decryptor=NULL;
+			// (* receive->release_read_buffer_late)(receive);
 
 			(* receive->process_ssh_packet)(session, &packet);
 			(* receive->release_read_buffer_late)(receive);

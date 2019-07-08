@@ -89,9 +89,13 @@ static void release_read_buffer_default(struct ssh_receive_s *receive)
     if (receive->read>0) {
 	struct ssh_session_s *session=(struct ssh_session_s *)(((char *) receive) - offsetof(struct ssh_session_s, receive));
 
+	logoutput("release_read_buffer_default: read ssh buffer again");
+
 	read_ssh_buffer(session);
 
     }
+
+    pthread_cond_broadcast(&receive->cond);
 
 }
 
@@ -123,7 +127,7 @@ static void release_read_buffer_default_withlock(struct ssh_receive_s *receive)
 	receive->release_read_buffer_late=release_read_buffer_ignore;
 
     }
-
+    pthread_cond_broadcast(&receive->cond);
     pthread_mutex_unlock(&receive->mutex);
 }
 
@@ -285,6 +289,7 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
     pthread_mutex_init(&receive->mutex, NULL);
     pthread_cond_init(&receive->cond, NULL);
     receive->threadid=0;
+    receive->threadstatus=0;
     receive->sequence_number=0;
 
     /* the maximum size for the buffer RFC4253 6.1 Maximum Packet Length */
@@ -320,10 +325,12 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
     decrypt->flags=0;
     memset(decrypt->ciphername, '\0', sizeof(decrypt->ciphername));
     memset(decrypt->hmacname, '\0', sizeof(decrypt->hmacname));
-    init_list_header(&decrypt->decryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&decrypt->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     decrypt->count=0;
     decrypt->max_count=0;
-    init_simple_locking(&decrypt->waiters);
+    init_list_header(&decrypt->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    pthread_mutex_init(&decrypt->waiters.mutex, NULL);
+    pthread_cond_init(&decrypt->waiters.cond, NULL);
     decrypt->ops=NULL;
 
     init_ssh_string(&decrypt->cipher_key);
@@ -338,10 +345,12 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
 
     decompress->flags=0;
     memset(decompress->name, '\0', sizeof(decompress->name));
-    init_list_header(&decompress->decompressors, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&decompress->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     decompress->count=0;
     decompress->max_count=0;
-    init_simple_locking(&decompress->waiters);
+    init_list_header(&decompress->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    pthread_mutex_init(&decompress->waiters.mutex, NULL);
+    pthread_cond_init(&decompress->waiters.cond, NULL);
     decompress->ops=NULL;
 
     set_decompress_none(session);
@@ -379,6 +388,12 @@ int init_receive(struct ssh_session_s *session, pthread_mutex_t *mutex, pthread_
 	receive->buffer=NULL;
 
     }
+
+    pthread_mutex_destroy(&decompress->waiters.mutex);
+    pthread_cond_destroy(&decompress->waiters.cond);
+
+    pthread_mutex_destroy(&decrypt->waiters.mutex);
+    pthread_cond_destroy(&decrypt->waiters.cond);
 
     return -1;
 
@@ -423,6 +438,12 @@ void free_receive(struct ssh_session_s *session)
     receive->size=0;
     remove_decryptors(decrypt);
     remove_decompressors(decompress);
+
+    pthread_mutex_destroy(&decompress->waiters.mutex);
+    pthread_cond_destroy(&decompress->waiters.cond);
+
+    pthread_mutex_destroy(&decrypt->waiters.mutex);
+    pthread_cond_destroy(&decrypt->waiters.cond);
 
 }
 

@@ -59,22 +59,27 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
     send->flags=0;
     pthread_mutex_init(&send->mutex, NULL);
     pthread_cond_init(&send->cond, NULL);
-    init_list_header(&send->senders, SIMPLE_LIST_TYPE_EMPTY, NULL);
-    send->sending=0;
     send->newkeys.tv_sec=0;
     send->newkeys.tv_nsec=0;
     set_send_behaviour(send, "default"); /* start with serialized handling of the send queue */
     send->sequence_number=0;
+
+    init_list_header(&send->senders.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    pthread_mutex_init(&send->senders.mutex, NULL);
+    pthread_cond_init(&send->senders.cond, NULL);
+
 
     /* encrypt */
 
     encrypt->flags=0;
     memset(encrypt->ciphername, '\0', sizeof(encrypt->ciphername));
     memset(encrypt->hmacname, '\0', sizeof(encrypt->hmacname));
-    init_list_header(&encrypt->encryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&encrypt->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     encrypt->count=0;
     encrypt->max_count=0;
-    init_simple_locking(&encrypt->waiters);
+    init_list_header(&encrypt->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    pthread_mutex_init(&encrypt->waiters.mutex, NULL);
+    pthread_cond_init(&encrypt->waiters.cond, NULL);
     encrypt->ops=NULL;
     init_ssh_string(&encrypt->cipher_key);
     init_ssh_string(&encrypt->cipher_iv);
@@ -88,10 +93,12 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
 
     compress->flags=0;
     memset(compress->name, '\0', sizeof(compress->name));
-    init_list_header(&compress->compressors, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&compress->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    init_list_header(&compress->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    pthread_mutex_init(&compress->waiters.mutex, NULL);
+    pthread_cond_init(&compress->waiters.cond, NULL);
     compress->count=0;
     compress->max_count=0; /* no limit */
-    init_simple_locking(&compress->waiters);
     compress->ops=NULL;
 
     set_compress_none(compress);
@@ -110,6 +117,14 @@ void free_send(struct ssh_session_s *session)
 
     pthread_mutex_destroy(&send->mutex);
     pthread_cond_destroy(&send->cond);
+
+    pthread_mutex_destroy(&send->senders.mutex);
+    pthread_cond_destroy(&send->senders.cond);
+
+    pthread_mutex_destroy(&compress->waiters.mutex);
+    pthread_cond_destroy(&compress->waiters.cond);
+    pthread_mutex_destroy(&encrypt->waiters.mutex);
+    pthread_cond_destroy(&encrypt->waiters.cond);
 
 }
 

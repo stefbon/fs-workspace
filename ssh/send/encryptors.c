@@ -118,24 +118,25 @@ struct ssh_encryptor_s *get_encryptor(struct ssh_send_s *send, unsigned int *err
 {
     struct ssh_encrypt_s *encrypt=&send->encrypt;
     struct ssh_encryptor_s *encryptor=NULL;
-    struct simple_locking_s *locking=&encrypt->waiters;
-    struct simple_lock_s lock;
+    struct ssh_waiters_s *waiters=&encrypt->waiters;
+    struct list_element_s list;
 
     // logoutput("get_encryptor");
 
-    init_simple_readlock(locking, &lock);
-    simple_lock(&lock);
+    init_list_element(&list, NULL);
+    pthread_mutex_lock(&waiters->mutex);
+    add_list_element_last(&waiters->threads, &list);
 
     /* wait to become the first */
 
-    while (list_element_is_first(&lock.list)==-1) {
+    while (list_element_is_first(&list)==-1) {
 	int result=0;
 
-	result=pthread_cond_wait(&locking->cond, &locking->mutex);
+	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
 
 	/* already the first ? */
 
-	if (list_element_is_first(&lock.list)==0) {
+	if (list_element_is_first(&list)==0) {
 
 	    break;
 
@@ -152,12 +153,12 @@ struct ssh_encryptor_s *get_encryptor(struct ssh_send_s *send, unsigned int *err
 
     /* wait for a encryptor to become available */
 
-    while (encrypt->encryptors.count==0 && encrypt->count == encrypt->max_count && encrypt->max_count>0) {
+    while (waiters->cryptors.count==0 && encrypt->count == encrypt->max_count && encrypt->max_count>0) {
 	int result=0;
 
-	result=pthread_cond_wait(&send->cond, &send->mutex);
+	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
 
-	if (encrypt->encryptors.count>0 || encrypt->count < encrypt->max_count) {
+	if (waiters->cryptors.count>0 || encrypt->count < encrypt->max_count) {
 
 	    break;
 
@@ -175,10 +176,10 @@ struct ssh_encryptor_s *get_encryptor(struct ssh_send_s *send, unsigned int *err
 
     }
 
-    if (encrypt->encryptors.count>0) {
-	struct list_element_s *list=get_list_head(&encrypt->encryptors, SIMPLE_LIST_FLAG_REMOVE);
+    if (waiters->cryptors.count>0) {
+	struct list_element_s *tmp=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
 
-	encryptor=get_encryptor_container(list);
+	encryptor=get_encryptor_container(tmp);
 
     } else if (encrypt->count < encrypt->max_count || encrypt->max_count==0) {
 
@@ -192,10 +193,9 @@ struct ssh_encryptor_s *get_encryptor(struct ssh_send_s *send, unsigned int *err
     // logoutput("get_encryptor (nr %i count %i)", (encryptor) ? encryptor->nr : -1, encrypt->count);
     // logoutput("get_encryptor: finish (%li.%li - %li.%li)", encryptor->created.tv_sec, encryptor->created.tv_nsec, send->newkeys.tv_sec, send->newkeys.tv_nsec);
 
-    pthread_cond_broadcast(&send->cond);
-    pthread_mutex_unlock(&send->mutex);
-
-    simple_unlock(&lock);
+    remove_list_element(&list);
+    pthread_cond_broadcast(&waiters->cond);
+    pthread_mutex_unlock(&waiters->mutex);
 
     return encryptor;
 
@@ -205,13 +205,17 @@ void queue_encryptor(struct ssh_encryptor_s *encryptor)
 {
     struct ssh_encrypt_s *encrypt=encryptor->encrypt;
     struct ssh_send_s *send=(struct ssh_send_s *) (((char *) encrypt) - offsetof(struct ssh_send_s, encrypt));
+    struct ssh_waiters_s *waiters=&encrypt->waiters;
 
     pthread_mutex_lock(&send->mutex);
 
     if (encryptor->created.tv_sec > send->newkeys.tv_sec ||
 	(encryptor->created.tv_sec == send->newkeys.tv_sec && encryptor->created.tv_nsec >= send->newkeys.tv_nsec)) {
 
-	add_list_element_last(&encrypt->encryptors, &encryptor->list);
+	pthread_mutex_lock(&waiters->mutex);
+	add_list_element_last(&waiters->cryptors, &encryptor->list);
+	pthread_cond_broadcast(&waiters->cond);
+	pthread_mutex_unlock(&waiters->mutex);
 
     } else {
 
@@ -224,7 +228,6 @@ void queue_encryptor(struct ssh_encryptor_s *encryptor)
 
     }
 
-    pthread_cond_broadcast(&send->cond);
     pthread_mutex_unlock(&send->mutex);
 
 }
@@ -232,10 +235,11 @@ void queue_encryptor(struct ssh_encryptor_s *encryptor)
 void remove_encryptors(struct ssh_encrypt_s *encrypt)
 {
     struct list_element_s *list=NULL;
+    struct ssh_waiters_s *waiters=&encrypt->waiters;
 
     doremove:
 
-    list=get_list_head(&encrypt->encryptors, SIMPLE_LIST_FLAG_REMOVE);
+    list=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
 
     if (list) {
 	struct ssh_encryptor_s *encryptor=NULL;

@@ -312,6 +312,13 @@ struct ssh_utils_s {
     uint64_t 				(* ntohll)(uint64_t value);
 };
 
+struct ssh_waiters_s {
+    struct list_header_s		cryptors;
+    struct list_header_s		threads;
+    pthread_mutex_t			mutex;
+    pthread_cond_t			cond;
+};
+
 struct ssh_decompressor_s {
     struct ssh_decompress_s		*decompress;
     struct timespec			created;
@@ -335,10 +342,9 @@ struct decompress_ops_s {
 struct ssh_decompress_s {
     unsigned int			flags;
     char				name[64];
-    struct list_header_s		decompressors;
     unsigned int			count;
     unsigned int			max_count;
-    struct simple_locking_s		waiters;
+    struct ssh_waiters_s		waiters;
     struct decompress_ops_s		*ops;
 };
 
@@ -380,10 +386,11 @@ struct ssh_decrypt_s {
     unsigned int			flags;
     char 				ciphername[64];
     char				hmacname[64];
-    struct list_header_s		decryptors;		/* linked list of available decrypt handles, maybe more than one when parallel is possible */
+    //struct list_header_s		decryptors;		/* linked list of available decrypt handles, maybe more than one when parallel is possible */
     unsigned int			count;			/* total number decryptors in use */
     unsigned int			max_count;		/* maximum number of decryptors, when set to 1 parallel is disabled */
-    struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
+    //struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
+    struct ssh_waiters_s		waiters;
     struct decrypt_ops_s		*ops;			/* decrypt ops used */
     struct ssh_string_s			cipher_key;
     struct ssh_string_s			cipher_iv;
@@ -406,6 +413,7 @@ struct ssh_receive_s {
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
     pthread_t				threadid;
+    unsigned int			threadstatus;
     unsigned int 			sequence_number;
     void				(* process_ssh_packet)(struct ssh_session_s *session, struct ssh_packet_s *packet);
     void				(* read_ssh_buffer)(void *ptr);
@@ -439,10 +447,11 @@ struct compress_ops_s {
 struct ssh_compress_s {
     unsigned int			flags;
     char				name[64];
-    struct list_header_s		compressors;
+    // struct list_header_s		compressors;
     unsigned int			count;
     unsigned int			max_count;
-    struct simple_locking_s		waiters;
+    // struct simple_locking_s		waiters;
+    struct ssh_waiters_s		waiters;
     struct compress_ops_s		*ops;
 };
 
@@ -484,10 +493,11 @@ struct ssh_encrypt_s {
     unsigned int			flags;
     char				ciphername[64];
     char				hmacname[64];
-    struct list_header_s		encryptors;
+    // struct list_header_s		encryptors;
     unsigned int			count;
     unsigned int			max_count;
-    struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
+    // struct simple_locking_s		waiters;		/* linked list for threads waiting to get a decryptor to ensure fifo behaviour */
+    struct ssh_waiters_s		waiters;
     struct encrypt_ops_s		*ops;			/* encrypt ops used */
     struct ssh_string_s			cipher_key;
     struct ssh_string_s			cipher_iv;
@@ -500,6 +510,12 @@ struct ssh_sender_s {
     unsigned int			sequence;
 };
 
+struct ssh_senders_s {
+    struct list_header_s		header;
+    pthread_mutex_t			mutex;
+    pthread_cond_t			cond;
+};
+
 #define SSH_SEND_FLAG_SESSION				(1 << 0)
 #define SSH_SEND_FLAG_KEXINIT				(1 << 1)
 #define SSH_SEND_FLAG_NEWKEYS				(1 << 2)
@@ -510,8 +526,7 @@ struct ssh_send_s {
     unsigned int			flags;
     pthread_mutex_t			mutex;
     pthread_cond_t			cond;
-    struct list_header_s		senders;
-    unsigned int			sending;
+    struct ssh_senders_s		senders;
     struct timespec			newkeys;
     int					(* queue_sender)(struct ssh_send_s *send, struct ssh_sender_s *sender, unsigned int *error);
     unsigned int 			sequence_number;

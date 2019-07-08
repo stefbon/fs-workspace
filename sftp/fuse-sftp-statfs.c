@@ -123,11 +123,15 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
+    char data[pathinfo->len + 4];
+    store_uint32(data, pathinfo->len);
+    memcpy(&data[4], pathinfo->path, pathinfo->len);
+
     sftp_r.id=0;
     sftp_r.call.extension.len=strlen("statvfs@openssh.com");
     sftp_r.call.extension.name="statvfs@openssh.com";
-    sftp_r.call.extension.size=pathinfo->len;
-    sftp_r.call.extension.data=pathinfo->path;
+    sftp_r.call.extension.size=pathinfo->len + 4;
+    sftp_r.call.extension.data=data;
     sftp_r.fuse_request=f_request;
 
     if (send_sftp_extension_ctx(context->interface.ptr, &sftp_r)==0) {

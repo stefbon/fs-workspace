@@ -57,6 +57,8 @@ int write_socket(struct ssh_session_s *session, struct ssh_packet_s *packet, uns
 
     writesocket:
 
+    logoutput("write_socket: seq %i len %i", packet->sequence, left);
+
     written=(* sops->send)(&session->connection.io.socket, pos, left, 0);
 
     if (written==-1) {

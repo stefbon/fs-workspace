@@ -521,7 +521,7 @@ static int get_sftp_server_type_info(struct ssh_session_s *session, char *name, 
     if (get_sftp_sharedmap(session, name, &buffer)==0) {
 
 	logoutput("get_sftp_server_type_info: no prefix found for %s", name);
-	return 0;
+	return -1;
 
     }
 

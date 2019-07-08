@@ -875,7 +875,7 @@ static int install_ssh_server(struct workspace_mount_s *workspace, struct entry_
 	}
 
 	inode=entry->inode;
-	server_directory=get_directory(inode, &error);
+	server_directory=get_directory(inode, error);
 
 	if (wlock_directory(server_directory, &wlock3)==0) {
 	    struct inode_link_s link;

@@ -120,26 +120,27 @@ struct ssh_decryptor_s *get_decryptor(struct ssh_receive_s *receive, unsigned in
 {
     struct ssh_decrypt_s *decrypt=&receive->decrypt;
     struct ssh_decryptor_s *decryptor=NULL;
-    struct simple_locking_s *locking=&decrypt->waiters;
-    struct simple_lock_s lock;
+    struct ssh_waiters_s *waiters=&decrypt->waiters;
     // struct timespec now;
+    struct list_element_s list;
 
     // get_current_time(&now);
     // logoutput("get_decryptor: count %i (%li.%li)", decrypt->count, now.tv_sec, now.tv_nsec);
 
-    init_simple_readlock(locking, &lock);
-    simple_lock(&lock);
+    init_list_element(&list, NULL);
+    pthread_mutex_lock(&waiters->mutex);
+    add_list_element_last(&waiters->threads, &list);
 
-    /* wait to become the first */
+    /* wait for this thread to become the first */
 
-    while (list_element_is_first(&lock.list)==-1) {
+    while (list_element_is_first(&list)==-1) {
 	int result=0;
 
-	result=pthread_cond_wait(&locking->cond, &locking->mutex);
+	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
 
 	/* already the first ? */
 
-	if (list_element_is_first(&lock.list)==0) {
+	if (list_element_is_first(&list)==0) {
 
 	    break;
 
@@ -154,12 +155,12 @@ struct ssh_decryptor_s *get_decryptor(struct ssh_receive_s *receive, unsigned in
 
     /* wait for a decryptor to become available */
 
-    while (decrypt->decryptors.count==0 && decrypt->count == decrypt->max_count && decrypt->max_count>0) {
+    while (waiters->cryptors.count==0 && decrypt->count == decrypt->max_count && decrypt->max_count>0) {
 	int result=0;
 
-	result=pthread_cond_wait(&receive->cond, &receive->mutex);
+	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
 
-	if (decrypt->decryptors.count>0 || decrypt->count < decrypt->max_count) {
+	if (waiters->cryptors.count>0 || decrypt->count < decrypt->max_count) {
 
 	    break;
 
@@ -179,10 +180,10 @@ struct ssh_decryptor_s *get_decryptor(struct ssh_receive_s *receive, unsigned in
 
     }
 
-    if (decrypt->decryptors.count>0) {
-	struct list_element_s *list=get_list_head(&decrypt->decryptors, SIMPLE_LIST_FLAG_REMOVE);
+    if (waiters->cryptors.count>0) {
+	struct list_element_s *tmp=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
 
-	decryptor=get_decryptor_container(list);
+	decryptor=get_decryptor_container(tmp);
 
     } else if (decrypt->count < decrypt->max_count || decrypt->max_count==0) {
 
@@ -197,10 +198,9 @@ struct ssh_decryptor_s *get_decryptor(struct ssh_receive_s *receive, unsigned in
     // get_current_time(&now);
     // logoutput("get_decryptor: finish count %i (%li.%li)", decrypt->count, now.tv_sec, now.tv_nsec);
 
-    pthread_cond_broadcast(&receive->cond);
-    pthread_mutex_unlock(&receive->mutex);
-
-    simple_unlock(&lock);
+    remove_list_element(&list);
+    pthread_cond_broadcast(&waiters->cond);
+    pthread_mutex_unlock(&waiters->mutex);
 
     return decryptor;
 
@@ -210,13 +210,17 @@ void queue_decryptor(struct ssh_decryptor_s *decryptor)
 {
     struct ssh_decrypt_s *decrypt=decryptor->decrypt;
     struct ssh_receive_s *receive=(struct ssh_receive_s *) (((char *) decrypt) - offsetof(struct ssh_receive_s, decrypt));
+    struct ssh_waiters_s *waiters=&decrypt->waiters;
 
     pthread_mutex_lock(&receive->mutex);
 
     if (decryptor->created.tv_sec > receive->newkeys.tv_sec ||
 	(decryptor->created.tv_sec == receive->newkeys.tv_sec && decryptor->created.tv_nsec >= receive->newkeys.tv_nsec)) {
 
-	add_list_element_last(&decrypt->decryptors, &decryptor->list);
+	pthread_mutex_lock(&waiters->mutex);
+	add_list_element_last(&waiters->cryptors, &decryptor->list);
+	pthread_cond_broadcast(&waiters->cond);
+	pthread_mutex_unlock(&waiters->mutex);
 
     } else {
 
@@ -229,7 +233,6 @@ void queue_decryptor(struct ssh_decryptor_s *decryptor)
 
     }
 
-    pthread_cond_broadcast(&receive->cond);
     pthread_mutex_unlock(&receive->mutex);
 
 }
@@ -237,10 +240,11 @@ void queue_decryptor(struct ssh_decryptor_s *decryptor)
 void remove_decryptors(struct ssh_decrypt_s *decrypt)
 {
     struct list_element_s *list=NULL;
+    struct ssh_waiters_s *waiters=&decrypt->waiters;
 
     doremove:
 
-    list=get_list_head(&decrypt->decryptors, SIMPLE_LIST_FLAG_REMOVE);
+    list=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
 
     if (list) {
 	struct ssh_decryptor_s *decryptor=NULL;

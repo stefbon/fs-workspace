@@ -407,7 +407,7 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 
 	} else if (request->sftp_r->sequence == signal->sequence_number_error) {
 
-	    logoutput("wait_sftp_response: signal sequence error");
+	    logoutput("wait_sftp_response: signal sequence error (seq=%i)", signal->sequence_number_error);
 
 	    /* error on sequence number (not supported for example) */
 
@@ -438,7 +438,7 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 
 		    /* timeout or interrupted: remove from hash */
 
-		    logoutput("wait_sftp_response: timeout/interrupted");
+		    logoutput("wait_sftp_response: timeout/interrupted (seq=%i)", request->sftp_r->sequence);
 		    remove_list_element(&request->h_list);
 		    free(request);
 

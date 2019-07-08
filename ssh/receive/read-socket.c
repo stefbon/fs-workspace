@@ -98,7 +98,6 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 	    start_thread_connection_problem(session, 0);
 
 	} else {
-
 	    logoutput_warning("read_ssh_data: error %i:%s", error, strerror(error));
 
 	}
@@ -120,14 +119,12 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 		    this thread decrypt the first bytes to determine the length of the packet
 		    and will set receive->read to zero again */
 
-		// logoutput("read_ssh_data: start thread");
-
+		logoutput("read_ssh_data: read %i bytes, start thread", bytesread);
 		read_ssh_buffer(session);
 
 	    } else {
 
-		// logoutput("read_ssh_data: broadcast");
-
+		logoutput("read_ssh_data: read %i bytes, broadcast", bytesread);
 		pthread_cond_broadcast(&receive->cond);
 
 	    }

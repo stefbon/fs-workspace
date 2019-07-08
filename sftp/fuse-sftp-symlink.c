@@ -207,7 +207,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char completepath[pathlen];
 
-    logoutput("_fs_sftp_readlink_common");
+    // logoutput("_fs_sftp_readlink_common");
 
     if ((* f_request->is_interrupted)(f_request)) {
 
@@ -220,7 +220,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
-    logoutput("_fs_sftp_readlink_common: path %.*s", pathinfo->len, pathinfo->path);
+    // logoutput("_fs_sftp_readlink_common: path %.*s", pathinfo->len, pathinfo->path);
     memset(completepath, '\0', pathlen);
 
     if (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SYMLINKS_DISABLE) {
@@ -247,7 +247,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
-		logoutput("_fs_sftp_readlink_common: reply %i", sftp_r.type);
+		// logoutput("_fs_sftp_readlink_common: reply %i", sftp_r.type);
 
 		if (sftp_r.type==SSH_FXP_NAME) {
 		    unsigned int len=get_uint32(sftp_r.response.names.buff);
@@ -266,7 +266,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 			char *sep=memrchr(pathinfo->path, '/', pathinfo->len);
 			unsigned int fullpathlen;
 
-			logoutput("_fs_sftp_readlink_common: A1");
+			// logoutput("_fs_sftp_readlink_common: A1");
 
 			if (sep) {
 
@@ -291,7 +291,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 			sftp_r.call.realpath.path=(unsigned char *)fullpath;
 			sftp_r.call.realpath.len=fullpathlen;
 
-			logoutput("_fs_sftp_readlink_common: composed path %.*s", fullpathlen, fullpath);
+			// logoutput("_fs_sftp_readlink_common: composed path %.*s", fullpathlen, fullpath);
 
 			if (send_sftp_realpath_ctx(context->interface.ptr, &sftp_r)==0) {
 
@@ -326,7 +326,7 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 		    - with custom prefix it in interface->backend.sftp.prefix
 		    - with hone its in ?? */
 
-		    logoutput("_fs_sftp_readlink_common: A2");
+		    // logoutput("_fs_sftp_readlink_common: A2");
 
 		    create_reply_sftp_readlink(context, f_request, path, len);
 		    free(sftp_r.response.names.buff);

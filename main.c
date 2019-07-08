@@ -178,6 +178,7 @@ static void _disconnect_workspace(struct context_interface_s *interface)
 
     (* interface->signal_interface)(interface, "disconnecting");
     (* interface->signal_interface)(interface, "close");
+    root->service.connection=NULL;
 
     logoutput_info("_disconnect_workspace: umount");
 

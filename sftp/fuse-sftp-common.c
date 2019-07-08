@@ -89,7 +89,7 @@ static void copy_attr_permissions(void *ptr, struct stat *st, struct fuse_sftp_a
 
     }
 
-    logoutput("copy_attr_permissions: pre %i post %i", keep, st->st_mode);
+    // logoutput("copy_attr_permissions: pre %i post %i", keep, st->st_mode);
 
 }
 

@@ -53,14 +53,13 @@ static int queue_sender_default(struct ssh_send_s *send, struct ssh_sender_s *se
     logoutput("queue_sender_default");
 
     /* add at tail of senders list default: more senders are allowed */
-    pthread_mutex_lock(&send->mutex);
-    add_list_element_last(&send->senders, &sender->list);
-    send->sending++;
+    pthread_mutex_lock(&send->senders.mutex);
+    add_list_element_last(&send->senders.header, &sender->list);
     sender->sequence=send->sequence_number;
     sender->listed=1;
     send->sequence_number++;
-    pthread_cond_broadcast(&send->cond);
-    pthread_mutex_unlock(&send->mutex);
+    pthread_cond_broadcast(&send->senders.cond);
+    pthread_mutex_unlock(&send->senders.mutex);
 
     return 0;
 }
@@ -73,13 +72,13 @@ static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sen
 
     /* add at tail of senders list serialized: only one sender is allowed */
 
-    pthread_mutex_lock(&send->mutex);
+    pthread_mutex_lock(&send->senders.mutex);
 
-    while (send->sending>0) {
+    while (send->senders.header.count>0) {
 
-	int result=pthread_cond_wait(&send->cond, &send->mutex);
+	int result=pthread_cond_wait(&send->senders.cond, &send->senders.mutex);
 
-	if (send->sending==0) {
+	if (send->senders.header.count==0) {
 
 	    break;
 
@@ -99,16 +98,17 @@ static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sen
 
     }
 
-    add_list_element_last(&send->senders, &sender->list);
+    add_list_element_last(&send->senders.header, &sender->list);
     sender->sequence=send->sequence_number;
     sender->listed=1;
     send->sequence_number++;
-    send->sending++;
 
     out:
 
-    pthread_cond_broadcast(&send->cond);
-    pthread_mutex_unlock(&send->mutex);
+    pthread_cond_broadcast(&send->senders.cond);
+    pthread_mutex_unlock(&send->senders.mutex);
+
+    logoutput("queue_sender_serial: seq %i", sender->sequence);
 
     return success;
 }
@@ -248,13 +248,16 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 		    if ((* encryptor->write_hmac_post)(encryptor, &packet)==0) {
 
-			pthread_mutex_lock(&send->mutex);
+			pthread_mutex_lock(&send->senders.mutex);
 
 			/* wait to become first */
 
-			while (send->senders.head!=&sender.list) {
+			while (list_element_is_first(&sender.list)==-1) {
 
-			    int result=pthread_cond_wait(&send->cond, &send->mutex);
+			    logoutput("_write_ssh_packet: %i not the first, wait", sender.sequence);
+
+			    int result=pthread_cond_wait(&send->senders.cond, &send->senders.mutex);
+			    if (list_element_is_first(&sender.list)==-1) logoutput("_write_ssh_packet: %i still not the first, wait", sender.sequence);
 
 			}
 
@@ -268,9 +271,8 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 			remove_list_element(&sender.list);
 			sender.listed=0;
-			send->sending--;
-			pthread_cond_broadcast(&send->cond);
-			pthread_mutex_unlock(&send->mutex);
+			pthread_cond_broadcast(&send->senders.cond);
+			pthread_mutex_unlock(&send->senders.mutex);
 
 			(* encryptor->queue)(encryptor);
 			encryptor=NULL;
@@ -316,13 +318,12 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 	queue_compressor(compressor);
 	compressor=NULL;
 
-	if (sender.listed) {
+	if (sender.listed==1) {
 
-	    pthread_mutex_lock(&send->mutex);
+	    pthread_mutex_lock(&send->senders.mutex);
 	    remove_list_element(&sender.list);
-	    send->sending--;
-	    pthread_cond_broadcast(&send->cond);
-	    pthread_mutex_unlock(&send->mutex);
+	    pthread_cond_broadcast(&send->senders.cond);
+	    pthread_mutex_unlock(&send->senders.mutex);
 	    sender.listed=0;
 
 	}
