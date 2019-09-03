@@ -1,5 +1,5 @@
 INTRODUCTION
-------------
+============
 
 This fuse service provides automatic access to network services like sftp.
 For sftp hosts providing the ssh/sftp service are detected (using avahi) and
@@ -26,16 +26,16 @@ SFTP supports versions 3-6.
 
 
 REQUIREMENTS
-------------
+============
 
 For crypto libgcrypt is used.
 For userlogins systemd is used.
-For detection of networkservices avahi is used.
+For detection of hosts and networkservices avahi is used.
 Note libfuse is not required, fuse support in the kernel of course.
 
 
 FEATURES
---------
+========
 
 - Automatic detection of services on the local network
 
@@ -48,7 +48,7 @@ FEATURES
 
 
 BUILD
------
+=====
 
 Create directory to get the sources.
 
@@ -90,3 +90,30 @@ I'm using the network-workgroup and network-server icons from Adwaita icons coll
 Start the executable
 
 ./fs-workspace
+
+
+
+Other filesystems
+=================
+
+Other filesystems than sftp are possible, for example SMB, using libsmb2 (SMB2/SMB3). This library has a nice api
+and are also path based.
+
+
+TODO
+====
+
+- support for ed25519 (in public/private keys and key exchange curve 25519)
+at this moment rsa and dss are supported, and none elyptic curve based keys.
+
+- support for backup. Add a "share" per server special for backups. The sftp protocol gives room to add extra calls, for example to
+make a backup. Using librsync would be a good idea here.
+
+- support for a UDP channel (like MOSH) for fast data transfer
+
+- support for forwarding of ports like CUPS socket to secure access the remote printer server
+
+- support of a chat terminal per server, allowing users per domain to chat
+
+
+
