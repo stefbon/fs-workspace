@@ -115,5 +115,6 @@ make a backup. Using librsync would be a good idea here.
 
 - support of a chat terminal per server, allowing users per domain to chat
 
+- support for more key providers than OPENSSH (=local files, like ~/.ssh/id_rsa), like a secretkey, or a key deamon
 
 
