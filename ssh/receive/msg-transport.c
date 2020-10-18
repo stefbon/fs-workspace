@@ -41,22 +41,21 @@
 
 #include "utils.h"
 
+#include "ssh-utils.h"
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-data.h"
 #include "ssh-send.h"
 #include "ssh-keyexchange.h"
-
-#include "ssh-utils.h"
 #include "extensions/extension.h"
 
 /* various callbacks for SSH transport */
 
 /* disconnect */
 
-static void receive_msg_disconnect(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_disconnect(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
     unsigned int reason=0;
     unsigned int len=0;
@@ -98,24 +97,24 @@ static void receive_msg_disconnect(struct ssh_session_s *session, struct ssh_pay
     }
 
     free_payload(&payload);
-    disconnect_ssh_session(session, 1, reason);
+    disconnect_ssh_connection(connection);
 
 }
 
 /* ignore */
 
-static void receive_msg_ignore(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_ignore(struct ssh_connection_s *c, struct ssh_payload_s *payload)
 {
     free_payload(&payload);
 }
 
 /* not implemented */
 
-static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_unimplemented(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len >= 5) {
-	struct ssh_signal_s *signal=&session->receive.signal;
+	struct ssh_signal_s *signal=&connection->receive.signal;
 	unsigned int sequence=get_uint32(&payload->buffer[1]);
 
 	logoutput_info("receive_msg_unimplemented: received a unimplemented message for number %i", sequence);
@@ -128,13 +127,14 @@ static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_
 	pthread_cond_broadcast(signal->cond);
 	pthread_mutex_unlock(signal->mutex);
 	free_payload(&payload);
+	payload=NULL;
 
     }
 
     if (payload) {
 
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 
@@ -142,7 +142,7 @@ static void receive_msg_unimplemented(struct ssh_session_s *session, struct ssh_
 
 /* debug */
 
-static void receive_msg_debug(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_debug(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len > 6) {
@@ -169,13 +169,14 @@ static void receive_msg_debug(struct ssh_session_s *session, struct ssh_payload_
 	}
 
 	free_payload(&payload);
+	payload=NULL;
 
     }
 
     if (payload) {
 
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 
@@ -183,243 +184,214 @@ static void receive_msg_debug(struct ssh_session_s *session, struct ssh_payload_
 
 /* service request */
 
-static void receive_msg_service_request(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_service_request(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     /* error: receiving a service request from the server in this phase is not ok */
 
     logoutput_info("receive_msg_service_request: error: received a service request from server....");
     free_payload(&payload);
-    disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+    disconnect_ssh_connection(connection);
 
 }
 
 /* service accept, reply on service request for ssh-userauth or ssh-connection */
 
-static void receive_msg_service_accept(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_service_accept(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
-
     logoutput("receive_msg_service_accept");
 
-    pthread_mutex_lock(&session->status.mutex);
+    pthread_mutex_lock(connection->setup.mutex);
 
-    if (session->status.sessionphase.status & SESSION_STATUS_DISCONNECTING) {
+    if (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) {
 
 	free_payload(&payload);
+	payload=NULL;
 
-    } else if (session->status.sessionphase.phase==SESSION_PHASE_SETUP || session->status.sessionphase.phase==SESSION_PHASE_CONNECTION) {
-	struct payload_queue_s *queue = session->queue;
+    } else if (connection->setup.flags & SSH_SETUP_FLAG_TRANSPORT) {
 
-	if (queue) {
-
-	    queue_ssh_payload(queue, payload);
-	    payload=NULL;
-
-	}
+	queue_ssh_payload_locked(&connection->setup.queue, payload);
+	payload=NULL;
 
     }
 
-    pthread_mutex_unlock(&session->status.mutex);
+    pthread_mutex_unlock(connection->setup.mutex);
 
     if (payload) {
 
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 
 }
 
-static void receive_msg_ext_info(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_ext_info(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
-    struct ssh_status_s *status=&session->status;
-    unsigned int error=0;
-    int result=-1;
-
-    /*
-	start re exchange. See:
-	https://tools.ietf.org/html/rfc4253#section-9
-    */
 
     logoutput("receive_msg_ext_info");
 
-    pthread_mutex_lock(&status->mutex);
+    pthread_mutex_lock(connection->setup.mutex);
 
-    if (status->sessionphase.status & SESSION_STATUS_DISCONNECTING) {
+    if (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) {
 
 	free_payload(&payload);
+	payload=NULL;
 
-    } else if (status->sessionphase.phase==SESSION_PHASE_SETUP) {
+    } else {
 
 	/* received:
 	    - after SSH_MSG_NEWKEYS or
 	    - before SSH_MSG_USERAUTH_SUCCESS */
 
-	process_msg_ext_info(session, payload);
+	process_msg_ext_info(connection, payload);
 
     }
 
-    pthread_mutex_unlock(&status->mutex);
-
-    free_payload(&payload);
+    pthread_mutex_unlock(connection->setup.mutex);
+    if (payload) free_payload(&payload);
 
 }
 
-static void receive_msg_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload)
+/*
+    receiving a kexinit message
+    it's possible that it's a kexinit in the setup phase but also
+    to initiate the rekeyexchange by the server
+*/
+
+static void receive_msg_kexinit(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
-    struct ssh_status_s *status=&session->status;
+    struct ssh_setup_s *setup=&connection->setup;
     unsigned int error=0;
     int result=-1;
 
-    /*
-	start re exchange. See:
-	https://tools.ietf.org/html/rfc4253#section-9
-    */
+    /* start (re)exchange. See: https://tools.ietf.org/html/rfc4253#section-9 */
 
     logoutput("receive_msg_kexinit");
 
-    pthread_mutex_lock(&status->mutex);
+    pthread_mutex_lock(setup->mutex);
 
-    if (status->sessionphase.status & SESSION_STATUS_DISCONNECTING) {
+    if (setup->flags & SSH_SETUP_FLAG_DISCONNECT)  {
 
 	free_payload(&payload);
+	payload=NULL;
 
-    } else if (status->sessionphase.phase==SESSION_PHASE_SETUP) {
+    } else if (setup->status==SSH_SETUP_PHASE_TRANSPORT) {
 
-	if (status->sessionphase.sub==SESSION_SUBPHASE_KEYEXCHANGE) {
-	    struct keyexchange_s *keyexchange=session->keyexchange;
+	/* when in transport phase it's possible this during the setup of the connection or rekey
+	    it does not matter: queue it */
 
-	    /* keyexchange in setup phase */
+	if (setup->phase.transport.status==SSH_TRANSPORT_TYPE_GREETER || setup->phase.transport.status==SSH_TRANSPORT_TYPE_KEX) {
 
-	    if (keyexchange) {
+	    if ((setup->phase.transport.status==SSH_TRANSPORT_TYPE_KEX) && (setup->phase.transport.type.kex.flags & SSH_KEX_FLAG_KEXINIT_S2C)) {
 
-		queue_ssh_payload(keyexchange->queue, payload);
-		payload=NULL;
+		pthread_mutex_unlock(setup->mutex);
+		goto disconnect;
 
 	    }
+
+	    /* transport is being setup: in kex or greeter, queue it anyway */
+
+	    queue_ssh_payload_locked(&setup->queue, payload);
+	    payload=NULL;
 
 	}
 
-    } else if (status->sessionphase.phase==SESSION_PHASE_CONNECTION) {
+    } else if (setup->flags & SSH_SETUP_FLAG_TRANSPORT) {
 
-	if (status->sessionphase.sub==0) {
-	    struct payload_queue_s queue;
-	    struct sessionphase_s sessionphase;
+	/* connection is setup, and no (re)kexinit: start it here */
 
-	    /* start key reexchange */
+	if ((setup->flags & SSH_SETUP_FLAG_SETUPTHREAD)==0) {
+	    int result=0;
 
-	    init_payload_queue(session, &queue);
-	    queue_ssh_payload(&queue, payload);
-	    session->status.sessionphase.sub=SESSION_SUBPHASE_KEYEXCHANGE;
-	    copy_sessionphase(session, &sessionphase);
-	    pthread_mutex_unlock(&session->status.mutex);
+	    setup->thread=pthread_self();
+	    setup->flags |= SSH_SETUP_FLAG_SETUPTHREAD;
+	    init_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX);
+	    queue_ssh_payload_locked(&setup->queue, payload);
+	    payload=NULL;
+	    pthread_cond_broadcast(setup->cond);
+	    pthread_mutex_unlock(setup->mutex);
 
-	    if (key_exchange(session, &queue, &sessionphase)==0) {
+	    result=key_exchange(connection);
+	    logoutput("receive_msg_kexinit: rekey exchange %s", (result==0) ? "success" : "failed");
 
-		logoutput("receive_msg_kexinit: key exchange completed");
-
-	    } else {
-
-		disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
-
-	    }
+	    finish_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX);
+	    finish_ssh_connection_setup(connection, "transport", 0);
+	    finish_ssh_connection_setup(connection, "setup", 0);
+	    if (result==-1) goto disconnect;
 
 	    return;
 
-	}
+	} else {
 
-    }
-
-    pthread_mutex_unlock(&session->status.mutex);
-
-    if (payload) {
-
-	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
-
-    }
-
-}
-
-static void receive_msg_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload)
-{
-    struct ssh_status_s *status=&session->status;
-
-    logoutput("receive_msg_newkeys");
-
-    pthread_mutex_lock(&status->mutex);
-
-    if (status->sessionphase.status & SESSION_STATUS_DISCONNECTING) {
-
-	free_payload(&payload);
-
-    } else if ((status->sessionphase.phase==SESSION_PHASE_CONNECTION || status->sessionphase.phase==SESSION_PHASE_SETUP) &&
-		(status->sessionphase.sub==SESSION_SUBPHASE_KEYEXCHANGE)) {
-	struct ssh_receive_s *receive=&session->receive;
-
-	free_payload(&payload);
-
-	/* signal keyexchange newkeys from server received */
-
-	status->sessionphase.status |= SESSION_STATUS_KEYEXCHANGE_NEWKEYS_S2C;
-	pthread_cond_broadcast(&status->cond);
-	pthread_mutex_unlock(&status->mutex);
-
-	/* wait for signal it's safe to comtinue */
-
-	if (wait_for_newkeys_to_complete(receive)==0) {
-
-	    logoutput("receive_msg_newkeys: newkeys s2c completed");
-
-	}
-
-	return;
-
-    }
-
-    pthread_mutex_unlock(&status->mutex);
-
-    if (payload) {
-
-	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
-
-    }
-
-}
-
-static void receive_msg_kexdh_reply(struct ssh_session_s *session, struct ssh_payload_s *payload)
-{
-    struct ssh_status_s *status=&session->status;
-
-    logoutput("receive_msg_kexdh_reply");
-
-    pthread_mutex_lock(&status->mutex);
-
-    if (status->sessionphase.status & SESSION_STATUS_DISCONNECTING) {
-
-	free_payload(&payload);
-
-    } else if ((status->sessionphase.phase==SESSION_PHASE_SETUP || status->sessionphase.phase==SESSION_PHASE_CONNECTION)) {
-	struct keyexchange_s *keyexchange=session->keyexchange;
-
-	if (keyexchange) {
-
-	    /* keyexchange in setup or connection phase */
-
-	    queue_ssh_payload(keyexchange->queue, payload);
+    	    queue_ssh_payload(&setup->queue, payload);
 	    payload=NULL;
 
 	}
 
     }
 
-    pthread_mutex_unlock(&status->mutex);
+    pthread_mutex_unlock(setup->mutex);
+    if (payload) free_payload(&payload);
+    return;
+
+    disconnect:
+
+    if (payload) free_payload(&payload);
+    disconnect_ssh_connection(connection);
+
+}
+
+static int setup_cb_newkeys(struct ssh_connection_s *connection, void *data)
+{
+    set_ssh_receive_behaviour(connection, "newkeys");
+    return 0;
+}
+
+static void receive_msg_newkeys(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
+{
+    logoutput("receive_msg_newkeys");
+
+    free_payload(&payload);
+    payload=NULL;
+
+    if (change_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX, SSH_KEX_FLAG_NEWKEYS_S2C, 0, setup_cb_newkeys, NULL)==-1)
+	disconnect_ssh_connection(connection);
+
+}
+
+static void receive_msg_kexdh_reply(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
+{
+    struct ssh_setup_s *setup=&connection->setup;
+
+    logoutput("receive_msg_kexdh_reply");
+
+    pthread_mutex_lock(setup->mutex);
+
+    if (setup->flags & SSH_SETUP_FLAG_DISCONNECT) {
+
+	free_payload(&payload);
+	payload=NULL;
+
+    } else if (setup->status==SSH_SETUP_PHASE_TRANSPORT) {
+
+	if (setup->phase.transport.status==SSH_TRANSPORT_TYPE_KEX) {
+
+	    /* keyexchange in setup or connection phase */
+
+	    queue_ssh_payload_locked(&setup->queue, payload);
+	    payload=NULL;
+
+	}
+
+    }
+
+    pthread_mutex_unlock(setup->mutex);
 
     if (payload) {
 
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 

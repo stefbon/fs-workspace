@@ -49,6 +49,9 @@
 #include "ssh-hostinfo.h"
 #include "ssh-utils.h"
 
+#include "receive/msg-channel.h"
+#include "send/msg-channel.h"
+
 extern struct workerthreads_queue_struct workerthreads_queue;
 
 static const char *openfailure_reasons[] = {
@@ -76,6 +79,7 @@ void get_channel_expire_init(struct ssh_channel_s *channel, struct timespec *exp
 
 void get_timeinfo_ssh_server(struct ssh_session_s *session)
 {
+    struct ssh_connection_s *connection=session->connections.main;
     struct timespec send_client;
     struct timespec recv_client;
     struct timespec set_server;
@@ -85,17 +89,17 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
     unsigned int done=0;
     char *sep=NULL;
 
-    pthread_mutex_lock(&session->status.mutex);
+    pthread_mutex_lock(connection->setup.mutex);
 
-    if (session->hostinfo.flags & (SSH_HOSTINFO_FLAG_TIMEINIT | SSH_HOSTINFO_FLAG_TIMESET)) {
+    if (connection->setup.flags & SSH_SETUP_FLAG_HOSTINFO) {
 
-	pthread_mutex_unlock(&session->status.mutex);
+	pthread_mutex_unlock(connection->setup.mutex);
 	return;
 
     }
 
-    session->hostinfo.flags|=SSH_HOSTINFO_FLAG_TIMEINIT;
-    pthread_mutex_unlock(&session->status.mutex);
+    connection->setup.flags|=SSH_SETUP_FLAG_HOSTINFO;
+    pthread_mutex_unlock(connection->setup.mutex);
 
     set_server.tv_sec=0;
     set_server.tv_nsec=0;
@@ -175,20 +179,6 @@ void get_timeinfo_ssh_server(struct ssh_session_s *session)
 
     if (buffer.ptr) free(buffer.ptr);
 
-    pthread_mutex_lock(&session->status.mutex);
-
-    if (done==1) {
-
-	session->hostinfo.flags|=SSH_HOSTINFO_FLAG_TIMESET;
-
-    } else if (session->hostinfo.flags & SSH_HOSTINFO_FLAG_TIMEINIT) {
-
-	session->hostinfo.flags-=SSH_HOSTINFO_FLAG_TIMEINIT;
-
-    }
-
-    pthread_mutex_unlock(&session->status.mutex);
-
 }
 
 unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buffer, unsigned int size)
@@ -215,9 +205,9 @@ unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buf
 	    result=4;
 
 	} else {
-	    struct fs_connection_s *connection=&channel->session->connection;
+	    struct fs_connection_s *connection=&channel->connection->connection;
 
-	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED || connection->status & FS_CONNECTION_FLAG_DISCONNECTING) {
+	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECT ) {
 
 		store_uint32(buffer, ENOTCONN); /* not connected with server */
 		result=4;
@@ -229,5 +219,55 @@ unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buf
     }
 
     return result;
+
+}
+
+void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s **payload))
+{
+
+    logoutput("switch_channel_receive_data: %s", name);
+
+    pthread_mutex_lock(&channel->mutex);
+
+    channel->receive_msg_channel_data=receive_msg_channel_data_down;
+
+    if (strcmp(name, "init")==0) {
+
+	channel->receive_msg_channel_data=receive_msg_channel_data_init;
+
+    } else if (strcmp(name, "subsystem")==0) {
+
+	channel->receive_msg_channel_data=receive_data_cb;
+
+    } else if (strcmp(name, "down")==0) {
+
+	channel->receive_msg_channel_data=receive_msg_channel_data_down;
+
+    }
+
+    pthread_mutex_unlock(&channel->mutex);
+
+}
+
+void switch_channel_send_data(struct ssh_channel_s *channel, const char *what)
+{
+
+    pthread_mutex_lock(&channel->mutex);
+
+    if (strcmp(what, "error")==0 || strcmp(what, "eof")==0 || strcmp(what, "close")==0) {
+
+	channel->send_data_message=send_channel_data_message_error;
+
+    } else if (strcmp(what, "default")==0) {
+
+	channel->send_data_message=send_channel_data_message_connected;
+
+    } else {
+
+	logoutput_warning("switch_channel_send_data: status %s not reckognized", what);
+
+    }
+
+    pthread_mutex_unlock(&channel->mutex);
 
 }

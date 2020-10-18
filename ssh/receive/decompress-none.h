@@ -21,6 +21,6 @@
 #define FS_WORKSPACE_SSH_RECEIVE_DECOMPRESS_NONE_H
 
 void init_decompress_none();
-void set_decompress_none(struct ssh_session_s *session);
+void set_decompress_none(struct ssh_connection_s *connection);
 
 #endif

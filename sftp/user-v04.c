@@ -105,7 +105,8 @@ static void get_local_gid_shared_v04(struct sftp_subsystem_s *sftp, struct sftp_
 
 static void get_local_uid_nonshared_v04(struct sftp_subsystem_s *sftp, struct sftp_user_s *user)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct ssh_identity_s *identity=&session->identity;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
     char name[user->remote.name.len + 1];
@@ -145,7 +146,8 @@ static void get_local_uid_nonshared_v04(struct sftp_subsystem_s *sftp, struct sf
 
 static void get_local_gid_nonshared_v04(struct sftp_subsystem_s *sftp, struct sftp_group_s *group)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
     char name[group->remote.name.len + 1];
@@ -213,7 +215,8 @@ static void get_remote_group_shared_v04(struct sftp_subsystem_s *sftp, struct sf
 
 static void get_remote_user_nonshared_v04(struct sftp_subsystem_s *sftp, struct sftp_user_s *user)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
 
     if (user->local_uid==session->identity.pwd.pw_uid) {
@@ -244,7 +247,8 @@ static void get_remote_user_nonshared_v04(struct sftp_subsystem_s *sftp, struct 
 
 static void get_remote_group_nonshared_v04(struct sftp_subsystem_s *sftp, struct sftp_group_s *group)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
 
     if (group->local_gid==usermapping->data.name_nonshared.local_gid) {

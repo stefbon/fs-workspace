@@ -187,7 +187,7 @@ int write_ssh_mpint(struct ssh_mpint_s *mp, char *buffer, unsigned int size, uns
 
     if (buffer==NULL) return (4 + get_nbytes_ssh_mpint(mp));
 
-    err=gcry_mpi_print(format, (unsigned char *) buffer, (size_t) size, &nwritten, mp->lib.mpi);
+    err=gcry_mpi_print(mpi_format, (unsigned char *) buffer, (size_t) size, &nwritten, mp->lib.mpi);
 
     if (err) {
 

@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_ENCRYPTOR_H
-#define FS_WORKSPACE_SSH_SEND_ENCRYPTOR_H
+#ifndef _SSH_SEND_ENCRYPTORS_H
+#define _SSH_SEND_ENCRYPTORS_H
 
 struct ssh_encryptor_s *get_encryptor_container(struct list_element_s *list);
 struct ssh_encryptor_s *get_encryptor(struct ssh_send_s *s, unsigned int *error);

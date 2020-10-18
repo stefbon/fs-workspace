@@ -17,17 +17,13 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_CONNECTION_H
-#define FS_WORKSPACE_SSH_CONNECTION_H
+#ifndef _SSH_CONNECTION_CONNECT_H
+#define _SSH_CONNECTION_CONNECT_H
 
-void init_ssh_connection(struct fs_connection_s *connection);
-signed char compare_ssh_connection(struct fs_connection_s *connection, char *address, unsigned int port);
-
-int connect_ssh_connection(struct fs_connection_s *connection, char *address, unsigned int port);
-void disconnect_ssh_connection(struct fs_connection_s *connection);
-int add_ssh_session_eventloop(struct ssh_session_s *session, unsigned int fd, int (* read_incoming_data)(int fd, void *ptr, uint32_t events), unsigned int *error);
-void remove_ssh_session_eventloop(struct ssh_session_s *session);
-
-unsigned int get_status_ssh_session(struct ssh_session_s *session);
+int create_ssh_networksocket(struct ssh_connection_s *connection, char *address, unsigned int port);
+int connect_ssh_connection(struct ssh_connection_s *connection, char *address, unsigned int port);
+void disconnect_ssh_connection(struct ssh_connection_s *connection);
+int add_ssh_connection_eventloop(struct ssh_connection_s *connection, unsigned int fd, int (* read_incoming_data)(int fd, void *ptr, uint32_t events), unsigned int *error);
+void remove_ssh_connection_eventloop(struct ssh_connection_s *connection);
 
 #endif

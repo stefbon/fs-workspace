@@ -44,7 +44,7 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-send.h"
 #include "ssh-utils.h"
 
@@ -98,6 +98,7 @@
 static int _send_channel_open_message(struct msg_buffer_s *mb, struct ssh_channel_s *channel)
 {
     unsigned int len=0;
+    struct ssh_session_s *session=channel->session;
 
     logoutput_debug("_send_channel_open_message");
 
@@ -119,7 +120,7 @@ static int _send_channel_open_message(struct msg_buffer_s *mb, struct ssh_channe
 
     msg_store_uint32(mb, channel->local_channel);
     msg_store_uint32(mb, channel->local_window);
-    msg_store_uint32(mb, get_max_packet_size(channel->session));
+    msg_store_uint32(mb, get_max_packet_size(session));
 
     if (channel->type==_CHANNEL_TYPE_DIRECT_STREAMLOCAL) {
 
@@ -163,7 +164,7 @@ int send_channel_open_message(struct ssh_channel_s *channel, unsigned int *seq)
     set_msg_buffer_payload(&mb, payload);
     payload->len=_send_channel_open_message(&mb, channel);
 
-    return write_ssh_packet(channel->session, payload, seq);
+    return write_ssh_packet(channel->connection, payload, seq);
 
 }
 
@@ -187,7 +188,7 @@ int send_channel_close_message(struct ssh_channel_s *channel)
     store_uint32(pos, channel->remote_channel);
     pos+=4;
 
-    return write_ssh_packet(channel->session, payload, &seq);
+    return write_ssh_packet(channel->connection, payload, &seq);
 
 }
 
@@ -214,7 +215,7 @@ int send_channel_window_adjust_message(struct ssh_channel_s *channel, unsigned i
     store_uint32(pos, increase);
     pos+=4;
 
-    return write_ssh_packet(channel->session, payload, &seq);
+    return write_ssh_packet(channel->connection, payload, &seq);
 
 }
 
@@ -253,7 +254,7 @@ int send_start_command_message(struct ssh_channel_s *channel, const char *comman
 
     payload->len=(unsigned int)(pos - payload->buffer);
 
-    return write_ssh_packet(channel->session, payload, seq);
+    return write_ssh_packet(channel->connection, payload, seq);
 
 }
 
@@ -266,7 +267,7 @@ int send_start_command_message(struct ssh_channel_s *channel, const char *comman
     - byte[len]
 */
 
-static int send_channel_data_message_connected(struct ssh_channel_s *channel, unsigned int size, char *data, unsigned int *seq)
+int send_channel_data_message_connected(struct ssh_channel_s *channel, unsigned int size, char *data, unsigned int *seq)
 {
     unsigned int len=9 + size;
     char buffer[sizeof(struct ssh_payload_s) + len];
@@ -289,11 +290,11 @@ static int send_channel_data_message_connected(struct ssh_channel_s *channel, un
 
     payload->len=(unsigned int)(pos - payload->buffer);
 
-    return write_ssh_packet(channel->session, payload, seq);
+    return write_ssh_packet(channel->connection, payload, seq);
 
 }
 
-static int send_channel_data_message_error(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq)
+int send_channel_data_message_error(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq)
 {
     return -1;
 }
@@ -302,27 +303,4 @@ int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, c
 {
     (* channel->process_outgoing_bytes)(channel, len);
     return (* channel->send_data_message)(channel, len, data, seq);
-}
-
-void switch_channel_send_data(struct ssh_channel_s *channel, const char *what)
-{
-
-    pthread_mutex_lock(&channel->mutex);
-
-    if (strcmp(what, "error")==0 || strcmp(what, "eof")==0 || strcmp(what, "close")==0) {
-
-	channel->send_data_message=send_channel_data_message_error;
-
-    } else if (strcmp(what, "default")==0) {
-
-	channel->send_data_message=send_channel_data_message_connected;
-
-    } else {
-
-	logoutput_warning("switch_channel_send_data: status %s not reckognized", what);
-
-    }
-
-    pthread_mutex_unlock(&channel->mutex);
-
 }

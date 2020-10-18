@@ -183,7 +183,7 @@ static int test_hmac_algo(const char *name)
     return result;
 }
 
-static unsigned int populate_cipher(struct ssh_session_s *session, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_cipher(struct ssh_connection_s *connection, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (alist) {
@@ -284,7 +284,7 @@ static unsigned int populate_cipher(struct ssh_session_s *session, struct decryp
 
 }
 
-static unsigned int populate_hmac(struct ssh_session_s *session, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_hmac(struct ssh_connection_s *connection, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (alist) {
@@ -655,11 +655,11 @@ static unsigned int get_decrypt_flag(const char *ciphername, const char *hmacnam
 
 #else
 
-static unsigned int populate_cipher(struct ssh_session_s *session, struct decrypt_ops_s *d_ops, struct cipher_list_s *clist, unsigned int start, unsigned int count)
+static unsigned int populate_cipher(struct ssh_connection_s *c, struct decrypt_ops_s *d_ops, struct cipher_list_s *clist, unsigned int start, unsigned int count)
 {
     return 0;
 }
-static unsigned int populate_hmac(struct ssh_session_s *session, struct decrypt_ops_s *d_ops, struct hmac_list_s *clist, unsigned int start, unsigned int count)
+static unsigned int populate_hmac(struct ssh_connection_s *c, struct decrypt_ops_s *d_ops, struct hmac_list_s *clist, unsigned int start, unsigned int count)
 {
     return 0;
 }

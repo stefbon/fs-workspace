@@ -204,24 +204,10 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
     struct context_interface_s *interface=&context->interface;
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
+    char pathinfokeep[pathinfo->len];
+    unsigned int lenkeep=pathinfo->len;
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
-    char completepath[pathlen];
-
-    // logoutput("_fs_sftp_readlink_common");
-
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
-    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, completepath, pathinfo);
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    // logoutput("_fs_sftp_readlink_common: path %.*s", pathinfo->len, pathinfo->path);
-    memset(completepath, '\0', pathlen);
+    char pathinfobuffer[pathlen];
 
     if (fs_options.sftp.flags & _OPTIONS_SFTP_FLAG_SYMLINKS_DISABLE) {
 
@@ -230,10 +216,25 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 
     }
 
+    // logoutput("_fs_sftp_readlink_common");
+
+    memcpy(pathinfokeep, pathinfo->path, lenkeep);
+    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, pathinfobuffer, pathinfo);
+
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
     sftp_r.call.readlink.path=(unsigned char *) pathinfo->path;
     sftp_r.call.readlink.len=pathinfo->len;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_readlink_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -246,95 +247,140 @@ void _fs_sftp_readlink(struct service_context_s *context, struct fuse_request_s 
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		// logoutput("_fs_sftp_readlink_common: reply %i", sftp_r.type);
+		if (reply->type==SSH_FXP_NAME) {
+		    unsigned int len=get_uint32(reply->response.names.buff);
+		    char target[len+1];
 
-		if (sftp_r.type==SSH_FXP_NAME) {
-		    unsigned int len=get_uint32(sftp_r.response.names.buff);
-		    char path[len+1];
+		    memcpy(target, reply->response.names.buff + 4, len);
+		    target[len]='\0';
+		    free(reply->response.names.buff);
 
-		    /* TODO: check the target is also inside the shared map */
-		    /* TODO: if not starting with a slash (==not absolute) get the realpath from server */
+		    logoutput("_fs_sftp_readlink_common: %s target %s", pathinfo->path, target);
 
-		    memcpy(path, sftp_r.response.names.buff + 4, len);
-		    path[len]='\0';
+		    if (target[0] == '/') {
+			struct ssh_string_s prefix;
+			unsigned int tmp=0;
 
-		    logoutput("_fs_sftp_readlink_common: %s target %s", pathinfo->path, path);
+			tmp=get_sftp_prefix(context, &prefix);
 
-		    if (!(path[0] == '/')) {
-			char fullpath[len + pathinfo->len];
-			char *sep=memrchr(pathinfo->path, '/', pathinfo->len);
-			unsigned int fullpathlen;
+			if (tmp==0 || (tmp<len && strncmp(target, prefix.ptr, tmp)==0 && target[tmp]=='/')) {
+			    char *start_p=pathinfokeep + 1;
+			    unsigned int len_p=lenkeep - 1;
+			    char *start_t=target + tmp + 1;
+			    unsigned int len_t=len - tmp - 1;
+			    char *sep_p=NULL;
+			    char *sep_t=NULL;
 
-			// logoutput("_fs_sftp_readlink_common: A1");
+			    sep_p=memchr(start_p, '/', len_p);
+			    sep_t=memchr(start_t, '/', len_t);
 
-			if (sep) {
+			    while (sep_p && sep_t) {
 
-			    pathinfo->len=(unsigned int) (sep + 1 - pathinfo->path);
-			    memcpy(fullpath, pathinfo->path, pathinfo->len);
-			    memcpy(&fullpath[pathinfo->len], path, len);
+				if ((unsigned int)(sep_p - start_p) == (unsigned int)(sep_t - start_t) && memcmp(start_p, start_t, (unsigned int)(sep_p - start_p))==0) {
 
-			    fullpathlen=pathinfo->len + len;
+				    /* found common path entry */
+				    len_p-=(sep_p + 1 - start_p);
+				    start_p=sep_p+1;
+				    sep_p=memchr(start_p, '/', len_p);
+				    len_t-=(sep_t + 1 - start_t);
+				    start_t=sep_t+1;
+				    sep_t=memchr(start_t, '/', len_t);
+				    continue;
 
-			} else {
+				} else {
 
-			    memcpy(fullpath, path, len);
-			    fullpathlen=len;
-
-			}
-
-			free(sftp_r.response.names.buff);
-
-			/* TODO: reuse request to be used for the sending and waiting for the realpath */
-
-			sftp_r.id=0;
-			sftp_r.call.realpath.path=(unsigned char *)fullpath;
-			sftp_r.call.realpath.len=fullpathlen;
-
-			// logoutput("_fs_sftp_readlink_common: composed path %.*s", fullpathlen, fullpath);
-
-			if (send_sftp_realpath_ctx(context->interface.ptr, &sftp_r)==0) {
-
-			    request=create_sftp_request_ctx(context->interface.ptr, &sftp_r, &error);
-
-			    if (request && wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
-
-				if (sftp_r.type==SSH_FXP_NAME) {
-				    unsigned int realpathlen=get_uint32(sftp_r.response.names.buff);
-				    char realpath[realpathlen];
-
-				    memcpy(realpath, sftp_r.response.names.buff + 4, realpathlen);
-				    create_reply_sftp_readlink(context, f_request, realpath, realpathlen);
-				    free(sftp_r.response.names.buff);
-				    return;
-
-				} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-				    error=sftp_r.response.status.linux_error;
-				    goto out;
+				    break;
 
 				}
 
 			    }
 
+			    if (sep_p==NULL && sep_t==NULL) {
+
+				// if (strcmp(start_p, start_t)==0) {
+
+				    /* paths are equal */
+
+				    // goto out;
+
+				// }
+
+				reply_VFS_data(f_request, start_t, len_t);
+				return;
+
+			    } else if (sep_p && sep_t==NULL) {
+				unsigned int count=1;
+
+				/* situation:
+				    A/B/C -> A/D
+				    plan:
+
+				    - count the slashes to reply:
+				    ../D */
+
+				len_p-=(sep_p + 1 - start_p);
+				start_p=sep_p+1;
+				sep_p=memchr(start_p, '/', len_p);
+
+				while (sep_p) {
+
+				    count++;
+				    len_p-=(unsigned int)(sep_p + 1 - start_p);
+				    sep_p=memchr(start_p, '/', len_p);
+
+				}
+
+				{
+				    unsigned int len_r=3 * count + len_t + 1;
+				    char result[len_r];
+				    unsigned int pos=0;
+
+				    for (unsigned int i=0; i<count; i++) {
+
+					result[pos]='.';
+					result[pos+1]='.';
+					result[pos+2]='/';
+					pos+=3;
+
+				    }
+
+				    memcpy(&result[pos], start_t, len_t);
+				    pos+=len_t;
+				    result[pos]='\0';
+				    reply_VFS_data(f_request, result, pos-1);
+
+				}
+
+			    } else { /* sep_p==NULL && sep_t */
+
+				/* situation:
+				    A/B -> A/C/D */
+
+				reply_VFS_data(f_request, start_t, len_t);
+
+			    }
+
+			    return;
+
+			} else {
+
+			    goto out;
+
 			}
+
+		    } else {
+
+			reply_VFS_data(f_request, target, len);
 
 		    }
 
-		    /* get the prefix:
-		    - with root its ready
-		    - with custom prefix it in interface->backend.sftp.prefix
-		    - with hone its in ?? */
-
-		    // logoutput("_fs_sftp_readlink_common: A2");
-
-		    create_reply_sftp_readlink(context, f_request, path, len);
-		    free(sftp_r.response.names.buff);
 		    return;
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+		} else if (reply->type==SSH_FXP_STATUS) {
 
-		    error=sftp_r.response.status.linux_error;
+		    error=reply->response.status.linux_error;
 
 		} else {
 
@@ -361,21 +407,22 @@ void _fs_sftp_symlink(struct service_context_s *context, struct fuse_request_s *
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
     sftp_r.id=0;
     sftp_r.call.symlink.path=(unsigned char *) pathinfo->path;
     sftp_r.call.symlink.len=pathinfo->len;
     sftp_r.call.symlink.target_path=(unsigned char *) target;
     sftp_r.call.symlink.target_len=strlen(target);
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_symlink_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -388,17 +435,18 @@ void _fs_sftp_symlink(struct service_context_s *context, struct fuse_request_s *
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (reply->type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.code==0) {
+		    if (reply->response.status.code==0) {
 
 			reply_VFS_error(f_request, 0);
 			return;
 
 		    }
 
-		    error=sftp_r.response.status.linux_error;
+		    error=reply->response.status.linux_error;
 
 		} else {
 

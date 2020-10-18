@@ -57,13 +57,55 @@ void free_ssh_string(struct ssh_string_s *s)
     init_ssh_string(s);
 }
 
-unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len)
+unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len, char *data)
 {
     s->ptr=malloc(len);
-    if (s->ptr) return len;
+    if (s->ptr) {
+
+	if (data) memcpy(s->ptr, data, len);
+	s->len=len;
+	return len;
+
+    }
 
     return 0;
 }
+
+int create_copy_ssh_string(struct ssh_string_s *t, struct ssh_string_s *s)
+{
+
+    t->ptr=realloc(t->ptr, s->len);
+    if (t->ptr) {
+
+	memcpy(t->ptr, s->ptr, s->len);
+	t->len=s->len;
+	return 0;
+
+    }
+
+    return -1;
+}
+
+int compare_ssh_string(struct ssh_string_s *t, const unsigned char type, void *ptr)
+{
+    switch (type) {
+
+    case 's' : {
+	struct ssh_string_s *s=(struct ssh_string_s *) ptr;
+	return ((s->len==t->len) && memcmp(s->ptr, t->ptr, t->len)==0) ? 0 : -1;
+	}
+    case 'c' : {
+	char *data=(char *) ptr;
+	unsigned int len=strlen(data);
+
+	return ((len==t->len) && memcmp(data, t->ptr, t->len)==0) ? 0 : -1;
+	}
+    }
+
+    return -1;
+
+}
+
 
 unsigned int get_ssh_string_length(struct ssh_string_s *s, unsigned int flags)
 {
@@ -145,9 +187,8 @@ int get_ssh_string_from_buffer(char **b, unsigned int size, struct ssh_string_s 
 
     if (s->len <= size) {
 
-	if (create_ssh_string(s, s->len)>0) {
+	if (create_ssh_string(s, s->len, pos)>0) {
 
-	    memcpy(s->ptr, pos, s->len);
 	    pos+=s->len;
 
 	} else {

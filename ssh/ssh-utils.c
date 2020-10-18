@@ -56,13 +56,24 @@ static struct ssh_utils_s utils;
 
 #ifdef HAVE_LIBGCRYPT
 
-unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error)
+unsigned int get_hash_size(const char *name)
 {
     int algo=gcry_md_map_name(name);
-    unsigned int len=0;
-    gcry_md_hd_t handle;
+    return (algo>0) ? gcry_md_get_algo_dlen(algo) : 0;
+}
 
-    logoutput("create_hash: hash %s", name);
+void init_ssh_hash(struct ssh_hash_s *hash, char *name, unsigned int size)
+{
+    memset((char *)hash, '\0', sizeof(struct ssh_hash_s) + size);
+    hash->size=size;
+    hash->len=0;
+    strncpy(hash->name, name, sizeof(hash->name)-1);
+}
+
+unsigned int create_hash(char *in, unsigned int size, struct ssh_hash_s *hash, unsigned int *error)
+{
+    int algo=gcry_md_map_name(hash->name);
+    gcry_md_hd_t handle;
 
     if (algo==0) {
 
@@ -71,32 +82,39 @@ unsigned int create_hash(const char *name, char *in, unsigned int size, struct s
 
     }
 
-    len=gcry_md_get_algo_dlen(algo);
-    if (out==NULL || in==NULL) return len;
-
     if (gcry_md_open(&handle, algo, 0)==0) {
 	unsigned char *digest=NULL;
+	unsigned int len=gcry_md_get_algo_dlen(algo);
 
 	gcry_md_write(handle, in, size);
 	digest=gcry_md_read(handle, algo);
-	if (out->len < len) len=out->len;
-	memcpy(out->ptr, digest, len);
+
+	if (hash->size < len) len=hash->size;
+	memcpy(hash->digest, digest, len);
+	hash->len=len;
 	gcry_md_close(handle);
-
-    } else {
-
-	if (error) *error=EIO;
-	len=0;
+	return len;
 
     }
 
-    return len;
+    out:
+
+    if (error) *error=EIO;
+    return 0;
 
 }
 
 #else
 
-unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error)
+unsigned int get_hash_size(const char *name)
+{
+    return 0;
+}
+void init_ssh_hash(struct ssh_hash_s *hash, char *name, unsigned int size)
+{
+}
+
+unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_hash_s *hash, unsigned int *error)
 {
     *error=EOPNOTSUPP;
     return 0;
@@ -272,7 +290,7 @@ unsigned int skip_heading_spaces(char *ptr, unsigned int size)
 
 void logoutput_base64encoded(char *prefix, char *buffer, unsigned int size)
 {
-    gchar *encoded=g_base64_encode(buffer, size);
+    gchar *encoded=g_base64_encode((const unsigned char *)buffer, size);
 
     if (encoded) {
 

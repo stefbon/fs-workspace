@@ -45,6 +45,7 @@
 #include "utils.h"
 
 #include "ssh-common.h"
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 
 #define SSH_GREETER_START			"SSH-"
@@ -67,6 +68,8 @@ static int read_ssh_version(struct ssh_session_s *session)
     char *start=NULL;
     unsigned int left=0;
 
+    logoutput("read_ssh_version: analyze %.*s", greeter->len, greeter->ptr);
+
     if (greeter->ptr==NULL || greeter->len==0) return -1;
 
     start=(char *) (greeter->ptr + strlen(SSH_GREETER_START));
@@ -87,13 +90,13 @@ static int read_ssh_version(struct ssh_session_s *session)
 
 	    *dot='\0';
 
-	    session->status.remote_version_major=atoi(ssh_version);
-	    session->status.remote_version_minor=atoi(dot+1);
+	    session->data.remote_version_major=atoi(ssh_version);
+	    session->data.remote_version_minor=atoi(dot+1);
 
 	} else {
 
-	    session->status.remote_version_major=atoi(ssh_version);
-	    session->status.remote_version_minor=0;
+	    session->data.remote_version_major=atoi(ssh_version);
+	    session->data.remote_version_minor=0;
 
 	}
 
@@ -110,9 +113,10 @@ static int read_ssh_version(struct ssh_session_s *session)
 
 }
 
-int read_server_greeter(struct ssh_session_s *session)
+int read_server_greeter(struct ssh_connection_s *connection)
 {
-    struct ssh_receive_s *receive=&session->receive;
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
+    struct ssh_receive_s *receive=&connection->receive;
     char line[255];
     unsigned int size=0;
     char *sep=NULL;
@@ -126,7 +130,7 @@ int read_server_greeter(struct ssh_session_s *session)
     term_crlf[1]=10;
     term_lf[0]=10;
 
-    logoutput("read_server_greeter");
+    logoutput("read_server_greeter: %i bytes in buffer", receive->read);
 
     readlinegreeter:
 
@@ -190,14 +194,10 @@ int read_server_greeter(struct ssh_session_s *session)
 	}
 
 	found=1;
-	session->data.greeter_server.ptr=malloc(len);
 
-	if (session->data.greeter_server.ptr) {
+	if (create_ssh_string(&session->data.greeter_server, len, line)==len) {
 
-	    memcpy(session->data.greeter_server.ptr, line, len);
-	    session->data.greeter_server.len=len;
-
-	    logoutput("read_server_greeter: received identification %s", line);
+	    logoutput("read_server_greeter: received identification %s (len=%i)", line, len);
 
 	} else {
 
@@ -221,7 +221,7 @@ int read_server_greeter(struct ssh_session_s *session)
 
 	if (read_ssh_version(session)==0) {
 
-	    logoutput("read_server_greeter: found server version %i.%i", session->status.remote_version_major, session->status.remote_version_minor);
+	    logoutput("read_server_greeter: found server version %i.%i", session->data.remote_version_major, session->data.remote_version_minor);
 
 	} else {
 

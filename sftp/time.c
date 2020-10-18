@@ -65,13 +65,15 @@ static void correct_time_ignore(struct sftp_subsystem_s *sftp, struct timespec *
 
 static void correct_time_s2c(struct sftp_subsystem_s *sftp, struct timespec *time)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     (* session->hostinfo.correct_time_s2c)(session, time);
 }
 
 static void correct_time_c2s(struct sftp_subsystem_s *sftp, struct timespec *time)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     (* session->hostinfo.correct_time_c2s)(session, time);
 }
 

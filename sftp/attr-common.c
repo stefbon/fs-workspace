@@ -82,15 +82,15 @@ unsigned int write_attributes_ctx(void *ptr, char *buffer, unsigned int size, st
     struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
     return (*sftp->attr_ops->write_attributes)(sftp, buffer, size, fuse_attr);
 }
-void read_name_response_ctx(void *ptr, struct name_response_s *response, char **name, unsigned int *len)
+unsigned int read_name_response_ctx(void *ptr, char *buffer, unsigned int size, char **name, unsigned int *len)
 {
     struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
-    (*sftp->attr_ops->read_name_response)(sftp, response, name, len);
+    return (*sftp->attr_ops->read_name_response)(sftp, buffer, size, name, len);
 }
-unsigned int read_attr_response_ctx(void *ptr, struct name_response_s *response, struct fuse_sftp_attr_s *fuse_attr)
+unsigned int read_attr_response_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
     struct sftp_subsystem_s *sftp=(struct sftp_subsystem_s *) ptr;
-    return (*sftp->attr_ops->read_attr_response)(sftp, response, fuse_attr);
+    return (*sftp->attr_ops->read_attr_response)(sftp, buffer, size, fuse_attr);
 }
 int get_attribute_info_ctx(void *ptr, unsigned int valid, const char *what)
 {

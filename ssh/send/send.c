@@ -44,22 +44,22 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
+#include "ssh-connections.h"
 #include "ssh-utils.h"
 #include "ssh-send.h"
 #include "ssh/receive/payload.h"
 
 static int queue_sender_default(struct ssh_send_s *send, struct ssh_sender_s *sender, unsigned int *error)
 {
-    logoutput("queue_sender_default");
 
     /* add at tail of senders list default: more senders are allowed */
-    pthread_mutex_lock(&send->senders.mutex);
-    add_list_element_last(&send->senders.header, &sender->list);
+
+    pthread_mutex_lock(&send->mutex);
+    add_list_element_last(&send->senders, &sender->list);
     sender->sequence=send->sequence_number;
-    sender->listed=1;
     send->sequence_number++;
-    pthread_cond_broadcast(&send->senders.cond);
-    pthread_mutex_unlock(&send->senders.mutex);
+    pthread_cond_broadcast(&send->cond);
+    pthread_mutex_unlock(&send->mutex);
 
     return 0;
 }
@@ -68,25 +68,17 @@ static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sen
 {
     int success=0;
 
-    logoutput("queue_sender_serial");
-
     /* add at tail of senders list serialized: only one sender is allowed */
 
-    pthread_mutex_lock(&send->senders.mutex);
+    pthread_mutex_lock(&send->mutex);
 
-    while (send->senders.header.count>0) {
+    while (send->senders.count>0) {
 
-	int result=pthread_cond_wait(&send->senders.cond, &send->senders.mutex);
+	int result=pthread_cond_wait(&send->cond, &send->mutex);
 
-	if (send->senders.header.count==0) {
+	if (send->senders.count==0) {
 
 	    break;
-
-	} else if (send->flags & (SSH_SEND_FLAG_DISCONNECT | SSH_SEND_FLAG_ERROR)) {
-
-	    *error=EIO;
-	    success=-1;
-	    goto out;
 
 	} else if (result>0) {
 
@@ -98,18 +90,14 @@ static int queue_sender_serial(struct ssh_send_s *send, struct ssh_sender_s *sen
 
     }
 
-    add_list_element_last(&send->senders.header, &sender->list);
+    add_list_element_last(&send->senders, &sender->list);
     sender->sequence=send->sequence_number;
-    sender->listed=1;
     send->sequence_number++;
 
     out:
 
-    pthread_cond_broadcast(&send->senders.cond);
-    pthread_mutex_unlock(&send->senders.mutex);
-
-    logoutput("queue_sender_serial: seq %i", sender->sequence);
-
+    pthread_cond_broadcast(&send->cond);
+    pthread_mutex_unlock(&send->mutex);
     return success;
 }
 
@@ -119,12 +107,13 @@ static int queue_sender_disconnected(struct ssh_send_s *send, struct ssh_sender_
     return -1;
 }
 
-void set_send_behaviour(struct ssh_send_s *send, const char *what)
+void set_ssh_send_behaviour(struct ssh_connection_s *connection, const char *what)
 {
+    struct ssh_send_s *send=&connection->send;
 
-    logoutput("set_send_behaviour: %s", what);
+    pthread_mutex_lock(&send->mutex);
 
-    if (strcmp(what, "default")==0) {
+    if (strcmp(what, "default")==0 || strcmp(what, "newkeys")==0 ) {
 
 	send->queue_sender=queue_sender_default;
 	if (send->flags & SSH_SEND_FLAG_KEXINIT) send->flags -= SSH_SEND_FLAG_KEXINIT;
@@ -143,19 +132,8 @@ void set_send_behaviour(struct ssh_send_s *send, const char *what)
 
     }
 
-}
-
-void finish_send_newkeys(struct ssh_send_s *send)
-{
-    set_send_behaviour(send, "default");
-}
-
-void signal_send_disconnect(struct ssh_send_s *send)
-{
-    pthread_mutex_lock(&send->mutex);
-    set_send_behaviour(send, "disconnect");
-    pthread_cond_broadcast(&send->cond);
     pthread_mutex_unlock(&send->mutex);
+
 }
 
 /*
@@ -172,31 +150,21 @@ void signal_send_disconnect(struct ssh_send_s *send)
 	and n2>=4
 */
 
-static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s *payload, void (* post_send)(struct ssh_session_s *s, int written), unsigned int *seq)
+static int _write_ssh_packet(struct ssh_connection_s *connection, struct ssh_payload_s *payload, void (* post_send)(struct ssh_connection_s *c, int written), unsigned int *seq)
 {
-    struct ssh_send_s *send=&session->send;
-    struct ssh_sender_s sender;
+    struct ssh_send_s *send=&connection->send;
     unsigned int error=0;
     int written=-1;
+    struct ssh_compressor_s *compressor=get_compressor(send, &error);
+    unsigned char type=payload->type;
 
-    logoutput("_write_ssh_packet");
+    if ((*compressor->compress_payload)(compressor, &payload, &error)==0) {
+	struct ssh_sender_s sender;
 
-    init_list_element(&sender.list, NULL);
-    sender.sequence=0;
-    sender.listed=0;
+	init_list_element(&sender.list, NULL);
+	sender.sequence=0;
 
-    if ((* send->queue_sender)(send, &sender, &error)==0) {
-	struct ssh_compressor_s *compressor=NULL;
-	unsigned char type=payload->type;
-
-	// logoutput("_write_ssh_packet: A");
-
-	*seq=sender.sequence;
-	compressor=get_compressor(send, &error);
-
-	// logoutput("_write_ssh_packet: B");
-
-	if ((*compressor->compress_payload)(compressor, &payload, &error)==0) {
+	if ((* send->queue_sender)(send, &sender, &error)==0) {
 	    struct ssh_encryptor_s *encryptor=get_encryptor(send, &error);
 	    unsigned char padding=(* encryptor->get_message_padding)(encryptor, payload->len + 5);
 	    unsigned int len = 5 + payload->len + padding; /* field length (4 bytes) plus padding field (1 byte) plus payload plus the padding */
@@ -205,7 +173,7 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 	    struct ssh_packet_s packet;
 	    char *pos=NULL;
 
-	    // logoutput("_write_ssh_packet: C (len=%i size=%i)", len, size);
+	    *seq=sender.sequence;
 
 	    packet.len 		= len;
 	    packet.size 	= size;
@@ -215,8 +183,6 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 	    packet.type		= type;
 	    packet.decrypted	= 0;
 	    packet.buffer	= buffer;
-
-	    /* store the packet len (minus the first field (=4 bytes)) */
 
 	    pos=packet.buffer;
 	    store_uint32(pos, packet.len - 4);
@@ -248,57 +214,59 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 		    if ((* encryptor->write_hmac_post)(encryptor, &packet)==0) {
 
-			pthread_mutex_lock(&send->senders.mutex);
+			/* release encryptor */
+
+			(* encryptor->queue)(encryptor);
+			encryptor=NULL;
+
+			pthread_mutex_lock(&send->mutex);
 
 			/* wait to become first */
 
 			while (list_element_is_first(&sender.list)==-1) {
 
 			    logoutput("_write_ssh_packet: %i not the first, wait", sender.sequence);
-
-			    int result=pthread_cond_wait(&send->senders.cond, &send->senders.mutex);
-			    if (list_element_is_first(&sender.list)==-1) logoutput("_write_ssh_packet: %i still not the first, wait", sender.sequence);
+			    int result=pthread_cond_wait(&send->cond, &send->mutex);
 
 			}
 
-			written=write_socket(session, &packet, &error);
+			pthread_mutex_unlock(&send->mutex);
+
+			written=write_socket(connection, &packet, &error);
 
 			/* function will serialize the sending after kexinit and use newkeys after newkeys
 			    in other cases this does nothing 
 			    NOTE: the send process is lock protected */
 
-			(* post_send)(session, written);
+			(* post_send)(connection, written);
 
+			pthread_mutex_lock(&send->mutex);
 			remove_list_element(&sender.list);
-			sender.listed=0;
-			pthread_cond_broadcast(&send->senders.cond);
-			pthread_mutex_unlock(&send->senders.mutex);
-
-			(* encryptor->queue)(encryptor);
-			encryptor=NULL;
+			pthread_cond_broadcast(&send->cond);
+			pthread_mutex_unlock(&send->mutex);
 
 			if (written==-1) {
 
 			    if (error==0) error=EIO;
-			    logoutput("write_ssh_packet: error %i sending packet (%s)", error, strerror(error));
+			    logoutput("_write_ssh_packet: error %i sending packet (%s)", error, strerror(error));
 
 			}
 
 		    } else {
 
-			logoutput("write_ssh_packet: error writing hmac post");
+			logoutput("_write_ssh_packet: error writing hmac post");
 
 		    }
 
 		} else {
 
-		    logoutput("write_ssh_packet: error encrypt pakket");
+		    logoutput("_write_ssh_packet: error encrypt pakket");
 
 		}
 
 	    } else {
 
-		logoutput("write_ssh_packet: error writing hmac pre");
+		logoutput("_write_ssh_packet: error writing hmac pre");
 
 	    }
 
@@ -309,26 +277,25 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 	    }
 
-	} /* compress */ else {
+	    if (sender.list.h) {
 
-	    logoutput("write_ssh_packet: error compress payload");
+		pthread_mutex_lock(&send->mutex);
+		remove_list_element(&sender.list);
+		pthread_cond_broadcast(&send->cond);
+		pthread_mutex_unlock(&send->mutex);
 
-	}
+	    }
 
-	queue_compressor(compressor);
-	compressor=NULL;
+	} /* queue sender */
 
-	if (sender.listed==1) {
+    } /* compress */ else {
 
-	    pthread_mutex_lock(&send->senders.mutex);
-	    remove_list_element(&sender.list);
-	    pthread_cond_broadcast(&send->senders.cond);
-	    pthread_mutex_unlock(&send->senders.mutex);
-	    sender.listed=0;
-
-	}
+	logoutput("_write_ssh_packet: error compress payload");
 
     }
+
+    queue_compressor(compressor);
+    compressor=NULL;
 
     // logoutput("_write_ssh_packet: written %i", written);
 
@@ -336,59 +303,70 @@ static int _write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s
 
 }
 
-static void post_send_default(struct ssh_session_s *s, int written)
+static void post_send_default(struct ssh_connection_s *s, int written)
 {
 }
 
-int write_ssh_packet(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq)
+int write_ssh_packet(struct ssh_connection_s *c, struct ssh_payload_s *payload, unsigned int *seq)
 {
-    return _write_ssh_packet(session, payload, post_send_default, seq);
+    return _write_ssh_packet(c, payload, post_send_default, seq);
 }
 
-static void post_send_kexinit(struct ssh_session_s *session, int written)
+static int setup_cb_send_kexinit(struct ssh_connection_s *c, void *data)
 {
-    struct ssh_send_s *send=&session->send;
-    set_send_behaviour(send, "kexinit");
-
+    /* after sending kexinit adjust the send behaviour */
+    set_ssh_send_behaviour(c, "kexinit");
+    return 0;
 }
 
-int write_ssh_packet_kexinit(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq)
+static void post_send_kexinit(struct ssh_connection_s *c, int written)
 {
-    return _write_ssh_packet(session, payload, post_send_kexinit, seq);
+    /* change the setup */
+    int result=change_ssh_connection_setup(c, "transport", SSH_TRANSPORT_TYPE_KEX, SSH_KEX_FLAG_KEXINIT_C2S, 0, setup_cb_send_kexinit, NULL);
 }
 
-static void post_send_newkeys(struct ssh_session_s *session, int written)
+int write_ssh_packet_kexinit(struct ssh_connection_s *c, struct ssh_payload_s *payload, unsigned int *seq)
 {
-    struct ssh_send_s *send=&session->send;
-    struct keyexchange_s *keyexchange=session->keyexchange;
+    return _write_ssh_packet(c, payload, post_send_kexinit, seq);
+}
+
+static int setup_cb_send_newkeys(struct ssh_connection_s *c, void *data)
+{
+    set_ssh_send_behaviour(c, "default");
+    return 0;
+}
+
+static void post_send_newkeys(struct ssh_connection_s *connection, int written)
+{
+    struct ssh_send_s *send=&connection->send;
+    struct ssh_setup_s *setup=&connection->setup;
+    struct ssh_keyexchange_s *kex=&setup->phase.transport.type.kex;
+    struct algo_list_s *algos=kex->algos;
+    int index_compr=kex->chosen[SSH_ALGO_TYPE_COMPRESS_C2S];
+    int index_cipher=kex->chosen[SSH_ALGO_TYPE_CIPHER_C2S];
+    int index_hmac=kex->chosen[SSH_ALGO_TYPE_HMAC_C2S];
+    struct algo_list_s *algo_compr=&algos[index_compr];
+    struct algo_list_s *algo_cipher=&algos[index_cipher];
+    struct algo_list_s *algo_hmac=(index_hmac>=0) ? &algos[index_hmac] : NULL;
 
     /* TODO: action depends on written, this maybe -1 when error */
 
-    if (keyexchange) {
-	struct algo_list_s *algos=keyexchange->data.algos;
-	int index_compr=keyexchange->data.chosen[SSH_ALGO_TYPE_COMPRESS_C2S];
-	int index_cipher=keyexchange->data.chosen[SSH_ALGO_TYPE_CIPHER_C2S];
-	int index_hmac=keyexchange->data.chosen[SSH_ALGO_TYPE_HMAC_C2S];
-	struct algo_list_s *algo_compr=&algos[index_compr];
-	struct algo_list_s *algo_cipher=&algos[index_cipher];
-	struct algo_list_s *algo_hmac=(index_hmac>=0) ? &algos[index_hmac] : NULL;
+    reset_compress(send, algo_compr);
+    reset_encrypt(connection, algo_cipher, algo_hmac);
+    get_current_time(&send->newkeys);
 
-	get_current_time(&send->newkeys);
-	reset_compress(send, algo_compr);
-	reset_encrypt(session, algo_cipher, algo_hmac);
-	finish_send_newkeys(send);
-
-    }
-
+    /* change the setup */
+    int result=change_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX, SSH_KEX_FLAG_NEWKEYS_C2S, 0, setup_cb_send_newkeys, NULL);
 }
 
-int write_ssh_packet_newkeys(struct ssh_session_s *session, struct ssh_payload_s *payload, unsigned int *seq)
+int write_ssh_packet_newkeys(struct ssh_connection_s *c, struct ssh_payload_s *p, unsigned int *seq)
 {
-    return _write_ssh_packet(session, payload, post_send_newkeys, seq);
+    return _write_ssh_packet(c, p, post_send_newkeys, seq);
 }
 
-int request_ssh_service(struct ssh_session_s *session, const char *service, struct payload_queue_s *queue)
+int request_ssh_service(struct ssh_connection_s *connection, const char *service)
 {
+    struct payload_queue_s *queue=&connection->setup.queue;
     struct timespec expire;
     unsigned int error=0;
     struct ssh_payload_s *payload=NULL;
@@ -397,7 +375,7 @@ int request_ssh_service(struct ssh_session_s *session, const char *service, stru
 
     logoutput("request_ssh_service: request for service %s", service);
 
-    if (send_service_request_message(session, service, &seq)==-1) {
+    if (send_service_request_message(connection, service, &seq)==-1) {
 
 	error=EIO;
 	logoutput("request_ssh_service: error %i sending service request (%s)", error, strerror(error));
@@ -405,11 +383,11 @@ int request_ssh_service(struct ssh_session_s *session, const char *service, stru
 
     }
 
-    get_session_expire_init(session, &expire);
+    get_ssh_connection_expire_init(connection, &expire);
 
     getrequest:
 
-    payload=get_ssh_payload(session, queue, &expire, &seq, &error);
+    payload=get_ssh_payload(connection, queue, &expire, &seq, &error);
 
     if (! payload) {
 
@@ -479,4 +457,3 @@ int request_ssh_service(struct ssh_session_s *session, const char *service, stru
     return result;
 
 }
-

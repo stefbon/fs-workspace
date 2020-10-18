@@ -22,11 +22,11 @@
 
 /* prototypes */
 
-int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_rename_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
+int send_sftp_open_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_create_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_rename_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
 
-void use_sftp_send_v05(struct sftp_subsystem_s *sftp_subsystem);
+void use_sftp_send_v05(struct sftp_subsystem_s *sftp);
 
 #endif
 

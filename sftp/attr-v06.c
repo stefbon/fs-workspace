@@ -804,42 +804,27 @@ static unsigned int write_attributes_v06(struct sftp_subsystem_s *sftp, char *bu
     byte				end-of-list [optional]
 */
 
-static void read_name_response_v06(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
+static unsigned int read_name_response_v06(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, char **name, unsigned int *len)
 {
 
-    logoutput_debug("read_name_response_v06: pos %i", (unsigned int)(response->pos - response->buff));
+    logoutput_debug("read_name_response_v06: size %i", size);
 
-    *len=get_uint32(response->pos);
-    response->pos+=4;
-
-    *name=(char *) response->pos; /* name without trailing zero */
-    response->pos+=*len;
+    *len=get_uint32(buffer);
+    *name=&buffer[4]; /* name without trailing zero */
+    return (*len + 4);
 
 }
 
-static unsigned int read_attr_response_v06(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *sftp_attr)
+static unsigned int read_attr_response_v06(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *sftp_attr)
 {
-    char *keep=response->pos;
+    unsigned int pos=0;
 
-    memset(sftp_attr, 0, sizeof(struct fuse_sftp_attr_s));
-
-    logoutput_debug("read_attr_response_v06: pos %i", (unsigned int)(response->pos - response->buff));
-
-    response->pos+=read_attributes_v06(sftp, response->pos, (unsigned int) (response->buff + response->size - response->pos), sftp_attr);
-    response->count--;
-
-    if (response->count==0 && (unsigned int) (response->buff + response->size - response->pos) > 0 ) {
-
-	/* version 6 supports an optional end-of-file indicator */
-
-	response->eof=(unsigned char) *response->pos;
-	response->pos++;
-
-    }
+    memset(sftp_attr, 0, sizeof(struct fuse_sftp_attr_s));;
+    pos+=read_attributes_v06(sftp, buffer, size, sftp_attr);
 
     logoutput_debug("read_attr_response_v06: m %i p %i", sftp_attr->type, sftp_attr->permissions);
 
-    return (unsigned int)(response->pos - keep);
+    return pos;
 }
 
 /* translate the mask of supported sftp attributes to a fuse mask */

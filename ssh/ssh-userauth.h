@@ -17,11 +17,13 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_USERAUTH_H
-#define FS_WORKSPACE_SSH_USERAUTH_H
+#ifndef _SSH_USERAUTH_H
+#define _SSH_USERAUTH_H
 
 /* prototypes */
 
-int start_ssh_userauth(struct ssh_session_s *session, struct payload_queue_s *queue);
+void init_ssh_auth(struct ssh_auth_s *auth);
+void clear_ssh_auth(struct ssh_auth_s *auth);
+int start_ssh_auth(struct ssh_connection_s *c);
 
 #endif

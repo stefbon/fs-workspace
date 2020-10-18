@@ -17,14 +17,14 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_ALGO_EXCHANGE_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_ALGO_EXCHANGE_H
+#ifndef _SSH_KEYEXCHANGE_ALGO_EXCHANGE_H
+#define _SSH_KEYEXCHANGE_ALGO_EXCHANGE_H
 
-int store_kexinit_server(struct keyexchange_s *keyexchange, struct ssh_payload_s *payload, unsigned int *error);
-int store_kexinit_client(struct keyexchange_s *keyexchange, struct ssh_payload_s *payload, unsigned int *error);
-void free_kexinit_server(struct keyexchange_s *keyexchange);
-void free_kexinit_client(struct keyexchange_s *keyexchange);
+int store_kexinit_server(struct ssh_keyexchange_s *kex, struct ssh_payload_s *payload, unsigned int *error);
+int store_kexinit_client(struct ssh_keyexchange_s *kex, struct ssh_payload_s *payload, unsigned int *error);
+void free_kexinit_server(struct ssh_keyexchange_s *kex);
+void free_kexinit_client(struct ssh_keyexchange_s *kex);
 
-int start_algo_exchange(struct ssh_session_s *session, struct sessionphase_s *sessionphase);
+int start_algo_exchange(struct ssh_connection_s *c);
 
 #endif

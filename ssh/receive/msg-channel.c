@@ -43,7 +43,7 @@
 
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-
+#include "ssh-connections.h"
 #include "ssh-channel.h"
 #include "ssh-receive.h"
 #include "ssh-utils.h"
@@ -77,44 +77,47 @@
     like "hostkeys-00@openssh.com"
 */
 
-static void receive_msg_global_request(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_global_request(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
+    struct ssh_string_s name;
 
-    pthread_mutex_lock(&session->status.mutex);
+    init_ssh_string(&name);
 
-    if (session->status.sessionphase.status & SESSION_STATUS_DISCONNECTING) {
+    if (read_ssh_string(&payload->buffer[1], payload->len - 1, &name) > 3) {
 
-	free_payload(&payload);
+	logoutput("receive_msg_global_request: received request %.*s", name.len, name.ptr);
 
-    } else if (session->status.sessionphase.phase==SESSION_PHASE_SETUP || session->status.sessionphase.phase==SESSION_PHASE_CONNECTION) {
-	struct payload_queue_s *queue = session->queue;
+    } else {
 
-	if (queue) {
-
-	    queue_ssh_payload(queue, payload);
-	    payload=NULL;
-
-	} else {
-	    unsigned int len=0;
-
-	    len=get_uint32(&payload->buffer[1]);
-	    logoutput("receive_msg_global_request: %.*", len, &payload->buffer[5]);
-
-	}
+	logoutput("receive_msg_global_request: received request, cannot read name");
 
     }
 
-    pthread_mutex_unlock(&session->status.mutex);
+    pthread_mutex_lock(connection->setup.mutex);
+
+    if (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) {
+
+	free_payload(&payload);
+
+    } else if (connection->setup.flags & SSH_SETUP_FLAG_SERVICE_CONNECTION) {
+	struct payload_queue_s *queue = &connection->setup.queue;
+
+	queue_ssh_payload_locked(queue, payload);
+	payload=NULL;
+
+    }
+
+    pthread_mutex_unlock(connection->setup.mutex);
 
     if (payload) {
 
+	logoutput("receive_msg_global_request: disconnect");
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 
 }
-
 
 /*
     message has the following form:
@@ -127,7 +130,7 @@ static void receive_msg_global_request(struct ssh_session_s *session, struct ssh
 
 */
 
-static void receive_msg_channel_open_confirmation(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_open_confirmation(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len<17) {
@@ -137,6 +140,7 @@ static void receive_msg_channel_open_confirmation(struct ssh_session_s *session,
     } else {
 	unsigned int pos=1;
 	unsigned int local_channel=0;
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	struct simple_lock_s rlock;
@@ -152,7 +156,12 @@ static void receive_msg_channel_open_confirmation(struct ssh_session_s *session,
 
     }
 
-    if (payload) free_payload(&payload);
+    if (payload) {
+
+	logoutput("receive_msg_open_confirmation: free payload (%i)", payload->type);
+	free_payload(&payload);
+
+    }
 
 }
 
@@ -167,7 +176,7 @@ static void receive_msg_channel_open_confirmation(struct ssh_session_s *session,
 
 */
 
-static void receive_msg_channel_open_failure(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_open_failure(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len<17) {
@@ -177,6 +186,7 @@ static void receive_msg_channel_open_failure(struct ssh_session_s *session, stru
     } else {
 	unsigned int pos=1;
 	unsigned int local_channel=0;
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	struct simple_lock_s rlock;
@@ -194,7 +204,7 @@ static void receive_msg_channel_open_failure(struct ssh_session_s *session, stru
 
 }
 
-static void receive_msg_channel_window_adjust(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_window_adjust(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
     if (payload->len<9) {
 
@@ -204,6 +214,7 @@ static void receive_msg_channel_window_adjust(struct ssh_session_s *session, str
 	unsigned int pos=1;
 	unsigned int local_channel=0;
 	unsigned int size=0;
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	struct simple_lock_s rlock;
@@ -240,24 +251,21 @@ static void receive_msg_channel_window_adjust(struct ssh_session_s *session, str
     for the waiting thread
 */
 
-static void receive_msg_channel_data_init(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload)
+void receive_msg_channel_data_init(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload)
 {
     struct ssh_payload_s *payload=*p_payload;
-    logoutput("receive_msg_channel_data_init: len %i", payload->len);
     queue_ssh_payload_channel(channel, payload);
     *p_payload=NULL;
 }
 
-static void receive_msg_channel_data_down(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload)
+void receive_msg_channel_data_down(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload)
 {
     /* do nothing */
     free_payload(p_payload);
 }
 
-static void receive_msg_channel_data(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_data(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
-
-    // logoutput("receive_msg_channel_data: len %i", payload->len);
 
     /*
 	call the specific handler for the channel
@@ -281,18 +289,14 @@ static void receive_msg_channel_data(struct ssh_session_s *session, struct ssh_p
 	pos+=4;
 
 	if (len + pos == payload->len) {
+	    struct ssh_session_s *session=get_ssh_connection_session(connection);
 	    struct channel_table_s *table=&session->channel_table;
 	    struct ssh_channel_s *channel=NULL;
 	    struct simple_lock_s rlock;
 
-	    // logoutput("receive_msg_channel_data: a tsize %i", table->table_size);
-
 	    channeltable_readlock(table, &rlock);
-	    // logoutput("receive_msg_channel_data: b tsize %i", table->table_size);
 	    channel=lookup_session_channel_for_data(table, local_channel, &payload);
-	    // logoutput("receive_msg_channel_data: c tsize %i", table->table_size);
 	    channeltable_unlock(table, &rlock);
-	    // logoutput("receive_msg_channel_data: d tsize %i", table->table_size);
 
 	}
 
@@ -302,34 +306,7 @@ static void receive_msg_channel_data(struct ssh_session_s *session, struct ssh_p
 
 }
 
-void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s **payload))
-{
-
-    logoutput("switch_channel_receive_data: %s", name);
-
-    pthread_mutex_lock(&channel->mutex);
-
-    channel->receive_msg_channel_data=receive_msg_channel_data_down;
-
-    if (strcmp(name, "init")==0) {
-
-	channel->receive_msg_channel_data=receive_msg_channel_data_init;
-
-    } else if (strcmp(name, "subsystem")==0) {
-
-	channel->receive_msg_channel_data=receive_data_cb;
-
-    } else if (strcmp(name, "down")==0) {
-
-	channel->receive_msg_channel_data=receive_msg_channel_data_down;
-
-    }
-
-    pthread_mutex_unlock(&channel->mutex);
-
-}
-
-static void receive_msg_channel_extended_data(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_extended_data(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
     /*
 	process the extended data, which will be probably output from stderr
@@ -364,6 +341,7 @@ static void receive_msg_channel_extended_data(struct ssh_session_s *session, str
 	if (len + pos == payload->len) {
 
 	    if (code==SSH_EXTENDED_DATA_STDERR) {
+		struct ssh_session_s *session=get_ssh_connection_session(connection);
 		struct channel_table_s *table=&session->channel_table;
 		struct ssh_channel_s *channel=NULL;
 		struct simple_lock_s rlock;
@@ -384,7 +362,7 @@ static void receive_msg_channel_extended_data(struct ssh_session_s *session, str
 
 /* TODO: call a handler per channel which will close the channel and anything related like sftp */
 
-static void receive_msg_channel_eof(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_eof(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len<5) {
@@ -394,6 +372,7 @@ static void receive_msg_channel_eof(struct ssh_session_s *session, struct ssh_pa
     } else {
 	unsigned int pos=1;
 	unsigned int local_channel=0;
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	struct ssh_signal_s *signal=NULL;
@@ -406,7 +385,7 @@ static void receive_msg_channel_eof(struct ssh_session_s *session, struct ssh_pa
 
 	channeltable_readlock(table, &rlock);
 	channel=lookup_session_channel_for_flag(table, local_channel, CHANNEL_FLAG_SERVER_EOF);
-	signal=(channel) ? channel->payload_queue.signal : NULL;
+	signal=(channel) ? channel->queue.signal : NULL;
 	channeltable_unlock(table, &rlock);
 
 	if (signal) {
@@ -430,7 +409,7 @@ static void receive_msg_channel_eof(struct ssh_session_s *session, struct ssh_pa
     - uint32		recipient channel
 */
 
-static void receive_msg_channel_close(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_close(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len<5) {
@@ -440,6 +419,7 @@ static void receive_msg_channel_close(struct ssh_session_s *session, struct ssh_
     } else {
 	unsigned int pos=1;
 	unsigned int local_channel=0;
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	struct ssh_signal_s *signal=NULL;
@@ -452,7 +432,7 @@ static void receive_msg_channel_close(struct ssh_session_s *session, struct ssh_
 
 	channeltable_readlock(table, &rlock);
 	channel=lookup_session_channel_for_flag(table, local_channel, CHANNEL_FLAG_SERVER_CLOSE);
-	signal=(channel) ? channel->payload_queue.signal : NULL;
+	signal=(channel) ? channel->queue.signal : NULL;
 	channeltable_unlock(table, &rlock);
 
 	if (signal) {
@@ -468,7 +448,7 @@ static void receive_msg_channel_close(struct ssh_session_s *session, struct ssh_
     if (payload) free_payload(&payload);
 }
 
-static void receive_msg_channel_request(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_request(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
     /* here what to do ? receiving a request from the server is an error */
     free_payload(&payload);
@@ -480,7 +460,7 @@ static void receive_msg_channel_request(struct ssh_session_s *session, struct ss
     - uint32		local channel
 */
 
-static void receive_msg_channel_request_reply(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_channel_request_reply(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
 
     if (payload->len<5) {
@@ -488,6 +468,7 @@ static void receive_msg_channel_request_reply(struct ssh_session_s *session, str
 	logoutput("receive_msg_channel_request_reply: message too small (size: %i)", payload->len);
 
     } else {
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 	struct channel_table_s *table=&session->channel_table;
 	struct ssh_channel_s *channel=NULL;
 	unsigned int local_channel=0;

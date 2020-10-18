@@ -17,10 +17,9 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_DH_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_DH_H
+#ifndef _SSH_KEYEXCHANGE_DH_H
+#define _SSH_KEYEXCHANGE_DH_H
 
-unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start);
-int set_keyx_dh(struct ssh_keyx_s *keyx, const char *name, unsigned int *error);
+void init_keyex_dh();
 
 #endif

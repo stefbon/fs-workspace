@@ -123,7 +123,7 @@ static int get_hmac_param(const char *name, unsigned int *maclen)
 
 }
 
-static unsigned int populate_cipher(struct ssh_session_s *session, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_cipher(struct ssh_connection_s *connection, struct decrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (test_cipher_algo("chacha20-poly1305@openssh.com")==0) {
@@ -146,7 +146,7 @@ static unsigned int populate_cipher(struct ssh_session_s *session, struct decryp
 
 }
 
-static unsigned int populate_hmac(struct ssh_session_s *session, struct decrypt_ops_s *d_ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_hmac(struct ssh_connection_s *connection, struct decrypt_ops_s *d_ops, struct algo_list_s *alist, unsigned int start)
 {
     /* no hmac (cipher is hmac and decrypt at the same time) */
     return start;

@@ -141,7 +141,7 @@ int start_channel(struct ssh_channel_s *channel, unsigned int *error)
     out:
 
     if (result==0) {
-	struct ssh_signal_s *signal=channel->payload_queue.signal;
+	struct ssh_signal_s *signal=channel->queue.signal;
 
 	pthread_mutex_lock(signal->mutex);
 	pthread_cond_broadcast(signal->cond);
@@ -178,7 +178,7 @@ void close_channel(struct ssh_channel_s *channel, unsigned int flags)
 
     if ((flags & CHANNEL_FLAG_SERVER_CLOSE) && (channel->flags & CHANNEL_FLAG_SERVER_CLOSE)==0) {
 	struct timespec expire;
-	struct ssh_signal_s *signal=channel->payload_queue.signal;
+	struct ssh_signal_s *signal=channel->queue.signal;
 
 	/* TODO: do not wait when there are connection problems */
 

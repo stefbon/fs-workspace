@@ -78,24 +78,27 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
     size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
-    init_sftp_request(&sftp_r);
 
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
     sftp_r.call.mkdir.path=(unsigned char *) pathinfo->path;
     sftp_r.call.mkdir.len=pathinfo->len;
     sftp_r.call.mkdir.size=size;
     sftp_r.call.mkdir.buff=(unsigned char *) buffer;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_mkdir_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -109,9 +112,9 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (sftp_r.reply.type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.code==0) {
+		    if (sftp_r.reply.response.status.code==0) {
 			struct inode_s *inode=entry->inode;
 			struct entry_s *parent=entry->parent;
 
@@ -127,7 +130,7 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 
 		    }
 
-		    error=sftp_r.response.status.linux_error;
+		    error=sftp_r.reply.response.status.linux_error;
 		    logoutput("_fs_sftp_create: status reply %i", error);
 
 		} else {
@@ -139,6 +142,10 @@ void _fs_sftp_mkdir(struct service_context_s *context, struct fuse_request_s *f_
 	    }
 
 	}
+
+    } else {
+
+	error=(sftp_r.reply.error) ? sftp_r.reply.error : EIO;
 
     }
 

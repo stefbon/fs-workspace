@@ -21,7 +21,7 @@
 #define FS_WORKSPACE_SSH_RECEIVE_DECRYPTORS_H
 
 struct ssh_decryptor_s *get_decryptor_container(struct list_element_s *list);
-struct ssh_decryptor_s *get_decryptor(struct ssh_receive_s *r, unsigned int *error);
+struct ssh_decryptor_s *get_decryptor_unlock(struct ssh_receive_s *r, unsigned int *error);
 void queue_decryptor(struct ssh_decryptor_s *decryptor);
 void remove_decryptors(struct ssh_decrypt_s *decrypt);
 

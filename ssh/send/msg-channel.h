@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_MSG_CHANNEL_H
-#define FS_WORKSPACE_SSH_SEND_MSG_CHANNEL_H
+#ifndef _SSH_SEND_MSG_CHANNEL_H
+#define _SSH_SEND_MSG_CHANNEL_H
 
 /* prototypes */
 
@@ -27,7 +27,10 @@ int send_channel_close_message(struct ssh_channel_s *channel);
 int send_channel_window_adjust_message(struct ssh_channel_s *channel, unsigned int increase);
 
 int send_start_command_message(struct ssh_channel_s *channel, const char *command, const char *name, unsigned char reply, unsigned int *seq);
+
+int send_channel_data_message_connected(struct ssh_channel_s *channel, unsigned int size, char *data, unsigned int *seq);
+int send_channel_data_message_error(struct ssh_channel_s *channel, unsigned int size, char *data, unsigned int *seq);
+
 int send_channel_data_message(struct ssh_channel_s *channel, unsigned int len, char *data, unsigned int *seq);
-void switch_channel_send_data(struct ssh_channel_s *channel, const char *what);
 
 #endif

@@ -45,12 +45,14 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
+#include "ssh-connections.h"
 #include "ssh-send.h"
 #include "ssh-utils.h"
 
-int init_send(struct ssh_session_s *session, unsigned int *error)
+int init_ssh_connection_send(struct ssh_connection_s *connection)
 {
-    struct ssh_send_s *send=&session->send;
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
+    struct ssh_send_s *send=&connection->send;
     struct ssh_encrypt_s *encrypt=&send->encrypt;
     struct ssh_compress_s *compress=&send->compress;
 
@@ -61,74 +63,53 @@ int init_send(struct ssh_session_s *session, unsigned int *error)
     pthread_cond_init(&send->cond, NULL);
     send->newkeys.tv_sec=0;
     send->newkeys.tv_nsec=0;
-    set_send_behaviour(send, "default"); /* start with serialized handling of the send queue */
+    set_ssh_send_behaviour(connection, "default"); /* start with serialized handling of the send queue */
     send->sequence_number=0;
-
-    init_list_header(&send->senders.header, SIMPLE_LIST_TYPE_EMPTY, NULL);
-    pthread_mutex_init(&send->senders.mutex, NULL);
-    pthread_cond_init(&send->senders.cond, NULL);
-
+    init_list_header(&send->senders, SIMPLE_LIST_TYPE_EMPTY, NULL);
 
     /* encrypt */
 
     encrypt->flags=0;
     memset(encrypt->ciphername, '\0', sizeof(encrypt->ciphername));
     memset(encrypt->hmacname, '\0', sizeof(encrypt->hmacname));
-    init_list_header(&encrypt->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
     encrypt->count=0;
     encrypt->max_count=0;
-    init_list_header(&encrypt->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
-    pthread_mutex_init(&encrypt->waiters.mutex, NULL);
-    pthread_cond_init(&encrypt->waiters.cond, NULL);
+    init_list_header(&encrypt->header, SIMPLE_LIST_TYPE_EMPTY, NULL);
     encrypt->ops=NULL;
     init_ssh_string(&encrypt->cipher_key);
     init_ssh_string(&encrypt->cipher_iv);
     init_ssh_string(&encrypt->hmac_key);
-
-    set_encrypt_generic(encrypt);
     strcpy(encrypt->ciphername, "none");
     strcpy(encrypt->hmacname, "none");
+    set_encrypt_generic(encrypt);
 
     /* compress */
 
     compress->flags=0;
     memset(compress->name, '\0', sizeof(compress->name));
-    init_list_header(&compress->waiters.cryptors, SIMPLE_LIST_TYPE_EMPTY, NULL);
-    init_list_header(&compress->waiters.threads, SIMPLE_LIST_TYPE_EMPTY, NULL);
-    pthread_mutex_init(&compress->waiters.mutex, NULL);
-    pthread_cond_init(&compress->waiters.cond, NULL);
-    compress->count=0;
+    init_list_header(&compress->header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    compress->count=0; /* total amount of compressors */
     compress->max_count=0; /* no limit */
     compress->ops=NULL;
-
     set_compress_none(compress);
+
     return 0;
 
 }
 
-void free_send(struct ssh_session_s *session)
+void free_ssh_connection_send(struct ssh_connection_s *connection)
 {
-    struct ssh_send_s *send=&session->send;
+    struct ssh_send_s *send=&connection->send;
     struct ssh_encrypt_s *encrypt=&send->encrypt;
     struct ssh_compress_s *compress=&send->compress;
 
     remove_compressors(compress);
     remove_encryptors(encrypt);
-
     pthread_mutex_destroy(&send->mutex);
     pthread_cond_destroy(&send->cond);
-
-    pthread_mutex_destroy(&send->senders.mutex);
-    pthread_cond_destroy(&send->senders.cond);
-
-    pthread_mutex_destroy(&compress->waiters.mutex);
-    pthread_cond_destroy(&compress->waiters.cond);
-    pthread_mutex_destroy(&encrypt->waiters.mutex);
-    pthread_cond_destroy(&encrypt->waiters.cond);
-
 }
 
-void init_send_once()
+void init_ssh_send_once()
 {
     init_encryptors_once();
     init_compressors_once();

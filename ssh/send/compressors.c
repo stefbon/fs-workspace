@@ -94,81 +94,45 @@ static struct ssh_compressor_s *create_compressor(struct ssh_compress_s *compres
 
 }
 
-/* get a compressor from the compressors list */
+/* get a compressor from the compressors list
+    - a compressor does not have to wait until the compressor of the previous package has finished */
 
 struct ssh_compressor_s *get_compressor(struct ssh_send_s *send, unsigned int *error)
 {
     struct ssh_compress_s *compress=&send->compress;
-    struct ssh_compressor_s *compressor=NULL;
-    struct ssh_waiters_s *waiters=&compress->waiters;
-    struct list_element_s list;
+    struct ssh_compressor_s *compressor=fallback;
+    struct list_header_s *header=&compress->header;
 
-    // logoutput("get_compressor");
-
-    init_list_element(&list, NULL);
-    pthread_mutex_lock(&waiters->mutex);
-    add_list_element_last(&waiters->threads, &list);
-
-    /* wait to become the first */
-
-    while (list_element_is_first(&list)==-1) {
-	int result=0;
-
-	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
-
-	/* already the first ? HUH?? Isn't it just enough to be the first ?? */
-
-	if (list_element_is_first(&list)==0) {
-
-	    break;
-
-	} else if (result>0) {
-
-	    /* internal error */
-
-	    *error=result;
-	    goto finish;
-
-	}
-
-    }
+    pthread_mutex_lock(&send->mutex);
 
     /* wait for a decompressor to become available */
 
-    while (waiters->cryptors.count==0 && compress->count == compress->max_count && compress->max_count>0) {
-	int result=0;
+    while (header->count==0 && compress->count == compress->max_count && compress->max_count>0) {
 
-	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
+	int result=pthread_cond_wait(&send->cond, &send->mutex);
 
-	if (waiters->cryptors.count>0 || compress->count < compress->max_count) {
+	if (header->count>0 || compress->count < compress->max_count) {
 
 	    break;
 
-	} else if (result>0) {
+	} else if (result>0 || (send->flags & (SSH_SEND_FLAG_DISCONNECT | SSH_SEND_FLAG_ERROR))) {
 
-	    *error=result;
-	    goto finish;
-
-	} else if (send->flags & (SSH_SEND_FLAG_DISCONNECT | SSH_SEND_FLAG_ERROR)) {
-
-	    *error=EIO;
+	    *error=(result>0) ? result : EIO;
 	    goto finish;
 
 	}
 
     }
 
-    if (waiters->cryptors.count>0) {
-	struct list_element_s *tmp=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
+    if (header->count>0) {
+	struct list_element_s *list=get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
 
-	// logoutput("get_compressor: D");
-
-	compressor=get_compressor_container(tmp);
+	compressor=get_compressor_container(list);
 
     } else if ((compress->count < compress->max_count) || compress->max_count==0) {
 
 	compressor=create_compressor(compress);
-	compress->count+=(compressor) ? 1 : 0;
+	compress->count++;
 
     }
 
@@ -179,10 +143,7 @@ struct ssh_compressor_s *get_compressor(struct ssh_send_s *send, unsigned int *e
     // logoutput("get_compressor (nr %i count %i)", (compressor) ? compressor->nr : -1, compress->count);
     // logoutput("get_compressor: finish (%li.%li - %li.%li)", compressor->created.tv_sec, compressor->created.tv_nsec, send->newkeys.tv_sec, send->newkeys.tv_nsec);
 
-    remove_list_element(&list);
-    pthread_cond_broadcast(&waiters->cond);
-    pthread_mutex_unlock(&waiters->mutex);
-
+    pthread_mutex_unlock(&send->mutex);
     return compressor;
 
 }
@@ -191,17 +152,15 @@ void queue_compressor(struct ssh_compressor_s *compressor)
 {
     struct ssh_compress_s *compress=compressor->compress;
     struct ssh_send_s *send=(struct ssh_send_s *) (((char *) compress) - offsetof(struct ssh_send_s, compress));
-    struct ssh_waiters_s *waiters=&compress->waiters;
+    struct list_header_s *header=&compress->header;
 
     pthread_mutex_lock(&send->mutex);
 
     if (compressor->created.tv_sec > send->newkeys.tv_sec ||
 	(compressor->created.tv_sec == send->newkeys.tv_sec && compressor->created.tv_nsec >= send->newkeys.tv_nsec)) {
 
-	pthread_mutex_lock(&waiters->mutex);
-	add_list_element_last(&waiters->cryptors, &compressor->list);
-	pthread_cond_broadcast(&waiters->cond);
-	pthread_mutex_unlock(&waiters->mutex);
+	add_list_element_last(header, &compressor->list);
+	pthread_cond_broadcast(&send->cond);
 
     } else {
 
@@ -221,16 +180,14 @@ void queue_compressor(struct ssh_compressor_s *compressor)
 void remove_compressors(struct ssh_compress_s *compress)
 {
     struct list_element_s *list=NULL;
-    struct ssh_waiters_s *waiters=&compress->waiters;
+    struct list_header_s *header=&compress->header;
 
     doremove:
 
-    list=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
+    list=get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
 
     if (list) {
-	struct ssh_compressor_s *compressor=NULL;
-
-	compressor=get_compressor_container(list);
+	struct ssh_compressor_s *compressor=get_compressor_container(list);
 	(* compressor->clear)(compressor);
 	free(compressor);
 	compress->count--;

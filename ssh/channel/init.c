@@ -43,24 +43,14 @@
 
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
+#include "ssh-connections.h"
 #include "ssh-channel.h"
 #include "ssh-utils.h"
 #include "startclose.h"
 
 void clean_ssh_channel_queue(struct ssh_channel_s *channel)
 {
-    struct payload_queue_s *queue=&channel->payload_queue;
-    struct ssh_payload_s *payload=queue->list.head;
-
-    while (payload) {
-
-	queue->list.head=payload->next;
-	logoutput("clean_ssh_channel_queue: found type %i", payload->type);
-	free(payload);
-	payload=queue->list.head;
-
-    }
-
+    clear_payload_queue(&channel->queue, 1);
 }
 
 void clear_ssh_channel(struct ssh_channel_s *channel)
@@ -84,7 +74,20 @@ void clear_ssh_channel(struct ssh_channel_s *channel)
 
 void free_ssh_channel(struct ssh_channel_s *channel)
 {
+
+    if (channel->flags & CHANNEL_FLAG_CONNECTION_REFCOUNT) {
+
+	decrease_refcount_ssh_connection(channel->connection);
+	channel->flags -= CHANNEL_FLAG_CONNECTION_REFCOUNT;
+    }
+
     clear_ssh_channel(channel);
+    (* channel->free)(channel);
+
+}
+
+static void _free_ssh_channel(struct ssh_channel_s *channel)
+{
     free(channel);
 }
 
@@ -109,9 +112,11 @@ static void process_outgoing_bytes_default(struct ssh_channel_s *channel, unsign
     pthread_mutex_unlock(&channel->mutex);
 }
 
-void init_ssh_channel(struct ssh_session_s *session, struct ssh_channel_s *channel, unsigned char type)
+void init_ssh_channel(struct ssh_session_s *session, struct ssh_connection_s *connection, struct ssh_channel_s *channel, unsigned char type)
 {
+
     channel->session=session;
+    channel->connection=connection;
     channel->type=type;
 
     channel->local_channel=0;
@@ -128,23 +133,22 @@ void init_ssh_channel(struct ssh_session_s *session, struct ssh_channel_s *chann
 
     /* make use of the central mutex/cond for announcing payload has arrived */
 
-    channel->payload_queue.signal=&session->receive.signal;
-    channel->payload_queue.list.head=NULL;
-    channel->payload_queue.list.tail=NULL;
+    init_payload_queue(connection, &channel->queue);
 
     pthread_mutex_init(&channel->mutex, NULL);
-    channel->list.next=NULL;
-    channel->list.prev=NULL;
-
+    init_list_element(&channel->list, NULL);
     channel->start=start_channel;
     channel->close=close_channel;
+
     switch_channel_send_data(channel, "default");
     switch_channel_receive_data(channel, "init", NULL);
-    channel->free=free_ssh_channel;
+    channel->free=_free_ssh_channel;
+    increase_refcount_ssh_connection(connection);
+    channel->flags |= CHANNEL_FLAG_CONNECTION_REFCOUNT;
 
 }
 
-struct ssh_channel_s *create_channel(struct ssh_session_s *session, unsigned char type)
+struct ssh_channel_s *create_channel(struct ssh_session_s *session, struct ssh_connection_s *connection, unsigned char type)
 {
     struct ssh_channel_s *channel=NULL;
 
@@ -153,7 +157,7 @@ struct ssh_channel_s *create_channel(struct ssh_session_s *session, unsigned cha
     if (channel) {
 
 	memset(channel, 0, sizeof(struct ssh_channel_s));
-	init_ssh_channel(session, channel, type);
+	init_ssh_channel(session, connection, channel, type);
 
     }
 

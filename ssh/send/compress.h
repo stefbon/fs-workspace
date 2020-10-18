@@ -17,11 +17,11 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_COMPRESS_H
-#define FS_WORKSPACE_SSH_SEND_COMPRESS_H
+#ifndef _SSH_SEND_COMPRESS_H
+#define _SSH_SEND_COMPRESS_H
 
 void add_compress_ops(struct compress_ops_s *ops);
 void reset_compress(struct ssh_send_s *send, struct algo_list_s *algo);
-int build_compress_list_c2s(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start);
+int build_compress_list_c2s(struct ssh_connection_s *c, struct algo_list_s *alist, unsigned int start);
 
 #endif

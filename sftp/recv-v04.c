@@ -131,23 +131,21 @@ void receive_sftp_status_v04(struct sftp_subsystem_s *sftp_subsystem, struct sft
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
-    unsigned int pos=0;
-    void *req=NULL;
-
-    req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
+    void *req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
 	char *buffer=sftp_header->buffer;
+	unsigned int pos=0;
+	struct sftp_reply_s *reply=&sftp_r->reply;
 
-	sftp_r->type=sftp_header->type;
-	sftp_r->response.status.code=get_uint32(&buffer[pos]);
-	sftp_r->response.status.linux_error=map_sftp_error(sftp_r->response.status.code);
-
+	reply->type=sftp_header->type;
+	reply->response.status.code=get_uint32(&buffer[pos]);
+	reply->response.status.linux_error=map_sftp_error(reply->response.status.code);
 	signal_sftp_received_id(sftp_subsystem, req);
 
     } else {
 
-	logoutput("receive_sftp_status: error %i storing status (%s)", error, strerror(error));
+	logoutput("receive_sftp_status_v04: error %i storing status (%s)", error, strerror(error));
 
     }
 

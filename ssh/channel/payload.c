@@ -45,13 +45,11 @@
 #include "ssh-common.h"
 #include "ssh-channel.h"
 #include "ssh-utils.h"
+#include "ssh-receive.h"
 
 struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, struct timespec *expire, unsigned int *seq, unsigned int *error)
 {
-    struct payload_queue_s *queue=&channel->payload_queue;
-    struct ssh_signal_s *signal=queue->signal;
-    int result=0;
-    struct ssh_payload_s *payload=NULL;
+    logoutput("get_ssh_payload_channel");
 
     if (channel->flags & (CHANNEL_FLAG_SERVER_CLOSE | CHANNEL_FLAG_SERVER_EOF | CHANNEL_FLAG_OPENFAILURE)) {
 
@@ -60,116 +58,11 @@ struct ssh_payload_s *get_ssh_payload_channel(struct ssh_channel_s *channel, str
 
     }
 
-    logoutput("get_ssh_payload_channel");
-
-    pthread_mutex_lock(signal->mutex);
-
-    while (queue->list.head==NULL) {
-
-	result=pthread_cond_timedwait(signal->cond, signal->mutex, expire);
-
-	if (queue->list.head) {
-
-	    break;
-
-	} else if (result==ETIMEDOUT) {
-	    struct fs_connection_s *connection=&channel->session->connection;
-
-	    pthread_mutex_unlock(signal->mutex);
-	    *error=ETIMEDOUT;
-	    if (connection->status & (FS_CONNECTION_FLAG_DISCONNECTED | FS_CONNECTION_FLAG_DISCONNECTING)) {
-
-		*error=(connection->error>0) ? connection->error : ENOTCONN;
-
-	    }
-
-	    return NULL;
-
-	} else if (signal->error>0 && seq && *seq==signal->sequence_number_error) {
-
-	    *error=signal->error;
-	    pthread_mutex_unlock(signal->mutex);
-	    return NULL;
-
-	} else {
-	    struct fs_connection_s *connection=&channel->session->connection;
-
-	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED) {
-
-		*error=(connection->error>0) ? connection->error : ENOTCONN;
-		pthread_mutex_unlock(signal->mutex);
-		return NULL;
-
-	    } else if (channel->flags & (CHANNEL_FLAG_SERVER_CLOSE | CHANNEL_FLAG_SERVER_EOF)) {
-
-		pthread_mutex_unlock(signal->mutex);
-		*error=ENOTCONN;
-		return NULL;
-
-	    }
-
-	}
-
-    }
-
-    /* when here there is payload on the channel list */
-
-    *error=0;
-    payload=queue->list.head;
-
-    if (payload->next) {
-	struct ssh_payload_s *next=payload->next;
-
-	next->prev=NULL;
-	queue->list.head=next;
-
-    } else {
-
-	queue->list.head=NULL;
-	queue->list.tail=NULL;
-
-    }
-
-    pthread_mutex_unlock(signal->mutex);
-
-    payload->next=NULL;
-    payload->prev=NULL;
-
-    return payload;
-
+    return get_ssh_payload(channel->connection, &channel->queue, expire, seq, error);
 }
 
 void queue_ssh_payload_channel(struct ssh_channel_s *channel, struct ssh_payload_s *payload)
 {
-    struct payload_queue_s *queue=&channel->payload_queue;
-    struct ssh_signal_s *signal=queue->signal;
-
-    payload->next=NULL;
-    payload->prev=NULL;
-
-    logoutput("queue_ssh_payload_channel");
-
-    pthread_mutex_lock(signal->mutex);
-
-    if (queue->list.tail) {
-	struct ssh_payload_s *last=queue->list.tail;
-
-	/* put after last */
-
-	last->next=payload;
-	payload->prev=last;
-	queue->list.tail=payload;
-
-    } else {
-
-	queue->list.head=payload;
-	queue->list.tail=payload;
-
-	pthread_cond_broadcast(signal->cond);
-
-    }
-
-    pthread_mutex_unlock(signal->mutex);
-
+    logoutput("queue_ssh_payload_channel: type %i", payload->type);
+    queue_ssh_payload(&channel->queue, payload);
 }
-

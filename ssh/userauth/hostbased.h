@@ -17,11 +17,11 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_USERAUTH_HOSTBASED_H
-#define FS_WORKSPACE_SSH_USERAUTH_HOSTBASED_H
+#ifndef SSH_USERAUTH_HOSTBASED_H
+#define SSH_USERAUTH_HOSTBASED_H
 
 /* prototypes */
 
-struct pk_identity_s *ssh_auth_hostbased(struct ssh_session_s *session, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_userauth_s *userauth);
+struct pk_identity_s *ssh_auth_hostbased(struct ssh_connection_s *c, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_auth_s *auth);
 
 #endif

@@ -41,20 +41,21 @@ AC_FUNC_REALLOC
 AC_CHECK_FUNCS([clock_gettime fdatasync ftruncate memmove memset mkdir realpath rmdir strchr strdup strerror strrchr strstr])
 AC_CHECK_FUNCS([inotify_init], [AC_DEFINE([HAVE_INOTIFY], [1], [Check for inotify])])
 AC_CHECK_HEADERS(stdio.h sys/param.h linux/fuse.h)
+AC_CHECK_HEADER([librsync.h],[AC_DEFINE([HAVE_LIBRSYNC], [1], [Define if librsync is available])], [AC_MSG_WARN([Header librsync not found. Not building with support of fast network delta synchronization])])
+
 AC_SEARCH_LIBS(pthread_create, pthread,, AC_MSG_ERROR([Please install pthreads library first.]))
 
 PKG_CHECK_MODULES(GLIB, [ glib-2.0 ], [AC_DEFINE([HAVE_GLIB2], [1], [Define if GLIB 2.0 is available])], AC_MSG_ERROR([Error: glib-2.0 not found.]))
 PKG_CHECK_MODULES(QT5, [ Qt5Core ], [AC_DEFINE([HAVE_QTCORE5], [1], [Define if QT 5 Core is available])], AC_MSG_ERROR([Error: Qt5Core not found.]))
-
 PKG_CHECK_MODULES([LIBGCRYPT], [gcrypt], [AC_DEFINE([HAVE_LIBGCRYPT], [1], [Check for libgcrypt])], AC_MSG_ERROR([Please install libgcrypt.]))
-
 PKG_CHECK_MODULES([SYSTEMD], [libsystemd], [AC_DEFINE([HAVE_LIBSYSTEMD], [1], [Define libsystemd is available])], AC_MSG_ERROR([Error: libsystemd not found.]))
 PKG_CHECK_MODULES([AVAHI_CORE], [avahi-core], [AC_DEFINE([HAVE_AVAHI_CORE], [1], [Define Avahi core is available])], AC_MSG_ERROR([Error: avahi core not found.]))
 PKG_CHECK_MODULES([AVAHI_CLIENT], [avahi-client], [AC_DEFINE([HAVE_AVAHI_CLIENT], [1], [Define Avahi client is available])], AC_MSG_ERROR([Error: avahi client not found.]))
-PKG_CHECK_MODULES(QT5, [ Qt5Core ], [AC_DEFINE([HAVE_QTCORE5], [1], [Define if QT 5 Core is available])], AC_MSG_ERROR([Error: Qt5Core not found.]))
+
 PKG_CHECK_MODULES(UDT, [ udt ], [AC_DEFINE([HAVE_UDT], [1], [Define if libudt is available])], AC_MSG_WARN([Error: libudt not found.]))
 
 AM_CONDITIONAL([LIBUDT_AVAIL], [ test HAVE_UDT ])
+AM_CONDITIONAL([LIBRSYNC_AVAIL], [ test HAVE_LIBRSYNC ])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

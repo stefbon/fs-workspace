@@ -54,6 +54,7 @@
 
 #include "path-caching.h"
 
+#include "ssh-common.h"
 #include "fuse-fs-common.h"
 
 #include "common-protocol.h"
@@ -68,8 +69,8 @@ extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, u
 extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
 
-extern unsigned int get_uint32(unsigned char *buf);
-extern uint64_t get_uint64(unsigned char *buf);
+// extern unsigned int get_uint32(unsigned char *buf);
+// extern uint64_t get_uint64(unsigned char *buf);
 static struct statfs fallback_statfs;
 
 static void _fs_sftp_statfs_unsupp(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo)
@@ -100,59 +101,40 @@ static void _fs_sftp_statfs_unsupp(struct service_context_s *context, struct fus
 void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f_request, struct pathinfo_s *pathinfo)
 {
     struct context_interface_s *interface=&context->interface;
-    struct sftp_request_s sftp_r;
+    struct sftp_reply_s reply;
     unsigned int error=EIO;
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
+    struct ssh_string_s data;
 
-    if ((* f_request->is_interrupted)(f_request)) {
+    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
+    memset(&reply, 0, sizeof(struct sftp_reply_s));
+
+    char buffer[pathinfo->len + 4];
+    store_uint32(buffer, pathinfo->len);
+    memcpy(&buffer[4], pathinfo->path, pathinfo->len);
+
+    data.ptr=buffer;
+    data.len=pathinfo->len + 4;
+
+    // set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
 
     }
 
-    if ((context->interface.backend.sftp.flags & CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH)==0) {
+    if (send_sftp_extension_fsync_ctx(interface->ptr, &data, &reply, &error)==0) {
 
-	_fs_sftp_statfs_unsupp(context, f_request, pathinfo);
-	return;
+	if (reply.type==SSH_FXP_EXTENDED_REPLY) {
+	    struct fuse_statfs_out statfs_out;
+	    char *pos = (char *) reply.response.extension.buff;
+	    uint64_t f_flag=0;
 
-    }
-
-    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    char data[pathinfo->len + 4];
-    store_uint32(data, pathinfo->len);
-    memcpy(&data[4], pathinfo->path, pathinfo->len);
-
-    sftp_r.id=0;
-    sftp_r.call.extension.len=strlen("statvfs@openssh.com");
-    sftp_r.call.extension.name="statvfs@openssh.com";
-    sftp_r.call.extension.size=pathinfo->len + 4;
-    sftp_r.call.extension.data=data;
-    sftp_r.fuse_request=f_request;
-
-    if (send_sftp_extension_ctx(context->interface.ptr, &sftp_r)==0) {
-	void *request=NULL;
-
-	request=create_sftp_request_ctx(context->interface.ptr, &sftp_r, &error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
-
-		if (sftp_r.type==SSH_FXP_EXTENDED_REPLY) {
-		    struct fuse_statfs_out statfs_out;
-		    unsigned char *pos=sftp_r.response.extension.buff;
-		    uint64_t f_flag=0;
-
-		    /*
-			reply looks like
+	    /*
+		reply looks like
 
 			8 f_bsize
 			8 f_frsize
@@ -166,80 +148,74 @@ void _fs_sftp_statfs(struct service_context_s *context, struct fuse_request_s *f
 			8 f_flag
 			8 f_namemax
 
-		    */
+	    */
 
-		    memset(&statfs_out, 0, sizeof(struct fuse_statfs_out));
+	    memset(&statfs_out, 0, sizeof(struct fuse_statfs_out));
 
-		    statfs_out.st.bsize=get_uint64(pos);
-		    pos+=8;
+	    statfs_out.st.bsize=get_uint64(pos);
+	    pos+=8;
 
-		    statfs_out.st.frsize=get_uint64(pos);
-		    pos+=8;
+	    statfs_out.st.frsize=get_uint64(pos);
+	    pos+=8;
 
-		    statfs_out.st.blocks=get_uint64(pos);
-		    pos+=8;
+	    statfs_out.st.blocks=get_uint64(pos);
+	    pos+=8;
 
-		    statfs_out.st.bfree=get_uint64(pos);
-		    pos+=8;
+	    statfs_out.st.bfree=get_uint64(pos);
+	    pos+=8;
 
-		    statfs_out.st.bavail=get_uint64(pos);
-		    pos+=8;
+	    statfs_out.st.bavail=get_uint64(pos);
+	    pos+=8;
 
-		    statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
-		    pos+=8;
+	    statfs_out.st.files=(uint64_t) context->workspace->nrinodes;
+	    pos+=8;
 
-		    statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
-		    pos+=8;
+	    statfs_out.st.ffree=(uint64_t) (UINT32_T_MAX - statfs_out.st.files);
+	    pos+=8;
 
-		    /* ignore favail */
-		    pos+=8;
+	    /* ignore favail */
+	    pos+=8;
 
-		    /* ignore fsid */
-		    pos+=8;
+	    /* ignore fsid */
+	    pos+=8;
 
-		    /* ignore flag */
-		    f_flag=get_uint64(pos);
-		    pos+=8;
+	    /* ignore flag */
+	    f_flag=get_uint64(pos);
+	    pos+=8;
 
-		    /* namelen as uint64??? sftp can handle very very long filenames; uint16 would be enough */
-		    statfs_out.st.namelen=get_uint64(pos);
-		    pos+=8;
+	    /* namelen as uint64??? sftp can handle very very long filenames; uint16 would be enough */
+	    statfs_out.st.namelen=get_uint64(pos);
+	    pos+=8;
 
-		    logoutput("_fs_sftp_statfs: f_flag %li namelen %i size %i pos %i", f_flag, (unsigned int) statfs_out.st.namelen, sftp_r.response.extension.size, (unsigned int)(pos - sftp_r.response.extension.buff));
+	    logoutput("_fs_sftp_statfs: f_flag %li namelen %i size %i pos %i", f_flag, (unsigned int) statfs_out.st.namelen, reply.response.extension.size, (unsigned int)(pos - (char *)reply.response.extension.buff));
 
-		    statfs_out.st.padding=0;
+	    statfs_out.st.padding=0;
 
-		    reply_VFS_data(f_request, (char *) &statfs_out, sizeof(struct fuse_statfs_out));
-		    free(sftp_r.response.extension.buff);
-		    return;
+	    reply_VFS_data(f_request, (char *) &statfs_out, sizeof(struct fuse_statfs_out));
+	    free(reply.response.extension.buff);
+	    return;
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+	} else if (reply.type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.linux_error==EOPNOTSUPP) {
+	    if (reply.response.status.linux_error==EOPNOTSUPP) {
 
-			context->interface.backend.sftp.flags -= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH;
-			_fs_sftp_statfs_unsupp(context, f_request, pathinfo);
-			return;
-
-		    }
-
-		    error=sftp_r.response.status.linux_error;
-
-		    /* here: if error: not supported */
-
-		} else {
-
-		    error=EPROTO;
-
-		}
+		context->interface.backend.sftp.flags -= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH;
+		_fs_sftp_statfs_unsupp(context, f_request, pathinfo);
+		return;
 
 	    }
+
+	    error=reply.response.status.linux_error;
+
+	} else {
+
+	    error=EPROTO;
 
 	}
 
     } else {
 
-	error=sftp_r.error;
+	error=reply.error;
 
     }
 

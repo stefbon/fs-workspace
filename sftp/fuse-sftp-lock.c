@@ -69,25 +69,25 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
-    init_sftp_request(&sftp_r);
-
-    sftp_r.id=0;
-
     /* emulate file locks */
 
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    sftp_r.id=0;
     sftp_r.call.block.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.block.len=openfile->handle.name.len;
     sftp_r.call.block.offset=0;
     sftp_r.call.block.size=0;
     sftp_r.call.block.type=type;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_block_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -101,9 +101,9 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (sftp_r.reply.type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.code==0) {
+		    if (sftp_r.reply.response.status.code==0) {
 
 			openfile->flock=type; /* lock successfull */
 			reply_VFS_error(f_request, 0);
@@ -111,8 +111,8 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
 
 		    }
 
-		    logoutput("_fs_sftp_flock: status code %i", sftp_r.response.status.code);
-		    error=sftp_r.response.status.linux_error;
+		    logoutput("_fs_sftp_flock: status code %i", sftp_r.reply.response.status.code);
+		    error=sftp_r.reply.response.status.linux_error;
 
 		} else {
 
@@ -123,6 +123,10 @@ static void _fs_sftp_flock_lock(struct fuse_openfile_s *openfile, struct fuse_re
 	    }
 
 	}
+
+    } else {
+
+	error=(sftp_r.reply.error) ? sftp_r.reply.error : EIO;
 
     }
 
@@ -139,24 +143,24 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
     struct sftp_request_s sftp_r;
     unsigned int error=EIO;
 
-    if ((* f_request->is_interrupted)(f_request)) {
+    /* emulate file locks */
+
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    sftp_r.id=0;
+    sftp_r.call.unblock.handle=(unsigned char *) openfile->handle.name.name;
+    sftp_r.call.unblock.len=openfile->handle.name.len;
+    sftp_r.call.unblock.offset=0;
+    sftp_r.call.unblock.size=0;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
 
     }
-
-    init_sftp_request(&sftp_r);
-
-    sftp_r.id=0;
-
-    /* emulate file locks */
-
-    sftp_r.call.unblock.handle=(unsigned char *) openfile->handle.name.name;
-    sftp_r.call.unblock.len=openfile->handle.name.len;
-    sftp_r.call.unblock.offset=0;
-    sftp_r.call.unblock.size=0;
-    sftp_r.fuse_request=f_request;
 
     if (send_sftp_unblock_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -170,9 +174,9 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (sftp_r.reply.type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.code==0) {
+		    if (sftp_r.reply.response.status.code==0) {
 
 			openfile->flock=0; /* lock removed */
 			reply_VFS_error(f_request, 0);
@@ -180,8 +184,8 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
 
 		    }
 
-		    logoutput("_fs_sftp_funlock: status code %i", sftp_r.response.status.code);
-		    error=sftp_r.response.status.linux_error;
+		    logoutput("_fs_sftp_funlock: status code %i", sftp_r.reply.response.status.code);
+		    error=sftp_r.reply.response.status.linux_error;
 
 		} else {
 
@@ -192,6 +196,10 @@ static void _fs_sftp_flock_unlock(struct fuse_openfile_s *openfile, struct fuse_
 	    }
 
 	}
+
+    } else {
+
+	error=(sftp_r.reply.error) ? sftp_r.reply.error : EIO;
 
     }
 

@@ -21,6 +21,7 @@
 #define FS_WORKSPACE_FUSE_SFTP_EXTENSIONS_H
 
 void init_fuse_sftp_extensions(struct context_interface_s *interface);
+void complete_fuse_sftp_extensions(struct context_interface_s *interface);
 
 #endif
 

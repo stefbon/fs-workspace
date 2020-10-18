@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_CHANNEL_UTILS_H
-#define FS_WORKSPACE_SSH_CHANNEL_UTILS_H
+#ifndef _SSH_CHANNEL_UTILS_H
+#define _SSH_CHANNEL_UTILS_H
 
 /* prototypes */
 
@@ -27,5 +27,8 @@ void get_channel_expire_init(struct ssh_channel_s *channel, struct timespec *exp
 
 void get_timeinfo_ssh_server(struct ssh_session_s *session);
 unsigned int get_channel_interface_info(struct ssh_channel_s *channel, char *buffer, unsigned int size);
+
+void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s **payload));
+void switch_channel_send_data(struct ssh_channel_s *channel, const char *what);
 
 #endif

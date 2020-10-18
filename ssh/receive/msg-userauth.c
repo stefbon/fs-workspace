@@ -46,7 +46,7 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-send.h"
 #include "ssh-utils.h"
@@ -66,49 +66,45 @@
 
 */
 
-static void receive_msg_userauth_result_common(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_userauth_result_common(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
-    struct ssh_status_s *status=&session->status;
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
+    struct ssh_setup_s *setup=&connection->setup;
 
-    pthread_mutex_lock(&status->mutex);
+    pthread_mutex_lock(setup->mutex);
 
-    if (status->sessionphase.status & SESSION_STATUS_DISCONNECTING) {
+    if (setup->flags & SSH_SETUP_FLAG_DISCONNECT) {
 
-	pthread_mutex_unlock(&status->mutex);
+	pthread_mutex_unlock(setup->mutex);
 	free_payload(&payload);
 	return;
 
-    } else if (status->sessionphase.phase==SESSION_PHASE_SETUP && status->sessionphase.sub==SESSION_SUBPHASE_USERAUTH) {
-	struct ssh_userauth_s *userauth=session->userauth;
+    } else if ((setup->flags & SSH_SETUP_FLAG_TRANSPORT) && setup->status==SSH_SETUP_PHASE_SERVICE && setup->phase.service.status==SSH_SERVICE_TYPE_AUTH) {
 
-	if (userauth) {
-
-	    queue_ssh_payload(userauth->queue, payload);
-	    payload=NULL;
-
-	}
+	queue_ssh_payload_locked(&setup->queue, payload);
+	payload=NULL;
 
     }
 
-    pthread_mutex_unlock(&status->mutex);
+    pthread_mutex_unlock(setup->mutex);
 
     if (payload) {
 
 	free_payload(&payload);
-	disconnect_ssh_session(session, 0, SSH_DISCONNECT_PROTOCOL_ERROR);
+	disconnect_ssh_connection(connection);
 
     }
 
 }
 
-static void receive_msg_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_userauth_failure(struct ssh_connection_s *c, struct ssh_payload_s *payload)
 {
-    receive_msg_userauth_result_common(session, payload);
+    receive_msg_userauth_result_common(c, payload);
 }
 
-static void receive_msg_userauth_success(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_userauth_success(struct ssh_connection_s *c, struct ssh_payload_s *payload)
 {
-    receive_msg_userauth_result_common(session, payload);
+    receive_msg_userauth_result_common(c, payload);
 }
 
     /*
@@ -129,9 +125,9 @@ static void receive_msg_userauth_success(struct ssh_session_s *session, struct s
 
 
 
-static void receive_msg_userauth_commonreply(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_userauth_commonreply(struct ssh_connection_s *c, struct ssh_payload_s *payload)
 {
-    receive_msg_userauth_result_common(session, payload);
+    receive_msg_userauth_result_common(c, payload);
 }
 
 /* banner message
@@ -145,7 +141,7 @@ static void receive_msg_userauth_commonreply(struct ssh_session_s *session, stru
     - string			language tag
     */
 
-static void receive_msg_userauth_banner(struct ssh_session_s *session, struct ssh_payload_s *payload)
+static void receive_msg_userauth_banner(struct ssh_connection_s *c, struct ssh_payload_s *payload)
 {
 
     if (payload->len>9) {

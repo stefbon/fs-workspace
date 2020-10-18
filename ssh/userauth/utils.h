@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_USERAUTH_UTILS_H
-#define FS_WORKSPACE_SSH_USERAUTH_UTILS_H
+#ifndef _SSH_USERAUTH_UTILS_H
+#define _SSH_USERAUTH_UTILS_H
 
 #define PW_TYPE_GLOBAL		1
 #define PW_TYPE_DOMAIN		2
@@ -38,10 +38,11 @@ struct pw_list_s {
 
 /* prototypes */
 
-int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_userauth_s *userauth);
+int handle_auth_failure(struct ssh_payload_s *payload, struct ssh_auth_s *auth);
 
-unsigned int read_private_pwlist(struct ssh_session_s *session, struct pw_list_s **pwlist);
+unsigned int read_private_pwlist(struct ssh_connection_s *c, struct pw_list_s **pwlist);
 struct pw_list_s *get_next_pwlist(struct pw_list_s *pwlist, struct pw_list_s *element);
 void free_pwlist(struct pw_list_s *pwlist);
+int handle_auth_reply(struct ssh_connection_s *connection, struct ssh_payload_s *payload);
 
 #endif

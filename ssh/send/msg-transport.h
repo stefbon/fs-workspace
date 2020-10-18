@@ -17,17 +17,17 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_MSG_TRANSPORT_H
-#define FS_WORKSPACE_SSH_SEND_MSG_TRANSPORT_H
+#ifndef _SSH_SEND_MSG_TRANSPORT_H
+#define _SSH_SEND_MSG_TRANSPORT_H
 
 /* prototypes */
 
-int send_disconnect_message(struct ssh_session_s *session, unsigned int reason);
-int send_ignore_message(struct ssh_session_s *session, struct ssh_string_s *data);
-int send_debug_message(struct ssh_session_s *session, struct ssh_string_s *debug);
-int send_unimplemented_message(struct ssh_session_s *session, unsigned int number);
-int send_kexinit_message(struct ssh_session_s *session);
-int send_newkeys_message(struct ssh_session_s *session);
-int send_service_request_message(struct ssh_session_s *session, const char *service, unsigned int *seq);
+int send_disconnect_message(struct ssh_connection_s *c, unsigned int reason);
+int send_ignore_message(struct ssh_connection_s *c, struct ssh_string_s *data);
+int send_debug_message(struct ssh_connection_s *c, struct ssh_string_s *debug);
+int send_unimplemented_message(struct ssh_connection_s *c, unsigned int number);
+int send_kexinit_message(struct ssh_connection_s *c);
+int send_newkeys_message(struct ssh_connection_s *c);
+int send_service_request_message(struct ssh_connection_s *c, const char *service, unsigned int *seq);
 
 #endif

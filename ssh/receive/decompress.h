@@ -21,7 +21,7 @@
 #define FS_WORKSPACE_SSH_RECEIVE_DECOMPRESS_H
 
 void add_decompress_ops(struct decompress_ops_s *ops);
-void reset_decompress(struct ssh_session_s *session, struct algo_list_s *algo_compr);
-unsigned int build_compress_list_s2c(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start);
+void reset_decompress(struct ssh_connection_s *connection, struct algo_list_s *algo_compr);
+unsigned int build_compress_list_s2c(struct ssh_connection_s *connection, struct algo_list_s *alist, unsigned int start);
 
 #endif

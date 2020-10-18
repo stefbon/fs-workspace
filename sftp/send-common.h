@@ -43,6 +43,5 @@ int send_sftp_symlink_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_block_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_unblock_ctx(void *ptr, struct sftp_request_s *sftp_r);
 int send_sftp_realpath_ctx(void *ptr, struct sftp_request_s *sftp_r);
-int send_sftp_extension_ctx(void *ptr, struct sftp_request_s *sftp_r);
 
 #endif

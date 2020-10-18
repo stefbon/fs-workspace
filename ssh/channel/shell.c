@@ -295,7 +295,7 @@ void add_shell_channel(struct ssh_session_s *session)
 
     logoutput("add_shell_channel");
 
-    channel=create_channel(session, _CHANNEL_TYPE_SHELL);
+    channel=create_channel(session, session->connections.main, _CHANNEL_TYPE_SHELL);
 
     if (! channel) {
 
@@ -303,6 +303,8 @@ void add_shell_channel(struct ssh_session_s *session)
 	return;
 
     }
+
+    logoutput("add_shell_channel: add channel to table and open it");
 
     if (add_channel(channel, CHANNEL_FLAG_OPEN)==-1) {
 
@@ -314,6 +316,8 @@ void add_shell_channel(struct ssh_session_s *session)
 
     /* start a shell on the channel */
 
+    logoutput("add_shell_channel: channel got (%i:%i) and start shell", channel->local_channel, channel->remote_channel);
+
     if (start_remote_shell(channel, &error)==0) {
 
 	logoutput("add_shell_channel: started remote shell");
@@ -322,7 +326,7 @@ void add_shell_channel(struct ssh_session_s *session)
     } else {
 
 	remove_channel(channel, CHANNEL_FLAG_CLIENT_CLOSE | CHANNEL_FLAG_SERVER_CLOSE);
-	(* channel->free)(channel);
+	free_ssh_channel(channel);
 	channel=NULL;
 
     }

@@ -47,13 +47,13 @@
 
 #include "ssh-receive.h"
 #include "ssh-send.h"
-#include "ssh-connection.h"
+#include "ssh-connections.h"
 
 #include "ssh-utils.h"
 
 #include "userauth/utils.h"
 
-int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_userauth_s *userauth)
+int send_auth_none(struct ssh_connection_s *connection, char *user, struct ssh_auth_s *auth)
 {
     unsigned int error=0;
     unsigned int seq=0;
@@ -63,40 +63,31 @@ int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_use
 	see https://tools.ietf.org/html/rfc4252#section-5.2: The "none" Authentication Request
     */
 
-    logoutput("send_userauth_none: send none userauth request");
+    logoutput("send_auth_none: send none userauth request");
 
-    if (send_userauth_none_message(session, user, "ssh-connection", &seq)==0) {
+    if (send_userauth_none_message(connection, user, "ssh-connection", &seq)==0) {
 	struct ssh_payload_s *payload=NULL;
-	struct timespec expire;
 
-	get_session_expire_init(session, &expire);
+	payload=receive_message_common(connection, handle_auth_reply, &error);
+	if (payload==NULL) goto finish;
 
-	getresponse:
-
-	payload=get_ssh_payload(session, userauth->queue, &expire, &seq, &error);
-
-	if (! payload) {
-
-	    /* why not receiving payload? */
-
-	    logoutput("send_userauth_none: error %i waiting for server SSH_MSG_USERAUTH_REQUEST (%s)", error, strerror(error));
-
-	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
+	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
 	    /* huhh?? which server allows this weak security? */
-	    logoutput("send_userauth_none: server accepted none.....");
+	    logoutput("send_auth_none: server accepted none.....");
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
 	    /* result will always be -1 since "none" will result in success
 		override this */
-	    result=handle_userauth_failure(session, payload, userauth);
+	    handle_auth_failure(payload, auth);
 	    result=0;
 
 	} else {
 
 	    logoutput("send_userauth_none: got unexpected reply %i", payload->type);
+	    goto finish;
 
 	}
 

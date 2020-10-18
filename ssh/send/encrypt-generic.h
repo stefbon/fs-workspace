@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_ENCRYPT_GENERIC_H
-#define FS_WORKSPACE_SSH_SEND_ENCRYPT_GENERIC_H
+#ifndef _SSH_SEND_ENCRYPT_GENERIC_H
+#define _SSH_SEND_ENCRYPT_GENERIC_H
 
 void init_encrypt_generic();
 void set_encrypt_generic(struct ssh_encrypt_s *encrypt);

@@ -58,10 +58,10 @@
 #include "fuse-fs-virtual.h"
 
 extern unsigned int get_ssh_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer);
-extern int create_ssh_connection(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
-extern void signal_ssh_interface(struct context_interface_s *interface);
+extern int create_ssh_session(uid_t uid, struct context_interface_s *interface, struct context_address_s *address, unsigned int *error);
+extern void signal_ssh_interface(struct context_interface_s *interface, const char *what);
 
-static int start_ssh_connection(struct context_interface_s *interface, int fd, void *data)
+static int start_ssh_session(struct context_interface_s *interface, int fd, void *data)
 {
     return 0;
 }
@@ -73,8 +73,8 @@ void init_ssh_interface(struct context_interface_s *interface)
     struct service_context_s *context=get_service_context(interface);
 
     interface->get_interface_info=get_ssh_interface_info;
-    interface->connect=create_ssh_connection;
-    interface->start=start_ssh_connection;
+    interface->connect=create_ssh_session;
+    interface->start=start_ssh_session;
     interface->signal_interface=signal_ssh_interface;
 
     context->fscount=0;

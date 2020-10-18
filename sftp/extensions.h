@@ -24,13 +24,18 @@
 
 void init_sftp_extensions(struct sftp_subsystem_s *sftp);
 void clear_sftp_extensions(struct sftp_subsystem_s *sftp);
-struct sftp_protocolextension_s *add_sftp_extension(struct sftp_subsystem_s *sftp, struct ssh_string_s *name, struct ssh_string_s *data);
 
-struct sftp_protocolextension_s *lookup_sftp_extension(struct sftp_subsystem_s *sftp, struct ssh_string_s *name);
-void *lookup_sftp_extension_ctx(void *ptr, char *name);
+void *register_sftp_protocolextension_ctx(void *ptr, struct ssh_string_s *name, struct ssh_string_s *data,
+				    void (* event_cb)(struct ssh_string_s *name, struct ssh_string_s *data, void *ptr, unsigned int event), void *ptr2);
 
-int test_extension_supported(struct sftp_subsystem_s *sftp, char *name);
-int test_extension_supported_ctx(void *ptr, char *name);
+struct sftp_protocolextension_s *add_sftp_protocolextension(struct sftp_subsystem_s *sftp, struct ssh_string_s *name, struct ssh_string_s *data);
 
+void complete_sftp_protocolextensions_ctx(void *ptr, char *mapextensionname);
+
+int send_sftp_extension_ctx(void *ptr, char *data, unsigned int size, struct sftp_reply_s *reply, unsigned int *error);
+int send_sftp_extension_compat_ctx(void *ptr, struct ssh_string_s *name, struct ssh_string_s *data, struct sftp_reply_s *reply, unsigned int *error);
+
+int send_sftp_extension_statvfs_ctx(void *ptr, struct ssh_string_s *data, struct sftp_reply_s *reply, unsigned int *error);
+int send_sftp_extension_fsync_ctx(void *ptr, struct ssh_string_s *data, struct sftp_reply_s *reply, unsigned int *error);
 
 #endif

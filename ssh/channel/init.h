@@ -17,15 +17,15 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_CHANNEL_INIT_H
-#define FS_WORKSPACE_SSH_CHANNEL_INIT_H
+#ifndef _SSH_CHANNEL_INIT_H
+#define _SSH_CHANNEL_INIT_H
 
 /* prototypes */
 
 void clean_ssh_channel_queue(struct ssh_channel_s *channel);
 void clear_ssh_channel(struct ssh_channel_s *channel);
 void free_ssh_channel(struct ssh_channel_s *channel);
-void init_ssh_channel(struct ssh_session_s *session, struct ssh_channel_s *channel, unsigned char type);
-struct ssh_channel_s *create_channel(struct ssh_session_s *session, unsigned char type);
+void init_ssh_channel(struct ssh_session_s *session, struct ssh_connection_s *connection, struct ssh_channel_s *channel, unsigned char type);
+struct ssh_channel_s *create_channel(struct ssh_session_s *session, struct ssh_connection_s *c, unsigned char type);
 
 #endif

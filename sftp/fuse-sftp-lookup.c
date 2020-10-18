@@ -110,7 +110,6 @@ static void _sftp_lookup_cb_created(struct entry_s *entry, struct create_entry_s
 
     memcpy(&parent->inode->st.st_ctim, &inode->stim, sizeof(struct timespec));
     memcpy(&parent->inode->st.st_mtim, &inode->stim, sizeof(struct timespec));
-
     _fs_common_cached_lookup(context, r, inode); /* reply FUSE/VFS */
     adjust_pathmax(context->workspace, ce->pathlen);
     memcpy(inode->cache, attr->buff, attr->size);
@@ -187,23 +186,25 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 
     //}
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
 
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
     logoutput("_fs_sftp_lookup_new: %i %s", pathinfo->len, pathinfo->path);
 
-    init_sftp_request(&sftp_r);
-
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
     sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
     sftp_r.call.lstat.len=pathinfo->len;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     /* send lstat cause not interested in target when dealing with symlink */
 
@@ -220,30 +221,29 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
-		if (sftp_r.type==SSH_FXP_ATTRS) {
+		if (sftp_r.reply.type==SSH_FXP_ATTRS) {
 		    struct fuse_sftp_attr_s fuse_attr;
 		    struct entry_s *entry=NULL;
 		    struct create_entry_s ce;
 
 		    init_create_entry(&ce, xname, inode->alias, NULL, NULL, context, NULL, (void *) f_request);
-		    ce.cache.link.link.ptr=(void *) &sftp_r.response.attr;
+		    ce.cache.link.link.ptr=(void *) &sftp_r.reply.response.attr;
 		    ce.cache.link.type=INODE_LINK_TYPE_CACHE; /* not really required */
 		    ce.pathlen=pathinfo->len;
 		    ce.cb_created=_sftp_lookup_cb_created;
 		    ce.cb_found=_sftp_lookup_cb_found;
 		    ce.cb_error=_sftp_lookup_cb_error;
 		    ce.cb_cache_size=_sftp_cb_cache_size;
-
 		    entry=create_entry_extended(&ce);
 
 		    logoutput("_fs_sftp_lookup_new: %i %s", pathinfo->len, pathinfo->path);
 
-		    free(sftp_r.response.attr.buff);
+		    free(sftp_r.reply.response.attr.buff);
 		    return;
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+		} else if (sftp_r.reply.type==SSH_FXP_STATUS) {
 
-		    error=sftp_r.response.status.linux_error;
+		    error=sftp_r.reply.response.status.linux_error;
 
 		} else {
 
@@ -257,7 +257,7 @@ void _fs_sftp_lookup_new(struct service_context_s *context, struct fuse_request_
 
     } else {
 
-	error=sftp_r.error;
+	error=(sftp_r.reply.error) ? sftp_r.reply.error : EIO;
 
     }
 
@@ -276,23 +276,24 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if ((* f_request->is_interrupted)(f_request)) {
+    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
+
+    logoutput("_fs_sftp_lookup_existing: (ino=%li) %i %s", entry->inode->st.st_ino, pathinfo->len, pathinfo->path);
+
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    sftp_r.id=0;
+    sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
+    sftp_r.call.lstat.len=pathinfo->len;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
 
     }
-
-    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-
-    logoutput("_fs_sftp_lookup_existing: (ino=%li) %i %s", entry->inode->st.st_ino, pathinfo->len, pathinfo->path);
-
-    init_sftp_request(&sftp_r);
-
-    sftp_r.id=0;
-    sftp_r.call.lstat.path=(unsigned char *) pathinfo->path;
-    sftp_r.call.lstat.len=pathinfo->len;
-    sftp_r.fuse_request=f_request;
 
     /* send lstat cause not interested in target when dealing with symlink */
 
@@ -307,23 +308,23 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 	    get_sftp_request_timeout(&timeout);
 	    error=0;
 
-	    // logoutput("_fs_sftp_lookup_existing: id %i", sftp_r.id);
-
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
 
-		if (sftp_r.type==SSH_FXP_ATTRS) {
-		    struct attr_response_s *attr=&sftp_r.response.attr;
+		logoutput("_fs_sftp_lookup_existing: %s reply %i", pathinfo->path, sftp_r.reply.type);
+
+		if (sftp_r.reply.type==SSH_FXP_ATTRS) {
+		    struct attr_response_s *attr=&sftp_r.reply.response.attr;
 		    struct inode_s *inode=entry->inode;
 
 		    /* do this different: let this to the cb's */
 
-		    if (attr->size != inode->cache_size || memcmp(inode->cache, attr->buff, attr->size)!=0) {
+		    if (attr->size != inode->cache_size || memcmp(inode->cache, attr->buff, attr->size)) {
 			struct fuse_sftp_attr_s fuse_attr;
 
 			logoutput("_fs_sftp_lookup_existing: sftp attr size %i : cache %i", attr->size, inode->cache_size);
 
 			memset(&fuse_attr, 0, sizeof(struct fuse_sftp_attr_s));
-			read_attributes_ctx(context->interface.ptr, (char *)sftp_r.response.attr.buff, sftp_r.response.attr.size, &fuse_attr);
+			read_attributes_ctx(context->interface.ptr, (char *) attr->buff, attr->size, &fuse_attr);
 
 			if (attr->size != inode->cache_size) {
 
@@ -348,7 +349,6 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 		    if (inode->nlookup==0) {
 
 			inode->nlookup=1;
-
 			adjust_pathmax(context->workspace, pathinfo->len);
 			add_inode_context(context, inode);
 
@@ -361,12 +361,12 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 		    _fs_common_cached_lookup(context, f_request, inode); /* reply FUSE/VFS*/
 
 		    // logoutput("_fs_sftp_lookup_existing: %i %s", pathinfo->len, pathinfo->path);
-		    free(sftp_r.response.attr.buff);
+		    free(sftp_r.reply.response.attr.buff);
 		    return;
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+		} else if (sftp_r.reply.type==SSH_FXP_STATUS) {
 
-		    error=sftp_r.response.status.linux_error;
+		    error=sftp_r.reply.response.status.linux_error;
 		    if (error==ENOENT) {
 			struct inode_s *inode=entry->inode;
 
@@ -386,7 +386,7 @@ void _fs_sftp_lookup_existing(struct service_context_s *context, struct fuse_req
 
     } else {
 
-	error=sftp_r.error;
+	error=(sftp_r.reply.error) ? sftp_r.reply.error : EIO;
 
     }
 

@@ -44,7 +44,7 @@
 #include "ssh-utils.h"
 #include "ssh-send.h"
 
-static unsigned int populate_compress(struct ssh_session_s *session, struct compress_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_compress(struct ssh_connection_s *c, struct compress_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (alist) {
@@ -91,7 +91,6 @@ static struct compress_ops_s none_c_ops = {
     .populate			= populate_compress,
     .get_handle_size		= get_handle_size,
     .init_compressor		= init_compressor,
-    .list			= {NULL, NULL},
 };
 
 void init_compress_none()

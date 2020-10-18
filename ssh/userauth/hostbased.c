@@ -46,7 +46,7 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-send.h"
 #include "ssh-hostinfo.h"
@@ -115,11 +115,13 @@ static signed char create_hb_signature(struct ssh_session_s *session, char *r_us
 
 }
 
-static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_key_s *skey, struct ssh_userauth_s *userauth)
+static int ssh_send_hb_signature(struct ssh_connection_s *connection, char *r_user, struct ssh_key_s *pkey, char *l_hostname, char *l_user, struct ssh_key_s *skey, struct ssh_auth_s *auth)
 {
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
     struct ssh_string_s signature;
     int result=-1;
     unsigned int seq=0;
+    unsigned int error=EIO;
 
     logoutput("ssh_send_hostbased_signature");
 
@@ -136,41 +138,22 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
 
     /* send userauth hostbased request to server with signature */
 
-    if (send_userauth_hostbased_message(session, r_user, "ssh-connection", pkey, l_hostname, l_user, &signature, &seq)==0) {
-	struct timespec expire;
+    if (send_userauth_hostbased_message(connection, r_user, "ssh-connection", pkey, l_hostname, l_user, &signature, &seq)==0) {
 	struct ssh_payload_s *payload=NULL;
-	unsigned int error=0;
 
-	get_session_expire_init(session, &expire);
+	payload=receive_message_common(connection, handle_auth_reply, &error);
+	if (payload==NULL) goto out;
 
-	getresponse:
-
-	payload=get_ssh_payload(session, userauth->queue, &expire, &seq, &error);
-
-	if (! payload) {
-
-	    if (error==0) error=EIO;
-	    logoutput("ssh_send_hb_signature: error %i waiting for server SSH_MSG_SERVICE_REQUEST (%s)", error, strerror(error));
-	    goto out;
-
-	}
-
-	if (payload->type == SSH_MSG_USERAUTH_BANNER) {
-
-	    process_cb_ssh_payload(session, payload);
-	    payload=NULL;
-	    goto getresponse;
-
-	} else if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
+	if (payload->type == SSH_MSG_USERAUTH_SUCCESS) {
 
 	    logoutput("ssh_send_hostbased_signature: success");
-	    userauth->required_methods=0;
+	    auth->required=0;
 	    result=0;
 
 	} else if (payload->type == SSH_MSG_USERAUTH_FAILURE) {
 
 	    logoutput("ssh_send_hostbased_signature: failed");
-	    result=handle_userauth_failure(session, payload, userauth);
+	    result=handle_auth_failure(payload, auth);
 
 	}
 
@@ -178,13 +161,14 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
 
     } else {
 
-	logoutput("ssh_send_hb_signature: error sending SSH_MSG_SERVICE_REQUEST packet");
+	logoutput("ssh_send_hostbased_signature: error sending SSH_MSG_SERVICE_REQUEST");
 
     }
 
     out:
 
     free_ssh_string(&signature);
+    if (result==-1) logoutput("ssh_send_hostbased_signature: error %i (%s)", error, strerror(error));
     return result;
 
 }
@@ -198,7 +182,7 @@ static int ssh_send_hb_signature(struct ssh_session_s *session, char *r_user, st
     try that first, if failed then try the remaining hostkeys
 */
 
-struct pk_identity_s *ssh_auth_hostbased(struct ssh_session_s *session, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_userauth_s *userauth)
+struct pk_identity_s *ssh_auth_hostbased(struct ssh_connection_s *connection, struct pk_list_s *pkeys, char *r_user, char *l_user, struct ssh_auth_s *auth)
 {
     int result=-1;
     unsigned int error=0;
@@ -231,7 +215,7 @@ struct pk_identity_s *ssh_auth_hostbased(struct ssh_session_s *session, struct p
 
 	}
 
-	if (ssh_send_hb_signature(session, r_user, &pkey, userauth->l_hostname, l_user, &skey, userauth)==0) {
+	if (ssh_send_hb_signature(connection, r_user, &pkey, auth->l_hostname, l_user, &skey, auth)==0) {
 
 	    logoutput("ssh_auth_hostbased: server accepted hostkey");
 	    result=0;

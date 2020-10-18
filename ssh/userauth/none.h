@@ -17,11 +17,11 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_USERAUTH_NONE_H
-#define FS_WORKSPACE_SSH_USERAUTH_NONE_H
+#ifndef _SSH_USERAUTH_NONE_H
+#define _SSH_USERAUTH_NONE_H
 
 /* prototypes */
 
-int send_userauth_none(struct ssh_session_s *session, char *user, struct ssh_userauth_s *userauth);
+int send_auth_none(struct ssh_connection_s *connection, char *user, struct ssh_auth_s *auth);
 
 #endif

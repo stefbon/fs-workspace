@@ -17,20 +17,20 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_USERAUTH_H
-#define FS_WORKSPACE_SSH_SEND_USERAUTH_H
+#ifndef _SSH_SEND_USERAUTH_H
+#define _SSH_SEND_USERAUTH_H
 
 /* prototypes */
 
 void msg_write_userauth_pubkey_request(struct msg_buffer_s *mb, char *r_user, const char *service, struct ssh_key_s *pkey, struct ssh_pksign_s *sign, struct ssh_string_s *sig);
-int send_userauth_pubkey_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_pksign_s *pksign, struct ssh_string_s *sig, unsigned int *seq);
+int send_userauth_pubkey_message(struct ssh_connection_s *c, char *ruser, const char *service, struct ssh_key_s *pkey, struct ssh_pksign_s *pksign, struct ssh_string_s *sig, unsigned int *seq);
 
 void msg_write_userauth_none_message(struct msg_buffer_s *mb, char *r_user, char *service);
-int send_userauth_none_message(struct ssh_session_s *session, char *user, const char *service, unsigned int *seq);
+int send_userauth_none_message(struct ssh_connection_s *c, char *user, const char *service, unsigned int *seq);
 
 void msg_write_userauth_hostbased_request(struct msg_buffer_s *mb, char *r_user, const char *service, struct ssh_key_s *pkey, char *l_hostname, char *l_user);
-int send_userauth_hostbased_message(struct ssh_session_s *session, char *ruser, const char *service, struct ssh_key_s *key, char *lhostname, char *luser, struct ssh_string_s *signature, unsigned int *seq);
+int send_userauth_hostbased_message(struct ssh_connection_s *c, char *ruser, const char *service, struct ssh_key_s *key, char *lhostname, char *luser, struct ssh_string_s *signature, unsigned int *seq);
 
-int send_userauth_password_message(struct ssh_session_s *session, char *user, char *pw, const char *service, unsigned int *seq);
+int send_userauth_password_message(struct ssh_connection_s *c, char *user, char *pw, const char *service, unsigned int *seq);
 
 #endif

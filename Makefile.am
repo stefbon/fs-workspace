@@ -27,7 +27,7 @@ fs_workspace_SOURCES =  common-utils/fuse-directory.c common-utils/fuse-dentry.c
 			common-utils/logging.c \
 			handlemime.c \
 			mimetype.cpp \
-			backup/backup-common.c backup/send.c \
+			backup/backup-common.c backup/send.c backup/backup-rsync.c \
 			fuse-sftp.c fuse-backup.c fuse-network.c \
 			sftp/fuse-sftp-common.c sftp/fuse-sftp-extensions.c \
 			sftp/fuse-sftp-fs-init.c sftp/fuse-sftp-lock.c  sftp/fuse-sftp-mk.c \
@@ -41,8 +41,8 @@ fs_workspace_SOURCES =  common-utils/fuse-directory.c common-utils/fuse-dentry.c
 			ssh/fuse-ssh-fs-init.c \
 			ssh/channel/command.c ssh/channel/exec.c ssh/channel/init.c ssh/channel/payload.c ssh/channel/shell.c ssh/channel/startclose.c \
 			ssh/channel/table.c ssh/channel/uri.c ssh/channel/utils.c \
-			ssh/ssh-common-protocol.c ssh/ssh-common.c ssh/ssh-common-list.c \
-			ssh/ssh-connection.c \
+			ssh/ssh-common-protocol.c ssh/ssh-common.c \
+			ssh/connections/connect.c  ssh/connections/init.c ssh/connections/setup.c ssh/connections/utils.c \
 			ssh/ssh-data.c \
 			ssh/datatypes/ssh-namelist.c ssh/datatypes/ssh-payload.c ssh/datatypes/ssh-string.c ssh/datatypes/ssh-mpint.c ssh/datatypes/ssh-uint.c ssh/datatypes/ssh-msg-buffer.c \
 			ssh/extensions/extension.c \
@@ -60,3 +60,10 @@ fs_workspace_SOURCES =  common-utils/fuse-directory.c common-utils/fuse-dentry.c
 			ssh/receive/payload.c ssh/receive/read-buffer.c ssh/receive/read-socket.c \
 			ssh/send/compress.c ssh/send/compress-none.c ssh/send/compressors.c ssh/send/encrypt.c ssh/send/encrypt-chacha20-poly1305.c ssh/send/encrypt-generic.c \
 			ssh/send/encryptors.c ssh/send/greeter.c ssh/send/init.c ssh/send/msg-channel.c ssh/send/msg-transport.c ssh/send/msg-userauth.c ssh/send/send.c ssh/send/write-socket.c 
+
+if LIBRSYNC_AVAIL
+fs_workspace_CFLAGS += -lrsync
+fs_workspace_CPPFLAGS += -lrsync
+fs_workspace_LDADD += -L/usr/lib64 -lrsync
+
+endif

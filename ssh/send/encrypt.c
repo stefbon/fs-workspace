@@ -41,6 +41,7 @@
 #include "utils.h"
 
 #include "ssh-common.h"
+#include "ssh-connections.h"
 #include "ssh-utils.h"
 #include "ssh-receive.h"
 #include "encryptors.h"
@@ -72,19 +73,20 @@ struct encrypt_ops_s *get_next_encrypt_ops(struct encrypt_ops_s *ops)
     return NULL;
 }
 
-void reset_encrypt(struct ssh_session_s *session, struct algo_list_s *algo_cipher, struct algo_list_s *algo_hmac)
+void reset_encrypt(struct ssh_connection_s *connection, struct algo_list_s *algo_cipher, struct algo_list_s *algo_hmac)
 {
-    struct ssh_send_s *send=&session->send;
+    struct ssh_send_s *send=&connection->send;
     struct ssh_encrypt_s *encrypt=&send->encrypt;
-    struct keyexchange_s *keyexchange=session->keyexchange;
+    struct ssh_keyexchange_s *kex=&connection->setup.phase.transport.type.kex;
     char *ciphername=NULL;
     char *hmacname=NULL;
     struct encrypt_ops_s *ops=(struct encrypt_ops_s *) algo_cipher->ptr;
 
     logoutput("reset_encrypt");
 
-    remove_encryptors(encrypt);
+    /* remove the previous encryptors and keys */
 
+    remove_encryptors(encrypt);
     free_ssh_string(&encrypt->cipher_key);
     free_ssh_string(&encrypt->cipher_iv);
     free_ssh_string(&encrypt->hmac_key);
@@ -92,12 +94,15 @@ void reset_encrypt(struct ssh_session_s *session, struct algo_list_s *algo_ciphe
     memset(encrypt->ciphername, '\0', sizeof(encrypt->ciphername));
     memset(encrypt->hmacname, '\0', sizeof(encrypt->hmacname));
 
+    /* start with the new ones */
+
     ciphername=algo_cipher->sshname;
     if (algo_hmac) hmacname=algo_hmac->sshname;
 
     if ((* ops->get_encrypt_flag)(ciphername, hmacname, "parallel")==1) {
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 
-	encrypt->max_count=4; /* seems like a good choice, make it configurable; it's also possible to set this to 0: no limit decryptors allowed*/
+	encrypt->max_count=session->config.max_receiving_threads;
 	encrypt->flags |= SSH_DECRYPT_FLAG_PARALLEL;
 
     } else {
@@ -107,17 +112,19 @@ void reset_encrypt(struct ssh_session_s *session, struct algo_list_s *algo_ciphe
 
     }
 
-    encrypt->ops=ops;
+    /* move the keys from the keyexchange to the encryption, and use the new encrypt ops
+	the keys will be used on the fly by the new encryptors (cipher and mac) */
 
+    encrypt->ops=ops;
     strcpy(encrypt->ciphername, ciphername);
     if (hmacname) strcpy(encrypt->hmacname, hmacname);
-    move_ssh_string(&encrypt->cipher_key, &keyexchange->data.cipher_key_c2s);
-    move_ssh_string(&encrypt->cipher_iv, &keyexchange->data.cipher_iv_c2s);
-    move_ssh_string(&encrypt->hmac_key, &keyexchange->data.hmac_key_c2s);
+    move_ssh_string(&encrypt->cipher_key, &kex->cipher_key_c2s);
+    move_ssh_string(&encrypt->cipher_iv, &kex->cipher_iv_c2s);
+    move_ssh_string(&encrypt->hmac_key, &kex->hmac_key_c2s);
 
 }
 
-unsigned int build_cipher_list_c2s(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+unsigned int build_cipher_list_c2s(struct ssh_connection_s *c, struct algo_list_s *alist, unsigned int start)
 {
     struct encrypt_ops_s *ops=NULL;
 
@@ -125,7 +132,7 @@ unsigned int build_cipher_list_c2s(struct ssh_session_s *session, struct algo_li
 
     while (ops) {
 
-	start=(* ops->populate_cipher)(session, ops, alist, start);
+	start=(* ops->populate_cipher)(c, ops, alist, start);
 	ops=get_next_encrypt_ops(ops);
 
     }
@@ -134,7 +141,7 @@ unsigned int build_cipher_list_c2s(struct ssh_session_s *session, struct algo_li
 
 }
 
-unsigned int build_hmac_list_c2s(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+unsigned int build_hmac_list_c2s(struct ssh_connection_s *c, struct algo_list_s *alist, unsigned int start)
 {
     struct encrypt_ops_s *ops=NULL;
 
@@ -142,7 +149,7 @@ unsigned int build_hmac_list_c2s(struct ssh_session_s *session, struct algo_list
 
     while (ops) {
 
-	start=(* ops->populate_hmac)(session, ops, alist, start);
+	start=(* ops->populate_hmac)(c, ops, alist, start);
 	ops=get_next_encrypt_ops(ops);
 
     }

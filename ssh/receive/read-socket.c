@@ -48,17 +48,17 @@
 #include "ssh-common-protocol.h"
 #include "ssh-receive.h"
 #include "ssh-utils.h"
-#include "ssh-connection.h"
+#include "ssh-connections.h"
 
 /*
     read the data coming from server after the connection is created
     and queue it
 */
 
-static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
+static int read_ssh_connection_socket(struct ssh_connection_s *connection, int fd, uint32_t events)
 {
-    struct socket_ops_s *sops=session->connection.io.socket.sops;
-    struct ssh_receive_s *receive=&session->receive;
+    struct socket_ops_s *sops=connection->connection.io.socket.sops;
+    struct ssh_receive_s *receive=&connection->receive;
     unsigned int error=0;
     int bytesread=0;
 
@@ -68,7 +68,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
     readbuffer:
 
-    bytesread=(* sops->recv)(&session->connection.io.socket, (void *) (receive->buffer + receive->read), (size_t)(receive->size - receive->read), 0);
+    bytesread=(* sops->recv)(&connection->connection.io.socket, (void *) (receive->buffer + receive->read), (size_t) (receive->size - receive->read), 0);
     error=errno;
 
     // logoutput("read_ssh_data: bytesread %i", bytesread);
@@ -77,7 +77,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	pthread_mutex_unlock(&receive->mutex);
 
-	logoutput_info("read_ssh_data: bytesread %i", bytesread);
+	logoutput_info("read_ssh_connection_socket: bytesread %i", bytesread);
 
 	/* handle error */
 
@@ -85,7 +85,7 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	    /* peer has performed an orderly shutdown */
 
-	    start_thread_connection_problem(session, 0);
+	    start_thread_connection_problem(connection);
 	    return -1;
 
 	} else if (error==EAGAIN || error==EWOULDBLOCK) {
@@ -94,44 +94,36 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
 	} else if (error==ECONNRESET || error==ENOTCONN || error==EBADF || error==ENOTSOCK) {
 
-	    logoutput_warning("read_ssh_data: socket is not connected? error %i:%s", error, strerror(error));
-	    start_thread_connection_problem(session, 0);
+	    logoutput_warning("read_ssh_connection_socket: socket is not connected? error %i:%s", error, strerror(error));
+	    start_thread_connection_problem(connection);
 
 	} else {
-	    logoutput_warning("read_ssh_data: error %i:%s", error, strerror(error));
+
+	    logoutput_warning("read_ssh_connection_socket: error %i:%s", error, strerror(error));
 
 	}
 
     } else {
 
-	if (bytesread + receive->read >= receive->size) {
+	/* no error */
 
-	    pthread_mutex_unlock(&receive->mutex);
-	    goto disconnect;
+	receive->read+=bytesread;
 
-	} else {
+	if (receive->status & SSH_RECEIVE_STATUS_WAIT) {
 
-	    receive->read+=bytesread;
+	    /* there is a thread waiting for more data to arrive: signal it */
 
-	    if (receive->threadid==0) {
+	    pthread_cond_broadcast(&receive->cond);
 
-		/* start a thread to process this data
-		    this thread decrypt the first bytes to determine the length of the packet
-		    and will set receive->read to zero again */
+	} else if (receive->threads<2) {
 
-		logoutput("read_ssh_data: read %i bytes, start thread", bytesread);
-		read_ssh_buffer(session);
+	    /* start a thread (but max number of threads may not exceed 2)*/
 
-	    } else {
-
-		logoutput("read_ssh_data: read %i bytes, broadcast", bytesread);
-		pthread_cond_broadcast(&receive->cond);
-
-	    }
-
-	    pthread_mutex_unlock(&receive->mutex);
+	    read_ssh_connection_buffer(connection);
 
 	}
+
+	pthread_mutex_unlock(&receive->mutex);
 
     }
 
@@ -139,27 +131,26 @@ static int read_ssh_data(struct ssh_session_s *session, int fd, uint32_t events)
 
     disconnect:
 
-    disconnect_ssh_session(session, 0, 0);
+    disconnect_ssh_connection(connection);
     return 0;
 
 }
 
-int read_incoming_signal_ssh(int fd, void *ptr, uint32_t events)
+int read_ssh_connection_signal(int fd, void *ptr, uint32_t events)
 {
-    struct ssh_session_s *session=(struct ssh_session_s *) ptr;
+    struct ssh_connection_s *connection=(struct ssh_connection_s *) ptr;
     int result=0;
 
     if ( events & (EPOLLERR | EPOLLHUP) ) {
 
 	/* the remote side disconnected */
 
-        logoutput("read_incoming_data: event %i causes connection break", events);
-	start_thread_connection_problem(session, 0);
+        logoutput("read_ssh_connection_signal: event %i causes connection break", events);
+	start_thread_connection_problem(connection);
 
     } else if (events & EPOLLIN) {
 
-	logoutput("read_incoming_data");
-	result=read_ssh_data(session, fd, events);
+	result=read_ssh_connection_socket(connection, fd, events);
 
     }
 

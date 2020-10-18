@@ -49,7 +49,6 @@
 
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-#include "ssh-common-list.h"
 #include "ssh-channel.h"
 
 #include "ssh-hostinfo.h"
@@ -136,6 +135,8 @@ static void get_local_unknown(struct context_interface_s *interface, struct sftp
 
 static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_userinfo_s *sftp_userinfo)
 {
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct common_buffer_s buffer;
     unsigned int size;
 
@@ -143,7 +144,7 @@ static void get_remote_sftp_userinfo(struct sftp_subsystem_s *sftp, struct sftp_
 
     init_common_buffer(&buffer);
 
-    size=get_sftp_userinfo(sftp->channel.session, (void *) sftp_userinfo, &buffer);
+    size=get_sftp_userinfo(session, (void *) sftp_userinfo, &buffer);
 
     if (size>0) {
 	char *output=buffer.ptr;
@@ -371,7 +372,7 @@ static unsigned char get_sftp_user_mapping(struct context_interface_s *interface
 
 int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_subsystem_s *sftp)
 {
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
     unsigned char mapping=_SFTP_USER_MAPPING_NONSHARED;
     gid_t *local_gid=NULL;
@@ -428,6 +429,7 @@ int init_sftp_usermapping(struct context_interface_s *interface, struct sftp_sub
     /* get data if required */
 
     if (local_gid) {
+	struct ssh_session_s *session=channel->session;
 
 	*local_gid=session->identity.pwd.pw_gid;
 	logoutput("init_sftp_usermapping: got uid:gid %i:%i for local user", (int) session->identity.pwd.pw_uid, (int) session->identity.pwd.pw_gid);

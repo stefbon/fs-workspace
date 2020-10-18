@@ -45,6 +45,7 @@
 #include "ssh-common-protocol.h"
 #include "ssh-utils.h"
 #include "ssh-pubkey.h"
+#include "ssh-connections.h"
 
 /*
     get the best common algo out of the client and server list
@@ -178,12 +179,12 @@ static int get_index_algo(struct algo_list_s *algos, char *name, unsigned int ty
 	(none is allowed)
     */
 
-int compare_msg_kexinit(struct ssh_session_s *session)
+int compare_msg_kexinit(struct ssh_connection_s *connection)
 {
-    struct keyexchange_s *exchange=session->keyexchange;
-    struct ssh_string_s *kexinit_client=&exchange->data.kexinit_client;
-    struct ssh_string_s *kexinit_server=&exchange->data.kexinit_server;
-    struct algo_list_s *algos=exchange->data.algos;
+    struct ssh_keyexchange_s *kex=&connection->setup.phase.transport.type.kex;
+    struct ssh_string_s *kexinit_client=&kex->kexinit_client;
+    struct ssh_string_s *kexinit_server=&kex->kexinit_server;
+    struct algo_list_s *algos=kex->algos;
     char *pos_client=kexinit_client->ptr;
     char *pos_server=kexinit_server->ptr;
     struct ssh_string_s clist_client[SSH_ALGO_TYPES_COUNT];
@@ -258,8 +259,7 @@ int compare_msg_kexinit(struct ssh_session_s *session)
 	}
 
 	memset(name, '\0', 65);
-	exchange->data.chosen[i]=-1;
-
+	kex->chosen[i]=-1;
 	get_best_guess(&clist_client[i], &clist_server[i], name, 65);
 
 	if (strlen(name)>0) {
@@ -276,7 +276,7 @@ int compare_msg_kexinit(struct ssh_session_s *session)
 
 	    } else {
 
-		exchange->data.chosen[i]=index;
+		kex->chosen[i]=index;
 		logoutput("compare_msg_kexinit: found method %s", name);
 
 	    }
@@ -298,7 +298,8 @@ int compare_msg_kexinit(struct ssh_session_s *session)
 
 	}
 
-	if (i==SSH_ALGO_TYPE_HOSTKEY) {
+	if ((connection->flags & SSH_CONNECTION_FLAG_MAIN) && i==SSH_ALGO_TYPE_HOSTKEY) {
+	    struct ssh_session_s *session=get_ssh_connection_session(connection);
 
 	    store_algo_pubkey_negotiation(session, &clist_client[i], &clist_server[i]);
 

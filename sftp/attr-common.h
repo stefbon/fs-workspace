@@ -25,8 +25,8 @@
 unsigned int read_attributes_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
 unsigned int write_attributes_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
 
-void read_name_response_ctx(void *ptr, struct name_response_s *response, char **name, unsigned int *len);
-unsigned int read_attr_response_ctx(void *ptr, struct name_response_s *response, struct fuse_sftp_attr_s *fuse_attr);
+unsigned int read_name_response_ctx(void *ptr, char *buffer, unsigned int size, char **name, unsigned int *len);
+unsigned int read_attr_response_ctx(void *ptr, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
 
 int get_attribute_info_ctx(void *ptr, unsigned int valid, const char *what);
 

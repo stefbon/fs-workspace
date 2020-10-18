@@ -30,7 +30,6 @@ void fill_inode_attr_sftp(void *ptr, struct stat *st, struct fuse_sftp_attr_s *f
 unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int set, struct fuse_sftp_attr_s *fuse_attr, unsigned char raw);
 
 int symlink_generic_validate(struct service_context_s *context, char *target);
-
-void init_sftp_request(struct sftp_request_s *r);
+void set_sftp_request_fuse(struct sftp_request_s *sftp_r, struct fuse_request_s *f_request);
 
 #endif

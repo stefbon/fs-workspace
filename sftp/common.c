@@ -80,6 +80,8 @@
 #include "time.h"
 #include "usermapping.h"
 #include "extensions.h"
+#include "fuse-sftp-statfs.h"
+#include "fuse-sftp-extensions.h"
 
 extern int test_valid_sftp_readdir(struct context_interface_s *interface, void *ptr, unsigned int *len);
 
@@ -121,9 +123,10 @@ static void read_default_features_v06(struct sftp_subsystem_s *sftp, struct ssh_
 	if (pos<size) {
 	    struct ssh_string_s attrib;
 
+	    init_ssh_string(&attrib);
 	    pos+=read_ssh_string(&buff[pos], size-pos, &attrib);
 
-	    if (attrib.ptr) {
+	    if (attrib.len>0 && attrib.ptr) {
 
 		logoutput_debug("read_default_features_v06: (%i - %i) found attrib extension %.*s", i, supported->version.v06.attrib_extension_count, attrib.len, attrib.ptr);
 
@@ -149,17 +152,23 @@ static void read_default_features_v06(struct sftp_subsystem_s *sftp, struct ssh_
 	logoutput_debug("read_default_features_v06: %i pos %i size %i", i, pos, size);
 
 	if (pos<size) {
-	    struct ssh_string_s extname;
+	    struct ssh_string_s name;
 
-	    pos+=read_ssh_string(&buff[pos], size-pos, &extname);
+	    init_ssh_string(&name);
+	    pos+=read_ssh_string(&buff[pos], size-pos, &name);
 
-	    if (extname.ptr) {
-		struct sftp_protocolextension_s *extension=NULL;
+	    if (name.len>0 && name.ptr) {
+		struct sftp_protocolextension_s *extension=add_sftp_protocolextension(sftp, &name, NULL);
 
-		logoutput_debug("read_default_features_v06: (%i - %i) found extension %.*s", i, supported->version.v06.extension_count, extname.len, extname.ptr);
+		if (extension) {
 
-		extension=lookup_sftp_extension(sftp, &extname);
-		if (extension) extension->flags |= SFTP_EXTENSION_FLAG_EXTENDED;
+		    logoutput("read_default_features_v06: (%i - %i) found extension %.*s", i, supported->version.v06.extension_count, name.len, name.ptr);
+
+		} else {
+
+		    logoutput("read_default_features_v06: (%i - %i) extension %.*s not found", i, supported->version.v06.extension_count, name.len, name.ptr);
+
+		}
 
 	    } else {
 
@@ -184,19 +193,53 @@ static void read_default_features_v06(struct sftp_subsystem_s *sftp, struct ssh_
 
 }
 
-/* process extensions part of the init verson message  */
+/*	process extensions part of the init verson message
+	well known extensions are:
+	- supported (used at version 5)
+	- supported2 (used at version 6
+	- acl-supported
+	- text-seek
+	- versions, version-select
+	- filename-charset, filename-translation-control
+	- newline
+	- vendor-id
+	- md5-hash. md5-hash-handle
+	- check-file-handle, check-file-name
+	- space-available
+	- home-directory
+	- copy-file, copy-data
+	- get-temp-folder, make-temp-folder
+	- */
 
 static void process_sftp_extension(struct sftp_subsystem_s *sftp, struct ssh_string_s *name, struct ssh_string_s *data)
 {
 
-    if (name->len==10 && memcmp(name->ptr, "supported2", 10)==0) {
+    if (compare_ssh_string(name, 'c', "newline")==0)  {
 
-	if (sftp->server_version==6) read_default_features_v06(sftp, data);
-	return;
+	logoutput("process_sftp_extension: received newline extension");
+
+    } else if (compare_ssh_string(name, 'c', "supported")==0) {
+
+	logoutput("process_sftp_extension: received supported extension");
+
+    } else if (compare_ssh_string(name, 'c', "supported2")==0) {
+
+	if (sftp->server_version>=6) {
+
+	    read_default_features_v06(sftp, data);
+
+	} else {
+
+	    logoutput("process_sftp_extension: ignoring received supported2 extension (sftp version is %i, supported2 is used in version 6");
+
+	}
+
+    } else {
+
+	logoutput("process_sftp_extension: ignoring received %.*s extension", name->len, name->ptr);
 
     }
 
-    add_sftp_extension(sftp, name, data);
 }
 
 /*
@@ -247,7 +290,6 @@ static int process_sftp_version(struct sftp_subsystem_s *sftp, char *buffer, uns
     pos+=4;
 
     logoutput("process_sftp_version: received server sftp version %i", server_version);
-
     set_sftp_server_version(sftp, server_version);
 
     /* check there is enough space for 2 uint and minimal 1 name */
@@ -262,6 +304,7 @@ static int process_sftp_version(struct sftp_subsystem_s *sftp, char *buffer, uns
 	pos+=read_ssh_string(&buffer[pos], size-pos, &name);
 	if (name.ptr) {
 
+	    logoutput("process_sftp_version: received extension %.*s", name.len, name.ptr);
 	    pos+=read_ssh_string(&buffer[pos], size-pos, &data);
 	    process_sftp_extension(sftp, &name, &data);
 
@@ -432,13 +475,12 @@ static struct sftp_subsystem_s *new_sftp_subsystem(struct ssh_session_s *session
     pthread_mutex_init(&sftp->mutex, NULL);
     init_ssh_string(&sftp->remote_home);
     channel=&sftp->channel;
-    init_ssh_channel(session, channel, _CHANNEL_TYPE_SFTP_SUBSYSTEM);
+    init_ssh_channel(session, session->connections.main, channel, _CHANNEL_TYPE_SFTP_SUBSYSTEM);
     channel->free=remove_sftp_channel;
 
     if (uri) {
 
 	logoutput("new_sftp_subsystem: translating uri %s to channel", uri);
-
 	if (translate_channel_uri(channel, uri, &error)==-1) goto error;
 
     }
@@ -810,8 +852,8 @@ int connect_sftp_common(uid_t uid, struct context_interface_s *interface, struct
 	}
 
 	interface->backend.sftp.flags=0;
-	interface->backend.sftp.mapped_statfs=0;
-	interface->backend.sftp.mapped_fsync=0;
+	interface->backend.sftp.ptr_statfs=0;
+	interface->backend.sftp.ptr_fsync=0;
 
     } else {
 
@@ -867,11 +909,14 @@ static int _start_sftp_common(struct context_interface_s *interface)
 {
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
     struct ssh_channel_s *channel=&sftp_subsystem->channel;
+    struct ssh_connection_s *connection=channel->connection;
     struct ssh_session_s *session=channel->session;
     struct channel_table_s *table=&session->channel_table;
     unsigned int seq=0;
     struct fuse_sftp_attr_s attr;
     unsigned int lenreaddir=0;
+
+    logoutput("_start_sftp_common: channel %i session %i", channel->local_channel, session->config.unique);
 
     if (channel->type==_CHANNEL_TYPE_SFTP_SUBSYSTEM) {
 	struct ssh_payload_s *payload=NULL;
@@ -890,8 +935,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
 	    if (! payload) {
 
-		if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-		logoutput("_start_sftp_common: error %i waiting for packet (%s)", session->status.error, strerror(session->status.error));
+		logoutput("_start_sftp_common: error waiting for packet");
 		goto error;
 
 	    }
@@ -927,11 +971,12 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
     }
 
-    /* start the sftp init negotiation */
-
     logoutput("_start_sftp_common: send sftp init");
     set_sftp_server_version(sftp_subsystem, 6);
     set_sftp_protocol(sftp_subsystem);
+    init_fuse_sftp_extensions(interface);
+
+    /* start the sftp init negotiation */
 
     if ((* sftp_subsystem->send_ops->init)(sftp_subsystem, &seq)==0) {
 	struct ssh_payload_s *payload=NULL;
@@ -943,8 +988,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
 	if (! payload) {
 
-	    if (session->status.error==0) session->status.error=(error>0) ? error : EIO;
-	    logoutput("start_sftp_subsystem: error %i waiting for packet (%s)", session->status.error, strerror(session->status.error));
+	    logoutput("start_sftp_subsystem: error waiting for packet");
 	    goto error;
 
 	}
@@ -999,32 +1043,19 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
     }
 
-    /* check statfs is supported */
-
-    if (test_extension_supported(sftp_subsystem, "statvfs@openssh.com")==-1) {
-	struct statfs local_statfs;
-
-	/* TODO:
-	    since a channel to run commands remote is available get the default values via a remote statfs */
-
-	if (statfs("/", &local_statfs)==-1) {
-
-	    local_statfs.f_blocks=1000000;
-	    local_statfs.f_bfree=1000000;
-	    local_statfs.f_bavail=local_statfs.f_bfree;
-	    local_statfs.f_bsize=4096;
-
-	}
-
-	set_fallback_statfs_sftp(&local_statfs);
-
-    }
-
     /* connect the data transfer with the sftp subssytem */
 
     switch_channel_receive_data(channel, "subsystem", receive_sftp_reply);
 
-    clean_ssh_channel_queue(table->shell);
+    if (table) {
+
+	if (table->shell) clean_ssh_channel_queue(table->shell);
+
+    } else {
+
+	logoutput("_start_sftp_subsystem: table not defined");
+
+    }
 
     if (init_time_correction(interface, sftp_subsystem)>0) {
 
@@ -1072,7 +1103,7 @@ static int _start_sftp_common(struct context_interface_s *interface)
 
     }
 
-    init_fuse_sftp_extensions(interface);
+    complete_fuse_sftp_extensions(interface);
 
     return 0;
 
@@ -1127,5 +1158,3 @@ unsigned char get_sftp_features(void *ptr)
     struct sftp_supported_s *supported=&sftp->supported;
     return (supported->fuse_attr_supported);
 }
-
-

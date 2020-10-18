@@ -302,41 +302,19 @@ struct ssh_pkcert_s *get_pkcert_byid(unsigned int id, int *index)
 
 struct ssh_pkalgo_s *get_next_pkalgo(struct ssh_pkalgo_s *algo, int *index)
 {
-    int i=-1;
 
-    if (index && *index>=0) {
+    if (algo==NULL) {
 
-	i=*index + 1;
-
-    } else if (algo==NULL) {
-
-	i=0;
+	algo=&available_algos[0];
 
     } else {
 
-	/* is it a system algo? only system algo's do have next ones */
-
-	if ((algo->flags & SSH_PKALGO_FLAG_SYSTEM)==0) algo=get_pkalgo_byid(algo->id, NULL);
-
-	if ((char *) algo >= (char *) available_algos) {
-
-	    /* calculate the array index */
-	    i = ((char *) algo - (char *) available_algos) / sizeof(struct ssh_pkalgo_s) + 1;
-
-	}
+	algo=(struct ssh_pkalgo_s *)((char *) algo + sizeof(struct ssh_pkalgo_s));
+	if (algo->id==0) algo=NULL;
 
     }
 
-    if (i>=0 && i < (sizeof(available_algos) / sizeof(struct ssh_pkalgo_s)) && available_algos[i].id>0) {
-
-	if (index) *index=i;
-	return &available_algos[i];
-
-    }
-
-    if (index) *index=-1;
-    return NULL;
-
+    return algo;
 }
 
 int get_index_pkalgo(struct ssh_pkalgo_s *algo)

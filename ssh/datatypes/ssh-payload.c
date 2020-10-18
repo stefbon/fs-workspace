@@ -36,6 +36,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include "common-utils/simple-list.h"
 #include "ssh-payload.h"
 
 //#define LOGGING
@@ -84,8 +85,7 @@ void copy_payload_header(struct ssh_payload_s *a, struct ssh_payload_s *b)
     b->type=a->type;
     b->sequence=a->sequence;
     b->len=a->len;
-    b->next=a->next;
-    b->prev=a->prev;
+    memcpy(&b->list, &a->list, sizeof(struct list_element_s));
 }
 
 void fill_payload_buffer(struct ssh_payload_s *a, char *buffer, unsigned int len)
@@ -103,8 +103,7 @@ void init_ssh_payload(struct ssh_payload_s *payload, unsigned int size)
     payload->type=0;
     payload->sequence=0;
     payload->len=size;
-    payload->next=NULL;
-    payload->prev=NULL;
+    init_list_element(&payload->list, NULL);
 
 }
 

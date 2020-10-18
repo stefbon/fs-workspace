@@ -57,16 +57,16 @@
 #include "send-v04.h"
 #include "protocol-v04.h"
 
-int send_sftp_init_v04(struct sftp_subsystem_s *sftp_subsystem, unsigned int *seq)
+int send_sftp_init_v04(struct sftp_subsystem_s *sftp, unsigned int *seq)
 {
     unsigned int error=0;
     char data[9];
 
     store_uint32(&data[0], 5);
     data[4]=(unsigned char) SSH_FXP_INIT;
-    store_uint32(&data[5], get_sftp_version(sftp_subsystem));
+    store_uint32(&data[5], get_sftp_version(sftp));
 
-    return send_channel_data_message(&sftp_subsystem->channel, 9, data, seq);
+    return send_channel_data_message(&sftp->channel, 9, data, seq);
 
 }
 
@@ -79,14 +79,14 @@ int send_sftp_init_v04(struct sftp_subsystem_s *sftp_subsystem, unsigned int *se
     - uint32	flags which data of interest
 */
 
-int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
+int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags)
 {
     char data[17 + sftp_r->call.stat.len];
     unsigned int pos=0;
 
     logoutput_debug("send_sftp_stat_v04_generic: flags %i", flags);
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 13 + sftp_r->call.stat.len);
     pos+=4;
@@ -101,14 +101,14 @@ int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct s
     store_uint32(&data[pos], flags);
     pos+=4;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
-static int send_sftp_stat_v04(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_stat_v04(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_stat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_stat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 /*
@@ -120,12 +120,12 @@ static int send_sftp_stat_v04(struct sftp_subsystem_s *sftp_subsystem, struct sf
     - uint32	flags which data of interest
 */
 
-int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
+int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags)
 {
     char data[17 + sftp_r->call.lstat.len];
     unsigned int pos=0;
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 13 + sftp_r->call.lstat.len);
     pos+=4;
@@ -140,14 +140,14 @@ int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct 
     store_uint32(&data[pos], flags);
     pos+=4;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
-static int send_sftp_lstat_v04(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_lstat_v04(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_lstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_lstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 /*
@@ -159,12 +159,12 @@ static int send_sftp_lstat_v04(struct sftp_subsystem_s *sftp_subsystem, struct s
     - uint32	flags which data of interest
 */
 
-int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags)
+int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags)
 {
     char data[17 + sftp_r->call.fstat.len];
     unsigned int pos=0;
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 13 + sftp_r->call.fstat.len);
     pos+=4;
@@ -179,14 +179,14 @@ int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct 
     store_uint32(&data[pos], flags);
     pos+=4;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
-static int send_sftp_fstat_v04(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_fstat_v04(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_fstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_fstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 
@@ -215,6 +215,7 @@ static struct sftp_send_ops_s send_ops_v04 = {
     .block				= send_sftp_block_v03,
     .unblock				= send_sftp_unblock_v03,
     .extension				= send_sftp_extension_v03,
+    .custom				= send_sftp_custom_v03,
 };
 
 void use_sftp_send_v04(struct sftp_subsystem_s *sftp_subsystem)

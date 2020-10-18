@@ -122,7 +122,7 @@ static void sync_localfile_remote(struct context_interface_s *interface, struct 
     size=write_attributes_ctx(interface->ptr, attrbuffer, size, &fuse_attr);
     if (size>=4) handle.valid=get_uint32(attrbuffer); /* first four bytes are the valid parameter */
 
-    result=send_createfile_backup(interface, backup, name, &handle, attrbuffer, size);
+    result=bck_send_createfile(interface, backup, name, &handle, attrbuffer, size);
 
     if (result==-1) {
 
@@ -131,7 +131,7 @@ static void sync_localfile_remote(struct context_interface_s *interface, struct 
 
     } else if (result==0) {
 
-	logoutput_info("sync_localfile_remote: ready");
+	logoutput_info("sync_localfile_remote: no differences found with backup");
 	return;
 
     }
@@ -143,7 +143,11 @@ static void sync_localfile_remote(struct context_interface_s *interface, struct 
 	use librsync to use a method using less io
 	- create and keep signature every file on server
 	- clients get signature (eventually keep) and make delta with current version
-	- client copies delta to server (if there is a signaficant difference) and server patches the backup */
+	- client copies delta to server (if there is a signaficant difference) and server patches the backup
+
+	
+
+    */
 
     if (get_attribute_info_ctx(interface->ptr, handle.valid, "mtime")>0 && get_attribute_info_ctx(interface->ptr, handle.set, "mtime")>0) {
 	unsigned int blocksize=4096; /* default, get it from somewhere, a statvfs call to remote server */
@@ -160,7 +164,7 @@ static void sync_localfile_remote(struct context_interface_s *interface, struct 
 	    if (offset + blocksize >= size) eof=1;
 
 	    if (read>0) {
-		int written=send_writefile_backup(interface, &handle, offset, bytes, read, &eof);
+		int written=bck_send_writefile(interface, &handle, offset, bytes, read, &eof);
 
 		if (written==-1) {
 
@@ -180,7 +184,7 @@ static void sync_localfile_remote(struct context_interface_s *interface, struct 
 
     }
 
-    send_releasefile_backup(interface, &handle, name);
+    bck_send_releasefile(interface, &handle, name);
 
 }
 
@@ -441,7 +445,7 @@ static void process_backups(void *ptr)
 
 	if (stat(backup->path, &st)==-1) goto nextbackup;
 
-	if (send_create_backup(context, backup, &st)==0) {
+	if (bck_send_createbackup(&context->interface, backup, &st)==0) {
 	    DIR *dp=NULL;
 	    struct dirent *de=NULL;
 	    int dfd=0;

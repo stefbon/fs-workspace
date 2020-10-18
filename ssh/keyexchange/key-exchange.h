@@ -17,9 +17,9 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_KEY_EXCHANGE_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_KEY_EXCHANGE_H
+#ifndef _SSH_KEYEXCHANGE_KEY_EXCHANGE_H
+#define _SSH_KEYEXCHANGE_KEY_EXCHANGE_H
 
-int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct sessionphase_s *sessionphase);
+int start_kex_dh(struct ssh_connection_s *connection, struct ssh_keyex_s *k);
 
 #endif

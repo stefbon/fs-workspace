@@ -17,10 +17,11 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_KEYX_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_KEYX_H
+#ifndef _SSH_KEYEXCHANGE_KEYX_H
+#define _SSH_KEYEXCHANGE_KEYX_H
 
-unsigned int build_keyx_list(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start);
-int key_exchange(struct ssh_session_s *session, struct payload_queue_s *queue, struct sessionphase_s *sessionphase);
+void add_keyex_ops(struct keyex_ops_s *ops);
+int key_exchange(struct ssh_connection_s *c);
+void init_keyex_once();
 
 #endif

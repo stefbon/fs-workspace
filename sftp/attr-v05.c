@@ -635,29 +635,26 @@ static unsigned int write_attributes_v05(struct sftp_subsystem_s *sftp, char *bu
 
 */
 
-static void read_name_response_v05(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
+static unsigned int read_name_response_v05(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, char **name, unsigned int *len)
 {
-    logoutput_debug("read_name_response_v05: pos %i", (unsigned int)(response->pos - response->buff));
-    *len=get_uint32(response->pos);
-    response->pos+=4;
+    logoutput_debug("read_name_response_v05: size %i", size);
 
-    *name=(char *) response->pos; /* name without trailing zero */
-    response->pos+=*len;
+    *len=get_uint32(buffer);
+    *name=(char *) &buffer[4]; /* name without trailing zero */
+
+    return (*len + 4);
 }
 
-static unsigned int read_attr_response_v05(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *sftp_attr)
+static unsigned int read_attr_response_v05(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *sftp_attr)
 {
-    char *keep=response->pos;
+    unsigned int pos=0;
 
     memset(sftp_attr, 0, sizeof(struct fuse_sftp_attr_s));
-
-    logoutput_debug("read_name_response_v05: pos %i", (unsigned int)(response->pos - response->buff));
-    response->pos+=read_attributes_v05(sftp, response->pos, (unsigned int) (response->buff + response->size - response->pos), sftp_attr);
-    response->count--;
+    pos+=read_attributes_v05(sftp, buffer, size, sftp_attr);
 
     logoutput_debug("read_attr_response_v05: m %i p %i", sftp_attr->type, sftp_attr->permissions);
 
-    return (unsigned int)(response->pos - keep);
+    return pos;
 }
 
 static void read_sftp_features_v05(struct sftp_subsystem_s *sftp)

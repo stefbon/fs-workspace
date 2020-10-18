@@ -37,4 +37,7 @@ int check_realpath_sftp(struct context_interface_s *interface, char *path, char 
 void sftp_fsnotify_event(struct sftp_subsystem_s *sftp, uint64_t unique, uint32_t mask, struct ssh_string_s *who, struct ssh_string_s *host, struct ssh_string_s *file);
 unsigned int get_sftp_remote_home(void *ptr, struct ssh_string_s *home);
 
+void init_sftp_request(struct sftp_request_s *r);
+void clear_sftp_reply(struct sftp_reply_s *r);
+
 #endif

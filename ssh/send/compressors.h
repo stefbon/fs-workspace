@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_COMPRESSORS_H
-#define FS_WORKSPACE_SSH_SEND_COMPRESSORS_H
+#ifndef _SSH_SEND_COMPRESSORS_H
+#define _SSH_SEND_COMPRESSORS_H
 
 struct ssh_compressor_s *get_compressor_container(struct list_element_s *list);
 struct ssh_compressor_s *get_compressor(struct ssh_send_s *s, unsigned int *error);

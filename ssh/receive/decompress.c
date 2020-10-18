@@ -74,9 +74,9 @@ struct decompress_ops_s *get_next_decompress_ops(struct decompress_ops_s *ops)
 }
 
 
-void reset_decompress(struct ssh_session_s *session, struct algo_list_s *algo_compr)
+void reset_decompress(struct ssh_connection_s *connection, struct algo_list_s *algo_compr)
 {
-    struct ssh_receive_s *receive=&session->receive;
+    struct ssh_receive_s *receive=&connection->receive;
     struct ssh_decompress_s *decompress=&receive->decompress;
     struct decompress_ops_s *ops=(struct decompress_ops_s *) algo_compr->ptr;
 
@@ -88,7 +88,7 @@ void reset_decompress(struct ssh_session_s *session, struct algo_list_s *algo_co
 
 }
 
-unsigned int build_compress_list_s2c(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+unsigned int build_compress_list_s2c(struct ssh_connection_s *connection, struct algo_list_s *alist, unsigned int start)
 {
     struct decompress_ops_s *ops=NULL;
 
@@ -96,7 +96,7 @@ unsigned int build_compress_list_s2c(struct ssh_session_s *session, struct algo_
 
     while (ops) {
 
-	start=(* ops->populate)(session, ops, alist, start);
+	start=(* ops->populate)(connection, ops, alist, start);
 	ops=get_next_decompress_ops(ops);
 
     }

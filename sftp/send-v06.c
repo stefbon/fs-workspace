@@ -96,22 +96,22 @@ static unsigned int get_sftp_lockflags_flock(unsigned int type)
 
 }
 
-static int send_sftp_stat_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_stat_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_stat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_stat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
-static int send_sftp_lstat_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_lstat_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_lstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_lstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
-static int send_sftp_fstat_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_fstat_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_fstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_fstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 /*
@@ -125,12 +125,12 @@ static int send_sftp_fstat_v06(struct sftp_subsystem_s *sftp_subsystem, struct s
     - byte 	is symbolic link (1)
 */
 
-int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[18 + sftp_r->call.link.len + sftp_r->call.link.target_len];
     unsigned int pos=0;
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 14 + sftp_r->call.link.len + sftp_r->call.link.target_len);
     pos+=4;
@@ -149,7 +149,7 @@ int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
     data[pos]=1;
     pos++;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -164,13 +164,13 @@ int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
     - uint32	flags
 */
 
-int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_block_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[33 + sftp_r->call.block.len];
     unsigned int pos=0;
     unsigned int mask=get_sftp_lockflags_flock(sftp_r->call.block.type);
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 29 + sftp_r->call.block.len);
     pos+=4;
@@ -189,7 +189,7 @@ int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
     store_uint32(&data[pos], mask);
     pos+=4;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -203,12 +203,12 @@ int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_req
     - uint64	size
 */
 
-int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[29 + sftp_r->call.unblock.len];
     unsigned int pos=0;
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 25 + sftp_r->call.unblock.len);
     pos+=4;
@@ -225,7 +225,7 @@ int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
     store_uint64(&data[pos], sftp_r->call.unblock.size);
     pos+=8;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -244,12 +244,12 @@ int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_r
     check the realpath (of a symlink for example) and ask target does exists
 */
 
-int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[14 + sftp_r->call.realpath.len];
     unsigned int pos=0;
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     store_uint32(&data[pos], 10 + sftp_r->call.realpath.len);
     pos+=4;
@@ -264,7 +264,7 @@ int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
     data[pos]=SSH_FXP_REALPATH_STAT_ALWAYS;
     pos++;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -293,9 +293,10 @@ static struct sftp_send_ops_s send_ops_v06 = {
     .block				= send_sftp_block_v06,
     .unblock				= send_sftp_unblock_v06,
     .extension				= send_sftp_extension_v03,
+    .custom				= send_sftp_custom_v03,
 };
 
-void use_sftp_send_v06(struct sftp_subsystem_s *sftp_subsystem)
+void use_sftp_send_v06(struct sftp_subsystem_s *sftp)
 {
-    sftp_subsystem->send_ops=&send_ops_v06;
+    sftp->send_ops=&send_ops_v06;
 }

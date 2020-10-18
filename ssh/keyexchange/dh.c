@@ -51,6 +51,9 @@
 
 #include "ssh-receive.h"
 #include "ssh-send.h"
+#include "keyx.h"
+
+static struct keyex_ops_s dh_ops;
 
 static unsigned char modp_group1_p[] = {
         0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC9, 0x0F, 0xDA, 0xA2,
@@ -230,7 +233,7 @@ static unsigned char modp_group18_p[] = {
 
 static unsigned char modp_group18_g[] = {0x02};
 
-unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_keyex_dh(struct ssh_connection_s *c, struct keyex_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (alist) {
@@ -239,7 +242,7 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 	alist[start].order=SSH_ALGO_ORDER_MEDIUM;
 	alist[start].sshname="diffie-hellman-group1-sha1";
 	alist[start].libname="diffie-hellman-group1-sha1";
-	alist[start].ptr=NULL;
+	alist[start].ptr=(void *) ops;
 
     }
 
@@ -251,7 +254,7 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 	alist[start].order=SSH_ALGO_ORDER_MEDIUM;
 	alist[start].sshname="diffie-hellman-group14-sha1";
 	alist[start].libname="diffie-hellman-group14-sha1";
-	alist[start].ptr=NULL;
+	alist[start].ptr=(void *) ops;
 
     }
 
@@ -263,7 +266,7 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 	alist[start].order=SSH_ALGO_ORDER_MEDIUM;
 	alist[start].sshname="diffie-hellman-group14-sha256";
 	alist[start].libname="diffie-hellman-group14-sha256";
-	alist[start].ptr=NULL;
+	alist[start].ptr=(void *) ops;
 
     }
 
@@ -275,7 +278,7 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 	alist[start].order=SSH_ALGO_ORDER_MEDIUM;
 	alist[start].sshname="diffie-hellman-group16-sha512";
 	alist[start].libname="diffie-hellman-group16-sha512";
-	alist[start].ptr=NULL;
+	alist[start].ptr=(void *) ops;
 
     }
 
@@ -287,7 +290,7 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 	alist[start].order=SSH_ALGO_ORDER_MEDIUM;
 	alist[start].sshname="diffie-hellman-group18-sha512";
 	alist[start].libname="diffie-hellman-group18-sha512";
-	alist[start].ptr=NULL;
+	alist[start].ptr=(void *) ops;
 
     }
 
@@ -297,9 +300,9 @@ unsigned int populate_keyx_dh(struct ssh_session_s *session, struct algo_list_s 
 
 }
 
-static int dh_create_client_key(struct ssh_keyx_s *keyx)
+static int dh_create_client_key(struct ssh_keyex_s *k)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
+    struct ssh_dh_s *dh=&k->method.dh;
     unsigned int bits = get_nbits_ssh_mpint(&dh->p);
 
     if (create_ssh_mpint(&dh->x)==-1) return -1;
@@ -319,9 +322,9 @@ static int dh_create_client_key(struct ssh_keyx_s *keyx)
 
 }
 
-static void dh_msg_write_client_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void dh_msg_write_client_key(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.e;
+    struct ssh_mpint_s *mp=&k->method.dh.e;
     unsigned int pos=mb->pos;
 
     msg_write_ssh_mpint(mb, mp);
@@ -329,9 +332,9 @@ static void dh_msg_write_client_key(struct msg_buffer_s *mb, struct ssh_keyx_s *
     logoutput("dh_msg_write_client_key: len %i", (mb->pos - pos));
 }
 
-static void dh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void dh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.f;
+    struct ssh_mpint_s *mp=&k->method.dh.f;
     unsigned int pos=mb->pos;
 
     msg_read_ssh_mpint(mb, mp, NULL);
@@ -339,117 +342,132 @@ static void dh_msg_read_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *k
     logoutput("dh_msg_read_server_key: len %i", (mb->pos - pos));
 }
 
-static void dh_msg_write_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void dh_msg_write_server_key(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.f;
+    struct ssh_mpint_s *mp=&k->method.dh.f;
     msg_write_ssh_mpint(mb, mp);
 }
 
-static int dh_calc_shared_K(struct ssh_keyx_s *keyx)
+static int dh_calc_sharedkey(struct ssh_keyex_s *k)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
+    struct ssh_dh_s *dh=&k->method.dh;
 
-    if (create_ssh_mpint(&dh->K)==-1) return -1;
-    power_modulo_ssh_mpint(&dh->K, &dh->f, &dh->x, &dh->p);
+    if (create_ssh_mpint(&dh->sharedkey)==-1) return -1;
+    power_modulo_ssh_mpint(&dh->sharedkey, &dh->f, &dh->x, &dh->p);
     return 0;
 
 }
 
-static void dh_msg_write_shared_K(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void dh_msg_write_sharedkey(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-    struct ssh_mpint_s *mp=&keyx->method.dh.K;
+    struct ssh_mpint_s *mp=&k->method.dh.sharedkey;
     msg_write_ssh_mpint(mb, mp);
 }
 
-static void dh_free_keyx(struct ssh_keyx_s *keyx)
+static void dh_free_keyex(struct ssh_keyex_s *k)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
+    struct ssh_dh_s *dh=&k->method.dh;
 
     free_ssh_mpint(&dh->p);
     free_ssh_mpint(&dh->g);
     free_ssh_mpint(&dh->x);
     free_ssh_mpint(&dh->e);
     free_ssh_mpint(&dh->f);
-    free_ssh_mpint(&dh->K);
-
+    free_ssh_mpint(&dh->sharedkey);
 }
 
-static int dh_init_keyx(struct ssh_keyx_s *keyx, unsigned char *p, unsigned int lenp, unsigned char *g, unsigned int leng, unsigned int *error)
+static int dh_init_keyex(struct ssh_keyex_s *k, char *name)
 {
-    struct ssh_dh_s *dh=&keyx->method.dh;
+    struct ssh_dh_s *dh=&k->method.dh;
+    unsigned char *p=NULL;
+    unsigned int lenp=0;
+    unsigned char *g=NULL;
+    unsigned int leng=0;
+    unsigned int error=0;
 
+    if (strcmp(name, "diffie-hellman-group1-sha1")==0) {
+
+	p=modp_group1_p;
+	lenp=(sizeof(modp_group1_p)/sizeof(modp_group1_p[0]));
+	g=modp_group1_g;
+	leng=(sizeof(modp_group1_g)/sizeof(modp_group1_g[0]));
+	strcpy(k->digestname, "sha1");
+
+    } else if (strcmp(name, "diffie-hellman-group14-sha1")==0) {
+
+	p=modp_group14_p;
+	lenp=(sizeof(modp_group14_p)/sizeof(modp_group14_p[0]));
+	g=modp_group1_g;
+	leng=(sizeof(modp_group14_g)/sizeof(modp_group14_g[0]));
+	strcpy(k->digestname, "sha1");
+
+    } else if (strcmp(name, "diffie-hellman-group14-sha256")==0) {
+
+	p=modp_group14_p;
+	lenp=(sizeof(modp_group14_p)/sizeof(modp_group14_p[0]));
+	g=modp_group14_g;
+	leng=(sizeof(modp_group14_g)/sizeof(modp_group14_g[0]));
+	strcpy(k->digestname, "sha256");
+
+    } else if (strcmp(name, "diffie-hellman-group16-sha512")==0) {
+
+	p=modp_group16_p;
+	lenp=(sizeof(modp_group16_p)/sizeof(modp_group16_p[0]));
+	g=modp_group16_g;
+	leng=(sizeof(modp_group16_g)/sizeof(modp_group16_g[0]));
+	strcpy(k->digestname, "sha512");
+
+    } else if (strcmp(name, "diffie-hellman-group18-sha512")==0) {
+
+	p=modp_group18_p;
+	lenp=(sizeof(modp_group18_p)/sizeof(modp_group18_p[0]));
+	g=modp_group18_g;
+	leng=(sizeof(modp_group18_g)/sizeof(modp_group18_g[0]));
+	strcpy(k->digestname, "sha512");
+
+    } else {
+
+	logoutput("dh_init_keyex: %s not supported", name);
+	return -1;
+
+    }
+
+    k->ops=&dh_ops;
     init_ssh_mpint(&dh->p);
     init_ssh_mpint(&dh->g);
     init_ssh_mpint(&dh->x);
     init_ssh_mpint(&dh->e);
     init_ssh_mpint(&dh->f);
-    init_ssh_mpint(&dh->K);
+    init_ssh_mpint(&dh->sharedkey);
 
-    if (create_ssh_mpint(&dh->p)==-1) {
-
-	*error=ENOMEM;
-	return -1;
-
-    }
-
-    if (read_ssh_mpint(&dh->p, (char *)p, lenp, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
-
-    if (create_ssh_mpint(&dh->p)==-1) {
-
-	*error=ENOMEM;
-	return -1;
-
-    }
-
-    if (read_ssh_mpint(&dh->g, (char *)g, leng, SSH_MPINT_FORMAT_USC, error)==-1) return -1;
-
-    keyx->create_client_key 		= dh_create_client_key;
-    keyx->msg_write_client_key		= dh_msg_write_client_key;
-    keyx->msg_read_server_key		= dh_msg_read_server_key;
-    keyx->msg_write_server_key		= dh_msg_write_server_key;
-    keyx->calc_shared_K			= dh_calc_shared_K;
-    keyx->msg_write_shared_K		= dh_msg_write_shared_K;
-    keyx->free				= dh_free_keyx;
-    *error=0;
+    if (create_ssh_mpint(&dh->p)==-1) goto error;
+    if (read_ssh_mpint(&dh->p, (char *)p, lenp, SSH_MPINT_FORMAT_USC, &error)==-1) goto error;
+    if (create_ssh_mpint(&dh->p)==-1) goto error;
+    if (read_ssh_mpint(&dh->g, (char *)g, leng, SSH_MPINT_FORMAT_USC, &error)==-1) goto error;
 
     return 0;
 
-}
+    error:
 
-int set_keyx_dh(struct ssh_keyx_s *keyx, const char *name, unsigned int *error)
-{
-    struct ssh_dh_s *dh=&keyx->method.dh;
-
-    memset(dh, 0, sizeof(struct ssh_dh_s));
-
-    if (strcmp(name, "diffie-hellman-group1-sha1")==0) {
-
-	strcpy(keyx->digestname, "sha1");
-	return dh_init_keyx(keyx, modp_group1_p, (sizeof(modp_group1_p)/sizeof(modp_group1_p[0])), modp_group1_g, (sizeof(modp_group1_g)/sizeof(modp_group1_g[0])), error);
-
-    } else if (strcmp(name, "diffie-hellman-group14-sha1")==0) {
-
-	strcpy(keyx->digestname, "sha1");
-	return dh_init_keyx(keyx, modp_group14_p, (sizeof(modp_group14_p)/sizeof(modp_group14_p[0])), modp_group14_g, (sizeof(modp_group14_g)/sizeof(modp_group14_g[0])), error);
-
-    } else if (strcmp(name, "diffie-hellman-group14-sha256")==0) {
-
-	strcpy(keyx->digestname, "sha256");
-	return dh_init_keyx(keyx, modp_group14_p, (sizeof(modp_group14_p)/sizeof(modp_group14_p[0])), modp_group14_g, (sizeof(modp_group14_g)/sizeof(modp_group14_g[0])), error);
-
-    } else if (strcmp(name, "diffie-hellman-group16-sha512")==0) {
-
-	strcpy(keyx->digestname, "sha512");
-	return dh_init_keyx(keyx, modp_group16_p, (sizeof(modp_group16_p)/sizeof(modp_group16_p[0])), modp_group16_g, (sizeof(modp_group16_g)/sizeof(modp_group16_g[0])), error);
-
-    } else if (strcmp(name, "diffie-hellman-group18-sha512")==0) {
-
-	strcpy(keyx->digestname, "sha512");
-	return dh_init_keyx(keyx, modp_group18_p, (sizeof(modp_group18_p)/sizeof(modp_group18_p[0])), modp_group18_g, (sizeof(modp_group18_g)/sizeof(modp_group18_g[0])), error);
-
-    }
-
-    *error=EINVAL;
+    dh_free_keyex(k);
     return -1;
 
+}
+
+static struct keyex_ops_s dh_ops = {
+    .name				=	"dh",
+    .populate				=	populate_keyex_dh,
+    .init				=	dh_init_keyex,
+    .create_client_key			=	dh_create_client_key,
+    .msg_write_client_key		=	dh_msg_write_client_key,
+    .msg_read_server_key		=	dh_msg_read_server_key,
+    .msg_write_server_key		=	dh_msg_write_server_key,
+    .calc_sharedkey			=	dh_calc_sharedkey,
+    .msg_write_sharedkey		=	dh_msg_write_sharedkey,
+    .free				=	dh_free_keyex,
+};
+
+void init_keyex_dh()
+{
+    add_keyex_ops(&dh_ops);
 }

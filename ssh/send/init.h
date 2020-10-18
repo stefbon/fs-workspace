@@ -17,12 +17,12 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_INIT_H
-#define FS_WORKSPACE_SSH_SEND_INIT_H
+#ifndef _SSH_SEND_INIT_H
+#define _SSH_SEND_INIT_H
 
-int init_send(struct ssh_session_s *session, unsigned int *error);
-void free_send(struct ssh_session_s *session);
+int init_ssh_connection_send(struct ssh_connection_s *c);
+void free_ssh_connection_send(struct ssh_connection_s *c);
 
-void init_send_once();
+void init_ssh_send_once();
 
 #endif

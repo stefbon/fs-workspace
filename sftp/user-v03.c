@@ -94,7 +94,8 @@ static void get_local_uid_nonshared_v03(struct sftp_subsystem_s *sftp, struct sf
     user->local_uid=usermapping->local_unknown_uid;
 
     if (user->remote.id==usermapping->data.id_nonshared.remote_uid) {
-	struct ssh_session_s *session=sftp->channel.session;
+	struct ssh_channel_s *channel=&sftp->channel;
+	struct ssh_session_s *session=channel->session;
 
 	user->local_uid=session->identity.pwd.pw_uid;
 
@@ -139,7 +140,8 @@ static void get_local_gid_shared_v03(struct sftp_subsystem_s *sftp, struct sftp_
 static void get_local_gid_nonshared_v03(struct sftp_subsystem_s *sftp, struct sftp_group_s *group)
 {
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
     group->local_gid=usermapping->local_unknown_gid;
@@ -168,7 +170,8 @@ static void get_remote_user_shared_v03(struct sftp_subsystem_s *sftp, struct sft
 static void get_remote_user_nonshared_v03(struct sftp_subsystem_s *sftp, struct sftp_user_s *user)
 {
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
     user->remote.id=0;
@@ -198,7 +201,8 @@ static void get_remote_group_shared_v03(struct sftp_subsystem_s *sftp, struct sf
 static void get_remote_group_nonshared_v03(struct sftp_subsystem_s *sftp, struct sftp_group_s *group)
 {
     struct sftp_usermapping_s *usermapping=&sftp->usermapping;
-    struct ssh_session_s *session=sftp->channel.session;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_session_s *session=channel->session;
     struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
     if (group->local_gid==0) {

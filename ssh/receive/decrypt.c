@@ -74,11 +74,11 @@ struct decrypt_ops_s *get_next_decrypt_ops(struct decrypt_ops_s *ops)
 }
 
 
-void reset_decrypt(struct ssh_session_s *session, struct algo_list_s *algo_cipher, struct algo_list_s *algo_hmac)
+void reset_decrypt(struct ssh_connection_s *connection, struct algo_list_s *algo_cipher, struct algo_list_s *algo_hmac)
 {
-    struct ssh_receive_s *receive=&session->receive;
+    struct ssh_receive_s *receive=&connection->receive;
     struct ssh_decrypt_s *decrypt=&receive->decrypt;
-    struct keyexchange_s *keyexchange=session->keyexchange;
+    struct ssh_keyexchange_s *kex=&connection->setup.phase.transport.type.kex;
     char *ciphername=NULL;
     char *hmacname=NULL;
     struct decrypt_ops_s *ops=(struct decrypt_ops_s *) algo_cipher->ptr;
@@ -106,16 +106,15 @@ void reset_decrypt(struct ssh_session_s *session, struct algo_list_s *algo_ciphe
     }
 
     decrypt->ops=ops;
-
     strcpy(decrypt->ciphername, ciphername);
     if (hmacname) strcpy(decrypt->hmacname, hmacname);
-    move_ssh_string(&decrypt->cipher_key, &keyexchange->data.cipher_key_s2c);
-    move_ssh_string(&decrypt->cipher_iv, &keyexchange->data.cipher_iv_s2c);
-    move_ssh_string(&decrypt->hmac_key, &keyexchange->data.hmac_key_s2c);
+    move_ssh_string(&decrypt->cipher_key, &kex->cipher_key_s2c);
+    move_ssh_string(&decrypt->cipher_iv, &kex->cipher_iv_s2c);
+    move_ssh_string(&decrypt->hmac_key, &kex->hmac_key_s2c);
 
 }
 
-unsigned int build_cipher_list_s2c(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+unsigned int build_cipher_list_s2c(struct ssh_connection_s *connection, struct algo_list_s *alist, unsigned int start)
 {
     struct decrypt_ops_s *ops=NULL;
 
@@ -123,7 +122,7 @@ unsigned int build_cipher_list_s2c(struct ssh_session_s *session, struct algo_li
 
     while (ops) {
 
-	start=(* ops->populate_cipher)(session, ops, alist, start);
+	start=(* ops->populate_cipher)(connection, ops, alist, start);
 	ops=get_next_decrypt_ops(ops);
 
     }
@@ -132,7 +131,7 @@ unsigned int build_cipher_list_s2c(struct ssh_session_s *session, struct algo_li
 
 }
 
-unsigned int build_hmac_list_s2c(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+unsigned int build_hmac_list_s2c(struct ssh_connection_s *connection, struct algo_list_s *alist, unsigned int start)
 {
     struct decrypt_ops_s *ops=NULL;
 
@@ -140,7 +139,7 @@ unsigned int build_hmac_list_s2c(struct ssh_session_s *session, struct algo_list
 
     while (ops) {
 
-	start=(* ops->populate_hmac)(session, ops, alist, start);
+	start=(* ops->populate_hmac)(connection, ops, alist, start);
 	ops=get_next_decrypt_ops(ops);
 
     }

@@ -79,7 +79,7 @@ void reset_compress(struct ssh_send_s *send, struct algo_list_s *algo)
     logoutput("reset_compress");
 }
 
-int build_compress_list_c2s(struct ssh_session_s *session, struct algo_list_s *alist, unsigned int start)
+int build_compress_list_c2s(struct ssh_connection_s *c, struct algo_list_s *alist, unsigned int start)
 {
     struct compress_ops_s *ops=NULL;
 
@@ -87,7 +87,7 @@ int build_compress_list_c2s(struct ssh_session_s *session, struct algo_list_s *a
 
     while (ops) {
 
-	start=(* ops->populate)(session, ops, alist, start);
+	start=(* ops->populate)(c, ops, alist, start);
 	ops=get_next_compress_ops(ops);
 
     }

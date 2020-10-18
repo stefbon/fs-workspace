@@ -63,13 +63,14 @@ struct sftp_send_ops_s {
     int					(* block)(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
     int					(* unblock)(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
     int					(* extension)(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+    int					(* custom)(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
 };
 
 struct sftp_attr_ops_s {
     unsigned int 			(* read_attributes)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
     unsigned int 			(* write_attributes)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr);
-    void				(* read_name_response)(struct sftp_subsystem_s *sftp, struct name_response_s *r, char **name, unsigned int *len);
-    unsigned int			(* read_attr_response)(struct sftp_subsystem_s *sftp, struct name_response_s *r, struct fuse_sftp_attr_s *f);
+    unsigned int			(* read_name_response)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, char **name, unsigned int *len);
+    unsigned int			(* read_attr_response)(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *f);
     void				(* read_sftp_features)(struct sftp_subsystem_s *sftp);
     unsigned int			(* get_attribute_mask)(struct sftp_subsystem_s *sftp);
     int					(* get_attribute_info)(struct sftp_subsystem_s *sftp, unsigned int valid, const char *what);
@@ -90,13 +91,26 @@ struct sftp_time_ops_s {
     void				(* correct_time_c2s)(struct sftp_subsystem_s *sftp, struct timespec *time);
 };
 
-#define SFTP_EXTENSION_FLAG_EXTENDED	1
+#define SFTP_EXTENSION_FLAG_SUPPORTED						1
+#define SFTP_EXTENSION_FLAG_MAPPED						2
+#define SFTP_EXTENSION_FLAG_CREATE						4
+#define SFTP_EXTENSION_FLAG_OVERRIDE_DATA					8
+
+#define SFTP_EXTENSION_EVENT_SUPPORTED		1
+#define SFTP_EXTENSION_EVENT_DATA		2
+#define SFTP_EXTENSION_EVENT_MAPPED		3
+
+#define SFTP_EXTENSION_EVENT_ERROR		5
 
 struct sftp_protocolextension_s {
     unsigned int			flags;
     unsigned int			nr;
+    unsigned char			mapped;
+    int					(* send_extension)(struct sftp_subsystem_s *sftp, struct sftp_protocolextension_s *e, struct ssh_string_s *d, struct sftp_reply_s *r, unsigned int *error);
     struct ssh_string_s			name;
     struct ssh_string_s			data;
+    void				*ptr;
+    void				(* event_cb)(struct ssh_string_s *name, struct ssh_string_s *data, void *ptr, unsigned int event);
     struct list_element_s		list;
     char				buffer[];
 };
@@ -104,6 +118,9 @@ struct sftp_protocolextension_s {
 struct sftp_extensions_s {
     unsigned int			count;
     unsigned char			mapped;
+    struct sftp_protocolextension_s	*mapextension;
+    struct sftp_protocolextension_s	*fsync;
+    struct sftp_protocolextension_s	*statvfs;
     struct list_header_s		header;
 };
 

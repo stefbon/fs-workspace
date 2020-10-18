@@ -17,17 +17,14 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_RECEIVE_READ_BUFFER_H
-#define FS_WORKSPACE_SSH_RECEIVE_READ_BUFFER_H
+#ifndef _SSH_RECEIVE_READ_BUFFER_H
+#define _SSH_RECEIVE_READ_BUFFER_H
 
-void process_ssh_packet_nodecompress(struct ssh_session_s *session, struct ssh_packet_s *packet);
-void process_ssh_packet_decompress(struct ssh_session_s *session, struct ssh_packet_s *packet);
+void process_ssh_packet_nodecompress(struct ssh_connection_s *c, struct ssh_packet_s *packet);
+void process_ssh_packet_decompress(struct ssh_connection_s *c, struct ssh_packet_s *packet);
 
-void read_ssh_buffer_packet(void *ptr);
-void read_ssh_buffer_greeter(void *ptr);
-void read_ssh_buffer_none(void *ptr);
+void read_ssh_connection_buffer(struct ssh_connection_s *c);
 
-void read_ssh_buffer(struct ssh_session_s *session);
-void switch_read_ssh_buffer(struct ssh_session_s *session, const char *phase);
+void set_ssh_receive_behaviour(struct ssh_connection_s *c, const char *phase);
 
 #endif

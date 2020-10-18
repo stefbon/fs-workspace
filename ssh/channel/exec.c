@@ -197,7 +197,7 @@ unsigned int start_remote_command_exec(struct ssh_session_s *session, char *comm
     struct channel_table_s *table=&session->channel_table;
     unsigned int size=0;
 
-    channel=create_channel(session, _CHANNEL_TYPE_EXEC);
+    channel=create_channel(session, session->connections.main, _CHANNEL_TYPE_EXEC);
     if (channel==NULL) return 0;
 
     if (add_channel(channel, CHANNEL_FLAG_OPEN)==0) {

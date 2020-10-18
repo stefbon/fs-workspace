@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_COMPRESS_NONE_H
-#define FS_WORKSPACE_SSH_SEND_COMPRESS_NONE_H
+#ifndef _SSH_SEND_COMPRESS_NONE_H
+#define _SSH_SEND_COMPRESS_NONE_H
 
 void init_compress_none();
 void set_compress_none(struct ssh_compress_s *compress);

@@ -105,24 +105,25 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-
     size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
     sftp_r.call.setstat.path=(unsigned char *)pathinfo->path;
     sftp_r.call.setstat.len=pathinfo->len;
     sftp_r.call.setstat.size=size;
     sftp_r.call.setstat.buff=(unsigned char *)buffer;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_setstat_ctx(context->interface.ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -135,12 +136,13 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (reply->type==SSH_FXP_STATUS) {
 
-		    logoutput("_fs_sftp_setattr: reply %i", sftp_r.response.status.code);
+		    logoutput("_fs_sftp_setattr: reply %i", reply->response.status.code);
 
-		    if (sftp_r.response.status.code==0) {
+		    if (reply->response.status.code==0) {
 
 			set_local_attributes(inode, &fuse_attr);
 			_fs_common_getattr(get_root_context(context), f_request, inode);
@@ -148,7 +150,7 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
 
 		    } else {
 
-			error=sftp_r.response.status.linux_error;
+			error=reply->response.status.linux_error;
 
 		    }
 
@@ -164,7 +166,7 @@ void _fs_sftp_setattr(struct service_context_s *context, struct fuse_request_s *
 
     } else {
 
-	error=sftp_r.error;
+	error=sftp_r.reply.error;
 
     }
 
@@ -184,22 +186,24 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
     unsigned int size=get_attr_buffer_size(context->interface.ptr, st, set, &fuse_attr, 0);
     char buffer[size];
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
     size=write_attributes_ctx(context->interface.ptr, buffer, size, &fuse_attr);
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
 
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
     sftp_r.call.fsetstat.handle=(unsigned char *) openfile->handle.name.name;
     sftp_r.call.fsetstat.len=openfile->handle.name.len;
     sftp_r.call.fsetstat.size=size;
     sftp_r.call.fsetstat.buff=(unsigned char *)buffer;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     /* send fsetstat cause a handle is available */
 
@@ -214,10 +218,11 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(&context->interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (reply->type==SSH_FXP_STATUS) {
 
-		    if (sftp_r.response.status.code==0) {
+		    if (reply->response.status.code==0) {
 
 			set_local_attributes(openfile->inode, &fuse_attr);
 			_fs_common_getattr(get_root_context(context), f_request, openfile->inode);
@@ -225,11 +230,11 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 
 		    } else {
 
-			error=sftp_r.response.status.linux_error;
+			error=reply->response.status.linux_error;
 
 		    }
 
-		    logoutput("_fs_sftp_fsetattr: reply %i", sftp_r.response.status.code);
+		    logoutput("_fs_sftp_fsetattr: reply %i", reply->response.status.code);
 
 		} else {
 
@@ -243,7 +248,7 @@ void _fs_sftp_fsetattr(struct fuse_openfile_s *openfile, struct fuse_request_s *
 
     } else {
 
-	error=sftp_r.error;
+	error=sftp_r.reply.error;
 
     }
 

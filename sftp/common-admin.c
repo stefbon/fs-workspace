@@ -171,9 +171,7 @@ void get_timeinfo_sftp_server(struct sftp_subsystem_s *sftp)
 {
     struct ssh_channel_s *channel=&sftp->channel;
     struct ssh_session_s *session=channel->session;
-
     get_timeinfo_ssh_server(session);
-
 }
 
 unsigned int get_sftp_interface_info(struct context_interface_s *interface, const char *what, void *data, struct common_buffer_s *buffer)

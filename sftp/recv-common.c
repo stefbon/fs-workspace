@@ -73,7 +73,7 @@
 
 */
 
-static void process_sftp_error(struct sftp_subsystem_s *sftp_subsystem, struct ssh_payload_s *payload, unsigned int error)
+static void process_sftp_error(struct sftp_subsystem_s *sftp, struct ssh_payload_s *payload, unsigned int error)
 {
     struct sftp_request_s *sftp_r=NULL;
     unsigned int pos=10;
@@ -84,14 +84,14 @@ static void process_sftp_error(struct sftp_subsystem_s *sftp_subsystem, struct s
     /* something is wrong with message: try to send a signal to waiting thread */
 
     id=get_uint32(&payload->buffer[pos]);
-    req=get_sftp_request(sftp_subsystem, id, &sftp_r, &tmp_error);
+    req=get_sftp_request(sftp, id, &sftp_r, &tmp_error);
 
     if (req) {
-	struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
+	struct ssh_signal_s *signal=sftp->channel.queue.signal;
 
 	pthread_mutex_lock(signal->mutex);
 
-	signal->sequence_number_error=sftp_r->sequence;
+	signal->sequence_number_error=sftp_r->reply.sequence;
 	signal->error=error;
 
 	pthread_cond_broadcast(signal->cond);
@@ -112,6 +112,7 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
     //logoutput_info("receive_sftp_reply");
 
     len=get_uint32(&payload->buffer[pos]);
+    pos+=4;
 
     /*
 	SFTP has the form
@@ -134,13 +135,11 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
 
     }
 
-    pos+=4;
-
     sftp_header.len=len;
-    sftp_header.type=(unsigned char) payload->buffer[pos];
+    sftp_header.buffer=NULL;
     sftp_header.id=0;
     sftp_header.sequence=payload->sequence;
-    sftp_header.buffer=NULL;
+    sftp_header.type=(unsigned char) payload->buffer[pos];
     pos++;
     sftp_header.len--;
 
@@ -214,19 +213,11 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
 	    pos+=4;
 	    sftp_header.len-=4;
 
-	    //logoutput("receive_sftp_reply: A1");
-
 	    sftp_header.buffer=isolate_payload_buffer(p_payload, pos, sftp_header.len);
-
-	    //logoutput("receive_sftp_reply: A2");
 
 	    (* sftp_subsystem->recv_ops->attr)(sftp_subsystem, &sftp_header);
 
-	    //logoutput("receive_sftp_reply: A3 buffer %s", (sftp_header.buffer) ? "defined" : "empty");
-
 	    if (sftp_header.buffer) free(sftp_header.buffer);
-	    //logoutput("receive_sftp_reply: A4");
-	    payload=NULL;
 	    }
 
 	    break;
@@ -267,15 +258,6 @@ void receive_sftp_reply(struct ssh_channel_s *channel, struct ssh_payload_s **p_
 
     }
 
-    // logoutput("receive_sftp_reply: B");
-
     if (*p_payload) free_payload(p_payload);
 
-    // logoutput("receive_sftp_reply: C");
-
-
-}
-
-void receive_sftp_eof(struct ssh_channel_s *channel)
-{
 }

@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_ENCRYPT_CHACHA20_POLY1305_H
-#define FS_WORKSPACE_SSH_SEND_ENCRYPT_CHACHA20_POLY1305_H
+#ifndef _SSH_SEND_ENCRYPT_CHACHA20_POLY1305_H
+#define _SSH_SEND_ENCRYPT_CHACHA20_POLY1305_H
 
 void init_encrypt_chacha20_poly1305_openssh_com();
 void set_encrypt_chacha20_poly1305_openssh_com(struct ssh_encrypt_s *encrypt);

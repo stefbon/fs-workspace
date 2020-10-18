@@ -74,23 +74,24 @@ void _fs_sftp_unlink(struct service_context_s *context, struct fuse_request_s *f
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if ((* f_request->is_interrupted)(f_request)) {
-
-	reply_VFS_error(f_request, EINTR);
-	return;
-
-    }
-
     pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
 
     logoutput("_fs_sftp_unlink: remove %.*s", pathinfo->len, pathinfo->path);
 
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
     sftp_r.id=0;
-
     sftp_r.call.remove.path=(unsigned char *) pathinfo->path;
     sftp_r.call.remove.len=pathinfo->len;
-    sftp_r.fuse_request=f_request;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+
+	reply_VFS_error(f_request, EINTR);
+	return;
+
+    }
 
     if (send_sftp_remove_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -103,12 +104,13 @@ void _fs_sftp_unlink(struct service_context_s *context, struct fuse_request_s *f
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (reply->type==SSH_FXP_STATUS) {
 
-		    logoutput("_fs_sftp_remove: status code %i", sftp_r.response.status.code);
+		    logoutput("_fs_sftp_remove: status code %i", reply->response.status.code);
 
-		    if (sftp_r.response.status.code==0) {
+		    if (reply->response.status.code==0) {
 			struct entry_s *entry=*pentry;
 			struct inode_s *inode=entry->inode;
 
@@ -120,7 +122,7 @@ void _fs_sftp_unlink(struct service_context_s *context, struct fuse_request_s *f
 
 		    } else {
 
-			error=sftp_r.response.status.linux_error;
+			error=reply->response.status.linux_error;
 
 		    }
 
@@ -149,22 +151,22 @@ void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *f_
     unsigned int pathlen=(* interface->backend.sftp.get_complete_pathlen)(interface, pathinfo->len);
     char path[pathlen];
 
-    if ((* f_request->is_interrupted)(f_request)) {
+    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
+
+    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
+    sftp_r.id=0;
+    sftp_r.call.rmdir.path=(unsigned char *) pathinfo->path;
+    sftp_r.call.rmdir.len=pathinfo->len;
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
+
+    set_sftp_request_fuse(&sftp_r, f_request);
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
 
 	reply_VFS_error(f_request, EINTR);
 	return;
 
     }
-
-    pathinfo->len += (* interface->backend.sftp.complete_path)(interface, path, pathinfo);
-
-    memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
-    sftp_r.id=0;
-
-    sftp_r.call.rmdir.path=(unsigned char *) pathinfo->path;
-    sftp_r.call.rmdir.len=pathinfo->len;
-    sftp_r.fuse_request=f_request;
 
     if (send_sftp_rmdir_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -177,12 +179,13 @@ void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *f_
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_ctx(interface, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_STATUS) {
+		if (reply->type==SSH_FXP_STATUS) {
 
-		    logoutput("_fs_sftp_rmdir: status code %i", sftp_r.response.status.code);
+		    logoutput("_fs_sftp_rmdir: status code %i", reply->response.status.code);
 
-		    if (sftp_r.response.status.code==0) {
+		    if (reply->response.status.code==0) {
 			struct entry_s *entry=*pentry;
 			struct inode_s *inode=entry->inode;
 
@@ -194,7 +197,7 @@ void _fs_sftp_rmdir(struct service_context_s *context, struct fuse_request_s *f_
 
 		    } else {
 
-			error=sftp_r.response.status.linux_error;
+			error=reply->response.status.linux_error;
 
 		    }
 

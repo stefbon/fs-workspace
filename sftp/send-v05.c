@@ -136,7 +136,7 @@ static void get_sftp_openmode(unsigned int posix_access, unsigned int *sftp_acce
 
 */
 
-int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_open_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[26 + sftp_r->call.open.len];
     unsigned int pos=0;
@@ -144,7 +144,7 @@ int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
     unsigned int flags=0;
 
     get_sftp_openmode(sftp_r->call.open.posix_flags, &access, &flags);
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     logoutput_debug("send_sftp_open: access %i flags %i", access, flags);
 
@@ -167,7 +167,7 @@ int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
     data[pos]=(unsigned char) SSH_FILEXFER_TYPE_REGULAR;
     pos++;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -183,7 +183,7 @@ int send_sftp_open_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_requ
 
 */
 
-int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_create_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[21 + sftp_r->call.create.len + sftp_r->call.create.size];
     unsigned int pos=0;
@@ -191,7 +191,7 @@ int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
     unsigned int flags=0;
 
     get_sftp_openmode(sftp_r->call.create.posix_flags, &access, &flags);
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     logoutput_debug("send_sftp_create: access %i flags %i", access, flags);
 
@@ -212,7 +212,7 @@ int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
     memcpy((char *) &data[pos], sftp_r->call.create.buff, sftp_r->call.create.size);
     pos+=sftp_r->call.create.size;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
@@ -227,13 +227,13 @@ int send_sftp_create_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
     - uint32	flags
 */
 
-int send_sftp_rename_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+int send_sftp_rename_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
     char data[21 + sftp_r->call.rename.len + sftp_r->call.rename.target_len];
     unsigned int pos=0;
     unsigned int flags=SSH_FXF_RENAME_NATIVE; /* seems reasonable */
 
-    sftp_r->id=get_sftp_request_id(sftp_subsystem);
+    sftp_r->id=get_sftp_request_id(sftp);
 
     if (! (sftp_r->call.rename.posix_flags & RENAME_NOREPLACE)) {
 
@@ -258,26 +258,26 @@ int send_sftp_rename_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_re
     store_uint32(&data[pos], flags);
     pos+=4;
 
-    return send_channel_data_message(&sftp_subsystem->channel, pos, data, &sftp_r->sequence);
+    return send_channel_data_message(&sftp->channel, pos, data, &sftp_r->reply.sequence);
 
 }
 
-static int send_sftp_stat_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_stat_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_stat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_stat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
-static int send_sftp_lstat_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_lstat_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_lstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_lstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
-static int send_sftp_fstat_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r)
+static int send_sftp_fstat_v05(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r)
 {
-    unsigned int flags=(* sftp_subsystem->attr_ops->get_attribute_mask)(sftp_subsystem);
-    return send_sftp_fstat_v04_generic(sftp_subsystem, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
+    unsigned int flags=(* sftp->attr_ops->get_attribute_mask)(sftp);
+    return send_sftp_fstat_v04_generic(sftp, sftp_r, flags & SSH_FILEXFER_STAT_VALUE);
 }
 
 static struct sftp_send_ops_s send_ops_v05 = {
@@ -305,9 +305,10 @@ static struct sftp_send_ops_s send_ops_v05 = {
     .block				= send_sftp_block_v03,
     .unblock				= send_sftp_unblock_v03,
     .extension				= send_sftp_extension_v03,
+    .custom				= send_sftp_custom_v03,
 };
 
-void use_sftp_send_v05(struct sftp_subsystem_s *sftp_subsystem)
+void use_sftp_send_v05(struct sftp_subsystem_s *sftp)
 {
-    sftp_subsystem->send_ops=&send_ops_v05;
+    sftp->send_ops=&send_ops_v05;
 }

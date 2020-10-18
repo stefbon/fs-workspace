@@ -22,12 +22,12 @@
 
 /* prototypes */
 
-int send_sftp_init_v04(struct sftp_subsystem_s *sftp_subsystem, unsigned int *seq);
-int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags);
-int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags);
-int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r, unsigned int flags);
+int send_sftp_init_v04(struct sftp_subsystem_s *sftp, unsigned int *seq);
+int send_sftp_stat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags);
+int send_sftp_lstat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags);
+int send_sftp_fstat_v04_generic(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r, unsigned int flags);
 
-void use_sftp_send_v04(struct sftp_subsystem_s *sftp_subsystem);
+void use_sftp_send_v04(struct sftp_subsystem_s *sftp);
 
 #endif
 

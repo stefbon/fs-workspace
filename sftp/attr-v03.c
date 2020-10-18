@@ -425,50 +425,46 @@ static unsigned int write_attributes_v03(struct sftp_subsystem_s *sftp, char *bu
 
 */
 
-static void read_name_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, char **name, unsigned int *len)
+static unsigned int read_name_response_v03(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, char **name, unsigned int *len)
 {
 
-    logoutput_debug("read_name_response_v03: pos %i", (unsigned int)(response->pos - response->buff));
+    logoutput_debug("read_name_response_v03: size %i", size);
 
-    *len=get_uint32(response->pos);
-    response->pos+=4;
+    *len=get_uint32(buffer);
+    *name=&buffer[4]; /* name without trailing zero */
 
-    *name=(char *) response->pos; /* name without trailing zero */
-    response->pos+=*len;
+    return (*len + 4);
 
 }
 
-static unsigned int read_attr_response_v03(struct sftp_subsystem_s *sftp, struct name_response_s *response, struct fuse_sftp_attr_s *fuse_attr)
+static unsigned int read_attr_response_v03(struct sftp_subsystem_s *sftp, char *buffer, unsigned int size, struct fuse_sftp_attr_s *fuse_attr)
 {
     struct sftp_string_s longname;
     unsigned int valid=0;
-    char *keep=response->pos;
     unsigned char correction=0;
+    unsigned int pos=0;
 
-    // logoutput_base64encoded("read_attr_response_v03", response->pos, response->size);
-
-    logoutput_debug("read_attr_response_v03: pos %i", (unsigned int)(response->pos - response->buff));
+    logoutput_debug("read_attr_response_v03: size %i", size);
 
     /* longname */
 
-    longname.len=get_uint32(response->pos);
-    response->pos+=4;
-    longname.name=response->pos;
-    response->pos+=longname.len;
+    longname.len=get_uint32(&buffer[pos]);
+    pos+=4;
+    longname.name=&buffer[pos];
+    pos+=longname.len;
 
     logoutput_debug("read_attr_response_v03: longname %.*s (length %i)", longname.len, longname.name, longname.len);
 
     /* valid attributes */
 
-    valid=get_uint32(response->pos);
-    response->pos+=4;
+    valid=get_uint32(&buffer[pos]);
+    pos+=4;
 
     logoutput_debug("read_attr_response_v03: valid %i", valid);
 
     /* attr */
 
-    response->pos+=read_sftp_attributes(sftp, valid, response->pos, (unsigned int) (response->buff + response->size - response->pos), fuse_attr);
-    response->count--;
+    pos+=read_sftp_attributes(sftp, valid, &buffer[pos], size - pos, fuse_attr);
 
     /* get type from longname: parse the string which is output of ls -al %filename% */
 
@@ -611,7 +607,7 @@ static unsigned int read_attr_response_v03(struct sftp_subsystem_s *sftp, struct
 
     logoutput_debug("read_attr_response_v03: size %i", fuse_attr->size);
 
-    return (unsigned int) (response->pos - keep);
+    return pos;
 
 }
 

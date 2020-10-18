@@ -209,11 +209,11 @@ static unsigned int get_ssh_interface_status(struct ssh_session_s *session, char
     unsigned int result=0;
 
     if (size>=4) {
-	struct fs_connection_s *connection=&session->connection;
+	struct ssh_connection_s *connection=session->connections.main;
 
 	memset(buffer, '\0', size);
 
-	if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED || connection->status & FS_CONNECTION_FLAG_DISCONNECTING) {
+	if (connection->connection.status & FS_CONNECTION_FLAG_DISCONNECT) {
 
 	    store_uint32(buffer, ENOTCONN); /* not connected with server */
 	    result=4;
@@ -258,13 +258,13 @@ unsigned int get_ssh_interface_info(struct context_interface_s *interface, const
 
     } else if (strcmp(what, "hostname")==0) {
 	char *remotename=NULL;
-	struct fs_connection_s *connection=&session->connection;
-	int fd=connection->io.socket.xdata.fd;
+	struct ssh_connection_s *connection=session->connections.main;
+	int fd=connection->connection.io.socket.xdata.fd;
 
 	if (fd>0) {
 
-	    buffer->ptr=get_connection_hostname(connection, fd, 1, &error);
-	    if (buffer->ptr==NULL) buffer->ptr=get_connection_ipv4(connection, fd, 1, &error);
+	    buffer->ptr=get_connection_hostname(&connection->connection, fd, 1, &error);
+	    if (buffer->ptr==NULL) buffer->ptr=get_connection_ipv4(&connection->connection, fd, 1, &error);
 
 	    if (buffer->ptr) {
 

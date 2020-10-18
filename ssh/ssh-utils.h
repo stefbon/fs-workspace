@@ -27,9 +27,25 @@
 
 #include "datatypes/ssh-string.h"
 
+#define SSH_HASH_TYPE_MD5			1
+#define SSH_HASH_TYPE_SHA1			2
+#define SSH_HASH_TYPE_SHA256			3
+#define SSH_HASH_TYPE_SHA512			4
+#define SSH_HASH_TYPE_SHA3_256			5
+#define SSH_HASH_TYPE_SHA3_512			6
+
+struct ssh_hash_s {
+    char					name[32];
+    unsigned int				size;
+    unsigned int				len;
+    unsigned char				digest[];
+};
+
 /* prototypes */
 
-unsigned int create_hash(const char *name, char *in, unsigned int size, struct ssh_string_s *out, unsigned int *error);
+unsigned int get_hash_size(const char *name);
+void init_ssh_hash(struct ssh_hash_s *hash, char *name, unsigned int size);
+unsigned int create_hash(char *in, unsigned int size, struct ssh_hash_s *hash, unsigned int *error);
 unsigned int fill_random(char *pos, unsigned int len);
 int init_ssh_backend_library(unsigned int *error);
 void init_ssh_utils();

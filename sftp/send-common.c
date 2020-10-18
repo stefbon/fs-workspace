@@ -179,9 +179,3 @@ int send_sftp_realpath_ctx(void *ptr, struct sftp_request_s *sftp_r)
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
     return (*sftp_subsystem->send_ops->realpath)(sftp_subsystem, sftp_r);
 }
-
-int send_sftp_extension_ctx(void *ptr, struct sftp_request_s *sftp_r)
-{
-    struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) ptr;
-    return (*sftp_subsystem->send_ops->extension)(sftp_subsystem, sftp_r);
-}

@@ -20,7 +20,9 @@
 #ifndef FS_WORKSPACE_SSH_RECEIVE_MSG_CHANNEL_H
 #define FS_WORKSPACE_SSH_RECEIVE_MSG_CHANNEL_H
 
+void receive_msg_channel_data_init(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload);
+void receive_msg_channel_data_down(struct ssh_channel_s *channel, struct ssh_payload_s **p_payload);
+
 void register_channel_cb();
-void switch_channel_receive_data(struct ssh_channel_s *channel, const char *name, void (* receive_data_cb)(struct ssh_channel_s *c, struct ssh_payload_s **payload));
 
 #endif

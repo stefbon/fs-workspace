@@ -43,62 +43,56 @@
 #include "utils.h"
 #include "options.h"
 
+#include "ssh-utils.h"
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
-#include "ssh-utils.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-send.h"
-#include "createkeys.h"
-#include "dh.h"
-#include "ecdh.h"
+#include "ssh-keyexchange.h"
 #include "ssh-data.h"
 
 extern struct fs_options_s fs_options;
 
-static int verify_sigH(struct ssh_key_s *pkey, struct ssh_string_s *H, const char *hashname, struct ssh_string_s *sigH)
+static int verify_signature_H(struct ssh_key_s *pkey, struct ssh_hash_s *H, const char *hashname, struct ssh_string_s *sigH)
 {
     unsigned int error=0;
-    return (* pkey->verify)(pkey, H->ptr, H->len, sigH, hashname, &error);
+    return (* pkey->verify)(pkey,(char *)H->digest, H->len, sigH, hashname, &error);
 }
 
-static void msg_read_keyx_server_key(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static void msg_read_keyx_server_key(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-    (* keyx->msg_read_server_key)(mb, keyx);
+    (* k->ops->msg_read_server_key)(mb, k);
 }
 
-static int keyx_calc_shared_K(struct ssh_keyx_s *keyx)
+static int keyx_calc_shared_key(struct ssh_keyex_s *k)
 {
-    return (* keyx->calc_shared_K)(keyx);
+    return (* k->ops->calc_sharedkey)(k);
 }
 
-static unsigned int write_kexdh_init_message(struct msg_buffer_s *mb, struct ssh_keyx_s *keyx)
+static unsigned int write_kexdh_init_message(struct msg_buffer_s *mb, struct ssh_keyex_s *k)
 {
-
     msg_write_byte(mb, SSH_MSG_KEXDH_INIT);
-    (* keyx->msg_write_client_key)(mb, keyx);
-
-    logoutput("write_kexdh_init_message: len %i", mb->pos);
-
+    (* k->ops->msg_write_client_key)(mb, k);
     return mb->pos;
-
 }
 
-static int send_kexdh_init_message(struct ssh_session_s *session, struct ssh_keyx_s *keyx)
+static int send_kexdh_init_message(struct ssh_connection_s *connection, struct ssh_keyex_s *k)
 {
     struct msg_buffer_s mb=INIT_SSH_MSG_BUFFER;
-    unsigned int len=write_kexdh_init_message(&mb, keyx) + 64;
+    unsigned int len=write_kexdh_init_message(&mb, k) + 64;
     char buffer[sizeof(struct ssh_payload_s) + len];
     struct ssh_payload_s *payload=(struct ssh_payload_s *) buffer;
     unsigned int seq=0;
 
     init_ssh_payload(payload, len);
     set_msg_buffer_payload(&mb, payload);
-    payload->len=write_kexdh_init_message(&mb, keyx);
+    payload->len=write_kexdh_init_message(&mb, k);
 
-    return write_ssh_packet(session, payload, &seq);
-
+    return write_ssh_packet(connection, payload, &seq);
 }
+
+/* look for the right pk alogorithm give the signname and the name for the publickey algorithm */
 
 static int select_pksign_session(void *ptr, char *pkname, char *signname)
 {
@@ -156,7 +150,7 @@ static int select_pksign_session(void *ptr, char *pkname, char *signname)
 
 }
 
-static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_payload_s *payload,
+static int read_kex_dh_reply(struct ssh_connection_s *connection, struct ssh_keyex_s *k, struct ssh_payload_s *payload,
 				struct ssh_string_s *keydata, struct ssh_string_s *signalgo, struct ssh_string_s *sigH, unsigned int *error)
 {
     struct msg_buffer_s mb=INIT_SSH_MSG_BUFFER;
@@ -180,7 +174,9 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
     msg_read_ssh_string(&mb, keydata);
 
-    msg_read_keyx_server_key(&mb, keyx); /* f or Q_S or .. store value in keyx.method.dh or .. */
+    /* read f */
+
+    msg_read_keyx_server_key(&mb, k); /* f or Q_S or .. store value in keyx.method.dh or .. */
 
     /*
 
@@ -224,30 +220,72 @@ static int read_keyx_dh_reply(struct ssh_session_s *session, struct ssh_keyx_s *
 
 }
 
-int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct sessionphase_s *sessionphase)
+static struct ssh_payload_s *receive_keyx_dh_reply(struct ssh_connection_s *connection, unsigned int *error)
 {
-    struct keyexchange_s *keyexchange=session->keyexchange;
-    struct timespec expire;
-    unsigned int error=0;
-    unsigned int sequence=0;
+    struct payload_queue_s *queue=&connection->setup.queue;
     struct ssh_payload_s *payload=NULL;
-    unsigned int hashlen=create_hash(keyx->digestname, NULL, 0, NULL, NULL);
-    char hashdata[hashlen];
-    struct ssh_string_s H;
-    struct ssh_string_s sigH;
-    struct ssh_string_s signalgo;
+    struct timespec expire;
+    unsigned int sequence=0;
+
+    /* wait for SSH_MSG_KEXDH_REPLY */
+
+    get_ssh_connection_expire_init(connection, &expire);
+    *error=EPROTO;
+
+    getkexdhreply:
+
+    payload=get_ssh_payload(connection, queue, &expire, &sequence, error);
+
+    if (payload==NULL) {
+
+	logoutput("start_keyexchange: error %i waiting for KEXDH REPLY (%s)", *error, strerror(*error));
+
+    } else if (payload->type == SSH_MSG_KEXDH_REPLY) {
+
+	goto out;
+
+    } else {
+
+	logoutput("start_keyexchange: error: received a %i message, expecting %i", payload->type, SSH_MSG_KEXDH_REPLY);
+	free_payload(&payload);
+	payload=NULL;
+
+    }
+
+    out:
+
+    return payload;
+
+}
+
+int start_kex_dh(struct ssh_connection_s *connection, struct ssh_keyex_s *k)
+{
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
+    struct ssh_setup_s *setup=&connection->setup;
+    struct ssh_keyexchange_s *kex=&setup->phase.transport.type.kex;
+    unsigned int error=EIO;
+    struct ssh_payload_s *payload=NULL;
+    unsigned int hashlen=get_hash_size(k->digestname); /* get length of required buffer to store hash */
+    char hashdata[sizeof(struct ssh_hash_s) + hashlen];
+    struct ssh_hash_s *H=(struct ssh_hash_s *) hashdata;
+    struct ssh_string_s sign_H;
+    struct ssh_string_s sign_algo_name;
     struct ssh_pksign_s *pksign=NULL;
     struct ssh_hostkey_s hostkey;
     struct ssh_key_s *pkey=NULL;
     struct ssh_string_s keydata;
-    int change=0;
+    int result=-1;
+
+    init_ssh_hash(H, k->digestname, hashlen);
 
     /* hostkey type defined in kexinit */
     /* is algo a certificate ? */
 
-    if (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) {
-	struct ssh_pkcert_s *pkcert=keyx->pkauth.method.pkcert;
+    if (k->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) {
+	struct ssh_pkcert_s *pkcert=k->pkauth.method.pkcert;
 	struct ssh_pkalgo_s *pkalgo=get_pkalgo_byid(pkcert->pkalgo_id, NULL);
+
+	/* hostkey is a certificate */
 
 	if (pkcert->flags & SSH_PKCERT_FLAG_OPENSSH_COM_CERTIFICATE) {
 
@@ -257,104 +295,98 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 
 	}
 
-	/* else ?? */
+	/* TODO: else ?? */
 
-    } else if (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKALGO) {
+    } else if (k->pkauth.type == SSH_PKAUTH_TYPE_PKALGO) {
+
+	/* hostkey is a public key */
 
 	pkey=&hostkey.data.key;
-	init_ssh_key(pkey, SSH_KEY_TYPE_PUBLIC, keyx->pkauth.method.pkalgo);
+	init_ssh_key(pkey, SSH_KEY_TYPE_PUBLIC, k->pkauth.method.pkalgo);
 
     }
 
     /* else ?? */
 
-    init_ssh_string(&H);						/* exchange hash */
-    init_ssh_string(&sigH); 						/* signature */
-    init_ssh_string(&signalgo);						/* name of signalgo used to create signature */
+    init_ssh_string(&sign_H); 						/* signature */
+    init_ssh_string(&sign_algo_name);					/* name of signalgo used to create signature */
     init_ssh_string(&keydata);						/* keydata, pk key or certificate  */
 
-    logoutput("start_keyexchange");
+    logoutput("start_kex_dh");
 
-    /* client: calculate e/Q_C */
+    /* client: calculate the client key e/Q_C */
 
-    if ((* keyx->create_client_key)(keyx)==-1) {
+    if ((* k->ops->create_client_key)(k)==-1) {
 
-	logoutput("start_keyexchange: creating keyx client key failed");
-	set_sessionphase_failed(sessionphase);
-	goto error;
+	logoutput("start_kex_dh: creating kex dh client key failed");
+	goto out;
 
     }
 
     /* send SSH_MSG_KEXDH_INIT message */
 
-    if (send_kexdh_init_message(session, keyx)==-1) {
+    if (send_kexdh_init_message(connection, k)==-1) {
 
-	set_sessionphase_failed(sessionphase);
-	logoutput("start_keyexchange: error %i:%s sending kexdh_init", error, strerror(error));
-	goto error;
+	logoutput("start_kex_dh: error %i:%s sending kex dh init", error, strerror(error));
+	goto out;
 
     }
 
-    sessionphase->status|=SESSION_STATUS_KEYEXCHANGE_KEYX_C2S;
-    change=change_status_sessionphase(session, sessionphase);
-    if (change<0) goto error;
+    change_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX, SSH_KEX_FLAG_KEXDH_C2S, 0, NULL, NULL);
 
     /* wait for SSH_MSG_KEXDH_REPLY */
 
-    get_session_expire_init(session, &expire);
-    payload=get_ssh_payload(session, keyexchange->queue, &expire, &sequence, &error);
+    payload=receive_keyx_dh_reply(connection, &error);
 
-    if (! payload) {
+    if (payload==NULL) {
 
-	logoutput("start_keyexchange: error waiting for kexdh_reply");
-	set_sessionphase_failed(sessionphase);
-	goto error;
-
-    } else if (payload->type != SSH_MSG_KEXDH_REPLY) {
-
-	logoutput("start_keyexchange: error: received a %i message, expecting %i", payload->type, SSH_MSG_KEXDH_REPLY);
-	set_sessionphase_failed(sessionphase);
-	goto error;
+	logoutput("start_kex_dh: error %i receiving KEXDH REPLY (%s)", error, strerror(error));
+	goto out;
 
     }
 
-    if (read_keyx_dh_reply(session, keyx, payload, &keydata, &signalgo, &sigH, &error)==-1) {
+    change_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_KEX, SSH_KEX_FLAG_KEXDH_S2C, 0, NULL, NULL);
 
-	logoutput("start_keyexchange: error reading dh reply");
-	set_sessionphase_failed(sessionphase);
-	goto error;
+    /* read server hostkey (keydata), the server public keyexchange value f/Q_S, the name of the pk algo used to sign and the signature */
+
+    if (read_kex_dh_reply(connection, k, payload, &keydata, &sign_algo_name, &sign_H, &error)==-1) {
+
+	logoutput("start_kex_dh: error %i reading dh reply (%s)", error, strerror(error));
+	goto out;
 
     }
 
-    logoutput("start_keyexchange: read hostkey (len %i), signalgo (len %i) and sigH (len %i)", keydata.len, signalgo.len, sigH.len);
+    logoutput("start_kex_dh: read hostkey (len %i), sign algo name %.*s (len %i) and sigH (len %i)", keydata.len, sign_algo_name.len, sign_algo_name.ptr, sign_algo_name.len, sign_H.len);
 
-    sessionphase->status|=SESSION_STATUS_KEYEXCHANGE_KEYX_S2C;
-    change=change_status_sessionphase(session, sessionphase);
-    if (change<0) goto error;
+    if (k->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) {
 
-    if (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) {
+	/* read certificate from key data */
 
 	if (read_cert_openssh_com(&hostkey.data.openssh_cert, &keydata)==-1) {
 
-	    logoutput("start_keyexchange: failed to read openssh.com certificate");
-	    set_sessionphase_failed(sessionphase);
-	    goto error;
+	    logoutput("start_kex_dh: failed to read openssh.com certificate");
+	    goto out;
 
 	}
+
+	/* check certificate is complete */
 
 	if (check_cert_openssh_com(&hostkey.data.openssh_cert, SSH_PKCERT_FLAG_HOST, select_pksign_session, (void *) session)==-1) {
 
-	    logoutput("start_keyexchange: certificate not valid");
-	    set_sessionphase_failed(sessionphase);
-	    goto error;
+	    logoutput("start_kex_dh: certificate not valid");
+	    goto out;
 
 	}
 
-    } else if (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKALGO) {
+    } else if (k->pkauth.type == SSH_PKAUTH_TYPE_PKALGO) {
+
+	/* read the server host keydata using SSH format */
 
 	if ((* pkey->read_key)(pkey, keydata.ptr, keydata.len, PK_DATA_FORMAT_SSH, &error)==-1) {
 
-	    logoutput("start_keyexchange: error %i reading public key from host (%s)", error, strerror(error));
+	    logoutput("start_kex_dh: error %i reading public key from host (%s)", error, strerror(error));
+	    goto out;
+
 	}
 
     }
@@ -365,25 +397,23 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 
     if (fs_options.ssh.trustdb == _OPTIONS_SSH_TRUSTDB_NONE) {
 
-	logoutput_info("start_keyexchange: no trustdb used, hostkey is not checked to local db of trusted keys");
+	logoutput_info("start_kex_dh: no trustdb used, hostkey is not checked to local db of trusted keys");
 
     } else {
 	unsigned int done = fs_options.ssh.trustdb;
 
 	if (fs_options.ssh.trustdb & _OPTIONS_SSH_TRUSTDB_OPENSSH) {
-	    struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
 	    done-=_OPTIONS_SSH_TRUSTDB_OPENSSH;
 
-	    if (check_serverkey_openssh(&session->connection, &session->identity.pwd, pkey, (keyx->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) ? "ca" : "pk")==0) {
+	    if (check_serverkey_openssh(&connection->connection, &session->identity.pwd, pkey, (k->pkauth.type == SSH_PKAUTH_TYPE_PKCERT) ? "ca" : "pk")==0) {
 
-		logoutput_info("start_keyexchange: check public key server success");
+		logoutput("start_kex_dh: check public key server success");
 
 	    } else {
 
-		logoutput_info("start_keyexchange: check public key server failed");
-		set_sessionphase_failed(sessionphase);
-		goto error;
+		logoutput("start_kex_dh: check public key server failed");
+		goto out;
 
 	    }
 
@@ -391,23 +421,23 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 
 	    /* encode/decode first ?? */
 
-	    logoutput_info("start_keyexchange: creating fp server public hostkey");
+	    // logoutput("start_kex_dh: creating fp server public hostkey");
 
-	    if (create_ssh_string(&hostinfo->fp, create_hash("sha1", NULL, 0, NULL, &error))>0) {
+	    // if (create_ssh_string(&hostinfo->fp, create_hash("sha1", NULL, 0, NULL, &error))>0) {
 
-		if (create_hash("sha1", keydata.ptr, keydata.len, &hostinfo->fp, &error)>0) {
+		// if (create_hash("sha1", keydata.ptr, keydata.len, &hostinfo->fp, &error)>0) {
 
-		    logoutput("start_keyexchange: servers fp %.*s (len=%i)", hostinfo->fp.len, hostinfo->fp.ptr, hostinfo->fp.len);
+		    // logoutput("start_kex_dh: servers fp %.*s (len=%i)", hostinfo->fp.len, hostinfo->fp.ptr, hostinfo->fp.len);
 
-		}
+		// }
 
-	    }
+	    //}
 
 	}
 
 	if (done>0) {
 
-	    logoutput_warning("start_keyexchange: not all trustdbs %i supported", done);
+	    logoutput_warning("start_kex_dh: not all trustdbs %i supported", done);
 
 	}
 
@@ -415,92 +445,83 @@ int start_key_exchange(struct ssh_session_s *session, struct ssh_keyx_s *keyx, s
 
     /* check the signalgo used to sign is supported in this session */
 
-    pksign=check_signature_algo(pkey->algo, &signalgo, select_pksign_session, (void *) session);
+    pksign=check_signature_algo(pkey->algo, &sign_algo_name, select_pksign_session, (void *) session);
 
     if (pksign==NULL) {
 
-	logoutput_info("start_keyexchange: signalgo %.*s not supported", signalgo.len, signalgo.ptr);
-	set_sessionphase_failed(sessionphase);
-	goto error;
+	logoutput("start_kex_dh: signalgo %.*s not supported", sign_algo_name.len, sign_algo_name.ptr);
+	goto out;
 
     }
 
     /* calculate the shared K from the client keyx key (e/Q_C/..) and the server keyx key (f/Q_S/..)*/
 
-    if (keyx_calc_shared_K(keyx)==-1) {
+    if (keyx_calc_shared_key(k)==-1) {
 
-	logoutput_info("start_keyexchange: calculation shared key K failed");
-	set_sessionphase_failed(sessionphase);
-	goto error;
+	logoutput("start_kex_dh: calculation shared key K failed");
+	goto out;
 
     }
 
     /* check the signature is correct by creating the H self
 	and verify using the public key of the server */
 
-    H.len=hashlen;
-    H.ptr=hashdata;
+    if (create_H(connection, k, pkey, H)==-1) {
 
-    if (create_H(session, keyx, pkey, &H)==-1) {
-
-	set_sessionphase_failed(sessionphase);
-	logoutput_info("start_keyexchange: error creating H (%i bytes)", hashlen);
-	goto error;
+	logoutput("start_kex_dh: error creating H (len %i size %i)", H->len, H->size);
+	goto out;
 
     } else {
 
-	logoutput_info("start_keyexchange: created H (%i bytes)", hashlen);
+	logoutput("start_kex_dh: created H (%i size %i)", H->len, H->size);
 
     }
 
-    if (verify_sigH(pkey, &H, get_hashname_sign(pksign), &sigH)==-1) {
+    if (verify_signature_H(pkey, H, get_hashname_sign(pksign), &sign_H)==-1) {
 
-	set_sessionphase_failed(sessionphase);
-	logoutput_info("start_keyexchange: verify sig H failed");
-	goto error;
+	logoutput("start_kex_dh: verify signature H failed");
+	goto out;
 
     } else {
 
-	logoutput_info("start_keyexchange: sig H verified");
+	logoutput("start_kex_dh: signature H verified");
 
     }
 
-    if (sessionphase->phase==SESSION_PHASE_SETUP) {
+    /* store H as session identifier (only when transport phase is NOT completed) */
 
-	/* store H as session identifier (only in setup) */
+    if ((connection->flags & SSH_CONNECTION_FLAG_MAIN) && (setup->flags & SSH_SETUP_FLAG_TRANSPORT)==0) {
+	struct ssh_string_s tmp={H->len, (char *) H->digest};
+	struct ssh_session_s *session=get_ssh_connection_session(connection);
 
-	if (store_ssh_session_id(session, H.ptr, H.len)==-1) {
+	if (store_ssh_session_id(session, &tmp)==-1) {
 
-	    set_sessionphase_failed(sessionphase);
-	    logoutput_info("start_keyexchange: failed to store session id");
-	    goto error;
+	    logoutput("start_kex_dh: failed to store session identifier");
+	    goto out;
 
 	}
 
     }
 
-    /* create the different hashes */
+    /* now the hostkey is found in some db, the signature is checked and the shared key K is computed,
+	create the different hashes with it */
 
-    if (create_keyx_hashes(session, keyx, &H, &error)==0) {
+    if (create_keyx_hashes(connection, k, H, &error)==0) {
 
-	logoutput_info("start_keyexchange: key hashes created");
+	logoutput("start_kex_dh: key hashes created");
+	result=0;
 
     } else {
 
-	logoutput_info("start_keyexchange: failed to create key hashes");
-	goto error;
+	logoutput("start_kex_dh: failed to create key hashes");
 
     }
 
+    out:
+
+    (* k->ops->free)(k);
     if (payload) free_payload(&payload);
     free_ssh_key(pkey);
-    return 0;
-
-    error:
-
-    if (payload) free_payload(&payload);
-    free_ssh_key(pkey);
-    logoutput("start_keyexchange: error");
-    return -1;
+    return result;
 
 }

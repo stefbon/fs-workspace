@@ -86,10 +86,9 @@ static struct ssh_decompressor_s *create_decompressor(struct ssh_decompress_s *d
     if (decompressor==NULL) return fallback;
     init_decompressor(decompressor, decompress, size);
     decompressor->queue=queue_decompressor;
-
     if ((* ops->init_decompressor)(decompressor)==0) return decompressor;
-
     free(decompressor);
+
     return NULL;
 
 }
@@ -100,85 +99,45 @@ struct ssh_decompressor_s *get_decompressor(struct ssh_receive_s *receive, unsig
 {
     struct ssh_decompress_s *decompress=&receive->decompress;
     struct ssh_decompressor_s *decompressor=NULL;
-    struct list_element_s list;
-    struct ssh_waiters_s *waiters=&decompress->waiters;
+    struct list_header_s *header=&decompress->header;
 
-    // logoutput("get_decompressor");
-
-    init_list_element(&list, NULL);
-    pthread_mutex_lock(&waiters->mutex);
-    add_list_element_last(&waiters->threads, &list);
-
-    /* wait to become the first */
-
-    while (list_element_is_first(&list)==-1) {
-	int result=0;
-
-	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
-
-	/* already the first ? */
-
-	if (list_element_is_first(&list)==0) {
-
-	    break;
-
-	} else if (result>0) {
-
-	    /* internal error */
-
-	    *error=result;
-	    goto finish;
-
-	}
-
-    }
+    pthread_mutex_lock(&receive->mutex);
 
     /* wait for a decompressor to become available */
 
-    while (waiters->cryptors.count==0 && decompress->count == decompress->max_count && decompress->max_count>0) {
+    while (header->count==0 && decompress->count == decompress->max_count && decompress->max_count>0) {
 	int result=0;
 
-	result=pthread_cond_wait(&waiters->cond, &waiters->mutex);
+	result=pthread_cond_wait(&receive->cond, &receive->mutex);
 
-	if (waiters->cryptors.count>0 || decompress->count < decompress->max_count) {
+	if (header->count>0 || decompress->count < decompress->max_count) {
 
 	    break;
 
-	} else if (result>0) {
+	} else if (result>0 || (receive->status & SSH_RECEIVE_STATUS_DISCONNECT)) {
 
-	    *error=result;
-	    goto finish;
-
-	} else if (receive->flags & (SSH_RECEIVE_FLAG_DISCONNECT | SSH_RECEIVE_FLAG_ERROR)) {
-
-	    *error=EIO;
+	    *error=(result>0) ? result : EIO;
 	    goto finish;
 
 	}
 
     }
 
-    if (waiters->cryptors.count>0) {
-	struct list_element_s *tmp=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
+    if (header->count>0) {
+	struct list_element_s *list=get_list_head(header, SIMPLE_LIST_FLAG_REMOVE);
 
-	decompressor=get_decompressor_container(tmp);
+	decompressor=get_decompressor_container(list);
 
     } else if ((decompress->count < decompress->max_count) || decompress->max_count==0) {
 
 	decompressor=create_decompressor(decompress);
-	decompress->count+=(decompressor) ? 1 : 0;
+	decompress->count++;
 
     }
 
     finish:
 
-    // logoutput("get_decompressor (nr %i count %i)", (decompressor) ? decompressor->nr : -1, decompress->count);
-    // logoutput("get_decompressor: finish (%li.%li - %li.%li)", decompressor->created.tv_sec, decompressor->created.tv_nsec, receive->newkeys.tv_sec, receive->newkeys.tv_nsec);
-
-    remove_list_element(&list);
-    pthread_cond_broadcast(&waiters->cond);
-    pthread_mutex_unlock(&waiters->mutex);
-
+    pthread_mutex_unlock(&receive->mutex);
     return decompressor;
 
 }
@@ -187,17 +146,15 @@ void queue_decompressor(struct ssh_decompressor_s *decompressor)
 {
     struct ssh_decompress_s *decompress=decompressor->decompress;
     struct ssh_receive_s *receive=(struct ssh_receive_s *) (((char *) decompress) - offsetof(struct ssh_receive_s, decompress));
-    struct ssh_waiters_s *waiters=&decompress->waiters;
+    struct list_header_s *header=&decompress->header;
 
     pthread_mutex_lock(&receive->mutex);
 
     if (decompressor->created.tv_sec > receive->newkeys.tv_sec ||
 	(decompressor->created.tv_sec == receive->newkeys.tv_sec && decompressor->created.tv_nsec >= receive->newkeys.tv_nsec)) {
 
-	pthread_mutex_lock(&waiters->mutex);
-	add_list_element_last(&waiters->cryptors, &decompressor->list);
-	pthread_cond_broadcast(&waiters->cond);
-	pthread_mutex_unlock(&waiters->mutex);
+	add_list_element_last(header, &decompressor->list);
+	pthread_cond_broadcast(&receive->cond);
 
     } else {
 
@@ -217,20 +174,13 @@ void queue_decompressor(struct ssh_decompressor_s *decompressor)
 void remove_decompressors(struct ssh_decompress_s *decompress)
 {
     struct list_element_s *list=NULL;
-    struct ssh_waiters_s *waiters=&decompress->waiters;
+    struct list_header_s *header=&decompress->header;
 
-    doremove:
-
-    list=get_list_head(&waiters->cryptors, SIMPLE_LIST_FLAG_REMOVE);
-
-    if (list) {
-	struct ssh_decompressor_s *decompressor=NULL;
-
-	decompressor=get_decompressor_container(list);
+    while ((list=get_list_head(header, SIMPLE_LIST_FLAG_REMOVE))) {
+	struct ssh_decompressor_s *decompressor=get_decompressor_container(list);
 	(* decompressor->clear)(decompressor);
 	free(decompressor);
 	decompress->count--;
-	goto doremove;
 
     }
 

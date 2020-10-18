@@ -17,9 +17,9 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_COMPARE_KEXINIT_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_COMPARE_KEXINIT_H
+#ifndef _SSH_KEYEXCHANGE_COMPARE_KEXINIT_H
+#define _SSH_KEYEXCHANGE_COMPARE_KEXINIT_H
 
-int compare_msg_kexinit(struct ssh_session_s *session);
+int compare_msg_kexinit(struct ssh_connection_s *connection);
 
 #endif

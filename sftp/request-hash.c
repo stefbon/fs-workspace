@@ -102,7 +102,6 @@ struct hash_request_s {
     struct timespec		started;
     struct timespec		timeout;
     struct sftp_request_s	*sftp_r; /* the original call */
-    unsigned char		(* fuse_request_interrupted)(struct hash_request_s *request);
 };
 
 static struct hash_request_s *get_containing_request_h(struct list_element_s *list)
@@ -122,8 +121,6 @@ static struct hash_request_s *lookup_request(struct sftp_send_hash_s *send_hash,
     struct hash_request_s *request=NULL;
     struct list_header_s *table=(struct list_header_s *) send_hash->hashtable;
     struct list_element_s *list=NULL;
-
-    //logoutput("lookup_request");
 
     list=get_list_head(&table[hash], 0);
 
@@ -196,17 +193,6 @@ static void free_request_group(struct sftp_send_hash_s *send_hash)
 
 }
 
-static unsigned char f_request_is_interrupted_default(struct hash_request_s *request)
-{
-    struct fuse_request_s *f_request=request->sftp_r->fuse_request;
-    return (* f_request->is_interrupted)(f_request);
-}
-
-static unsigned char f_request_is_interrupted_nonfuse(struct hash_request_s *request)
-{
-    return 0;
-}
-
 static void free_request_after_timeout(struct timerid_s *id, struct timespec *t)
 {
     struct hash_request_s *r;
@@ -238,7 +224,7 @@ static void free_request_after_timeout(struct timerid_s *id, struct timespec *t)
 
 /* create and store in hashtable and queue the request to be looked up later when a response arrives */
 
-static void *create_sftp_request(struct sftp_send_hash_s *send_hash, struct sftp_request_s *sftp_r, unsigned int *error)
+void *create_sftp_request(struct sftp_send_hash_s *send_hash, struct sftp_request_s *sftp_r, unsigned int *error)
 {
     struct hash_request_s *r=malloc(sizeof(struct hash_request_s));
 
@@ -253,14 +239,12 @@ static void *create_sftp_request(struct sftp_send_hash_s *send_hash, struct sftp
 	r->status=_REQUEST_STATUS_INIT;
 	get_current_time(&r->started);
 	init_list_element(&r->h_list, NULL);
-	r->fuse_request_interrupted=f_request_is_interrupted_default;
 	r->timeout.tv_sec=0;
 	r->timeout.tv_nsec=0;
 
-	pthread_mutex_lock(&send_hash->mutex);
-
 	/* add to the hash table */
 
+	pthread_mutex_lock(&send_hash->mutex);
 	hash=sftp_r->id % send_hash->tablesize;
 	add_list_element_last(&table[hash], &r->h_list);
 	r->status=_REQUEST_STATUS_WAITING;
@@ -288,9 +272,6 @@ void *get_sftp_request(struct sftp_subsystem_s *sftp_subsystem, unsigned int id,
 {
     struct sftp_send_hash_s *send_hash=&sftp_subsystem->send_hash;
     struct hash_request_s *request=NULL;
-    unsigned char found=0;
-
-    // logoutput("get_sftp_request");
 
     pthread_mutex_lock(&send_hash->mutex);
     request=lookup_request(send_hash, id);
@@ -301,7 +282,6 @@ void *get_sftp_request(struct sftp_subsystem_s *sftp_subsystem, unsigned int id,
 
 	    request->status=_REQUEST_STATUS_RESPONSE;
 	    *sftp_r=request->sftp_r;
-	    found=1;
 
 	} else if (request->status==_REQUEST_STATUS_TIMEOUT) {
 
@@ -326,30 +306,24 @@ void *get_sftp_request(struct sftp_subsystem_s *sftp_subsystem, unsigned int id,
 
 }
 
-/*
-    signal the shared central mutex/cond
-    called when a message is received to wake up any waiting request
-*/
+/*	signal the shared central mutex/cond
+	called when a message is received to wake up any waiting request */
 
 int signal_sftp_received_id(struct sftp_subsystem_s *sftp_subsystem, void *r)
 {
-    struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
+    struct ssh_signal_s *signal=sftp_subsystem->channel.queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) r;
     int result=0;
-
-    // logoutput("signal_sftp_received_id");
 
     pthread_mutex_lock(signal->mutex);
 
     if (request->status==_REQUEST_STATUS_RESPONSE) {
 
-	// logoutput("signal_sftp_received_id: response");
 	request->status=_REQUEST_STATUS_FINISH;
 	pthread_cond_broadcast(signal->cond);
 
     } else {
 
-	//logoutput("signal_sftp_received_id: non response");
 	result=-1;
 
     }
@@ -358,110 +332,112 @@ int signal_sftp_received_id(struct sftp_subsystem_s *sftp_subsystem, void *r)
     return result;
 }
 
+static void get_expire_time(struct timespec *expire, struct timespec *timeout)
+{
 
+    get_current_time(expire);
 
-/*
-    wait for a response with a certain id
-    a timeout is used
+    expire->tv_sec+=timeout->tv_sec;
+    expire->tv_nsec+=timeout->tv_nsec;
+
+    if (expire->tv_nsec > 1000000000) {
+
+	expire->tv_nsec -= 1000000000;
+	expire->tv_sec++;
+
+    }
+
+}
+
+/*	wait for a response on a request
+	here are more signal which lead to a finish of the request:
+	- response from the remote sftp server: _REQUEST_STATUS_RESPONSE and _REQUEST_STATUS_FINISH
+	- response from the remote sftp server: request is not supported
+	- ssh channel used for this connection is closed by remote side (reason unknown)
+	- ssh session is closed
+	- request is cancelled by the caller
 */
 
-static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, struct context_interface_s *interface, unsigned int *error)
+unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp, void *ptr, struct timespec *timeout, struct context_interface_s *interface, unsigned int *error)
 {
-    struct ssh_channel_s *channel=&sftp_subsystem->channel;
-    struct ssh_signal_s *signal=channel->payload_queue.signal;
+    struct ssh_channel_s *channel=&sftp->channel;
+    struct ssh_connection_s *connection=channel->connection;
+    struct ssh_signal_s *signal=channel->queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) ptr;
+    struct sftp_request_s *sftp_r=request->sftp_r;
     struct timespec expire;
     int result=0;
     unsigned char success=0;
 
-    // logoutput("wait_sftp_response");
-
-    if (request->sftp_r->fuse_request==NULL) request->fuse_request_interrupted=f_request_is_interrupted_nonfuse;
-
-    get_current_time(&expire);
-
-    expire.tv_sec+=timeout->tv_sec;
-    expire.tv_nsec+=timeout->tv_nsec;
-
-    if (expire.tv_nsec > 1000000000) {
-
-	expire.tv_nsec -= 1000000000;
-	expire.tv_sec++;
-
-    }
-
+    get_expire_time(&expire, timeout);
     request->timeout.tv_sec=timeout->tv_sec;
     request->timeout.tv_nsec=timeout->tv_nsec;
 
     pthread_mutex_lock(signal->mutex);
 
-    while (request->status!=_REQUEST_STATUS_FINISH && (* request->fuse_request_interrupted)(request)==0) {
+    while (request->status!=_REQUEST_STATUS_FINISH && sftp_r->status==SFTP_REQUEST_STATUS_WAITING) {
 
 	result=pthread_cond_timedwait(signal->cond, signal->mutex, &expire);
 
 	if (request->status==_REQUEST_STATUS_FINISH) {
 
-	    free(request);
 	    success=1;
 	    break;
 
-	} else if (request->sftp_r->sequence == signal->sequence_number_error) {
+	} else if (sftp_r->reply.sequence == signal->sequence_number_error) {
 
 	    logoutput("wait_sftp_response: signal sequence error (seq=%i)", signal->sequence_number_error);
 
 	    /* error on sequence number (not supported for example) */
 
-	    free(request);
+	    remove_list_element(&request->h_list);
 	    *error=signal->sequence_number_error;
 	    break;
 
 	} else {
 
-	    if (result==ETIMEDOUT || (* request->fuse_request_interrupted)(request)) {
+	    if (result==ETIMEDOUT || sftp_r->status==SFTP_REQUEST_STATUS_INTERRUPT) {
 
 		/* signal from VFS/fuse-interface side:
-		    - initiating fuse request is interrupted
-		    - fuse interface / mount is disconnecting */
+		    - initiating fuse request is interrupted, this will result in the status of the sftp request to be interrupt
+		    - fuse interface / mount is disconnecting
+		    - also possible that due to some problem the packet has not arrived in time */
 
 		if (request->status==_REQUEST_STATUS_RESPONSE) {
-		    struct fuse_request_s *f_request=request->sftp_r->fuse_request;
+		    struct fuse_request_s *f_request=sftp_r->fuse_request;
 
 		    /* data is already received for this request: let this continue */
 
-		    if (f_request && (f_request->flags & FUSEDATA_FLAG_INTERRUPTED)) f_request->flags -= FUSEDATA_FLAG_INTERRUPTED;
-		    break;
-
-		} else if (request->status==_REQUEST_STATUS_WAITING) {
-		    struct sftp_send_hash_s *send_hash=&sftp_subsystem->send_hash;
-		    struct hash_head_s *table=(struct hash_head_s *) send_hash->hashtable;
-		    unsigned int hash=request->id % send_hash->tablesize;
-
-		    /* timeout or interrupted: remove from hash */
-
-		    logoutput("wait_sftp_response: timeout/interrupted (seq=%i)", request->sftp_r->sequence);
+		    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) f_request->flags-=FUSEDATA_FLAG_INTERRUPTED;
+		    if (sftp_r->status==SFTP_REQUEST_STATUS_INTERRUPT) sftp_r->status=SFTP_REQUEST_STATUS_WAITING;
 		    remove_list_element(&request->h_list);
-		    free(request);
+		    success=1;
+		    break;
 
 		}
 
-		*error=(result==ETIMEDOUT) ? ETIMEDOUT : EINTR;
-		break;
+		/* timeout or interrupted: remove from hash */
 
-	    } else if ((channel->flags & CHANNEL_FLAG_OPEN)==0 || (channel->flags & CHANNEL_FLAG_NODATA)) {
-		struct sftp_send_hash_s *send_hash=&sftp_subsystem->send_hash;
-		struct hash_head_s *table=(struct hash_head_s *) send_hash->hashtable;
-		unsigned int hash=request->id % send_hash->tablesize;
+		logoutput("wait_sftp_response: timeout/interrupted (seq=%i)", sftp_r->reply.sequence);
+		remove_list_element(&request->h_list);
+		free(request);
+		*error=(result==ETIMEDOUT) ? ETIMEDOUT : EINTR;
+		pthread_mutex_unlock(signal->mutex);
+		return 0;
+
+	    } else if ((channel->flags & ( CHANNEL_FLAG_OPEN | CHANNEL_FLAG_NODATA)) || (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT)) {
 
 		/* signal from server/backend side:
 		    channel closed and/or eof: remote (sub)system / process disconnected */
 
-		logoutput("wait_sftp_response: channel closed/eof");
+		logoutput("wait_sftp_response: channel closed/eof or session closed");
 
 		remove_list_element(&request->h_list);
 		(* interface->signal_context)(interface, "disconnect");
 		free(request);
 		*error=ENOTCONN;
-		break;
+		pthread_mutex_unlock(signal->mutex);
+		return 0;
 
 	    }
 
@@ -469,6 +445,7 @@ static unsigned char wait_sftp_response(struct sftp_subsystem_s *sftp_subsystem,
 
     }
 
+    free(request);
     pthread_mutex_unlock(signal->mutex);
     return success;
 
@@ -480,66 +457,42 @@ unsigned char wait_sftp_response_ctx(struct context_interface_s *interface, void
     return wait_sftp_response(sftp_subsystem, r, timeout, interface, error);
 }
 
-static unsigned char wait_sftp_service_complete(struct sftp_subsystem_s *sftp_subsystem, struct timespec *timeout, unsigned int *error)
+unsigned char wait_sftp_service_complete(struct sftp_subsystem_s *sftp_subsystem, struct timespec *timeout, unsigned int *error)
 {
     struct ssh_channel_s *channel=&sftp_subsystem->channel;
-    struct ssh_signal_s *signal=channel->payload_queue.signal;
+    struct ssh_connection_s *connection=channel->connection;
+    struct ssh_signal_s *signal=channel->queue.signal;
     struct timespec expire;
-    int result=0;
-    unsigned char success=0;
 
     logoutput("wait_sftp_service_complete");
 
-    get_current_time(&expire);
-
-    expire.tv_sec+=timeout->tv_sec;
-    expire.tv_nsec+=timeout->tv_nsec;
-
-    if (expire.tv_nsec > 1000000000) {
-
-	expire.tv_nsec -= 1000000000;
-	expire.tv_sec++;
-
-    }
-
+    get_expire_time(&expire, timeout);
     pthread_mutex_lock(signal->mutex);
 
-    while (1) {
+    while ((channel->flags & (CHANNEL_FLAG_OPEN | CHANNEL_FLAG_NODATA))==0) {
 
-	result=pthread_cond_timedwait(signal->cond, signal->mutex, &expire);
+	int result=pthread_cond_timedwait(signal->cond, signal->mutex, &expire);
 
 	if (channel->flags & CHANNEL_FLAG_OPEN) {
 
-	    success=1;
 	    break;
 
-	} else if (channel->flags & (CHANNEL_FLAG_SERVER_CLOSE | CHANNEL_FLAG_SERVER_EOF)) {
+	} else if (channel->flags & CHANNEL_FLAG_NODATA) {
 
 	    *error=ENOTCONN;
 	    break;
 
-	} else {
-	    struct fs_connection_s *connection=&channel->session->connection;
+	} else if (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) {
 
-	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED) {
-
-		*error=(connection->error>0) ? connection->error : ENOTCONN;
-		break;
-
-	    } else if (channel->flags & (CHANNEL_FLAG_SERVER_CLOSE | CHANNEL_FLAG_SERVER_EOF)) {
-
-		*error=ENOTCONN;
-		break;
-
-	    }
+	    *error=ENOTCONN;
+	    break;
 
 	}
-
 
     }
 
     pthread_mutex_unlock(signal->mutex);
-    return success;
+    return ((channel->flags & CHANNEL_FLAG_OPEN) ? 1 : 0);
 
 }
 
@@ -549,25 +502,15 @@ unsigned char wait_sftp_service_complete_ctx(struct context_interface_s *interfa
     return wait_sftp_service_complete(sftp_subsystem, timeout, error);
 }
 
-static unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)
+unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_subsystem, void *ptr, struct timespec *timeout, unsigned int *error)
 {
-    struct ssh_signal_s *signal=sftp_subsystem->channel.payload_queue.signal;
+    struct ssh_signal_s *signal=sftp_subsystem->channel.queue.signal;
     struct hash_request_s *request=(struct hash_request_s *) ptr;
     struct timespec expire;
     int result=0;
     unsigned char success=0;
 
-    get_current_time(&expire);
-
-    expire.tv_sec+=timeout->tv_sec;
-    expire.tv_nsec+=timeout->tv_nsec;
-
-    if (expire.tv_nsec > 1000000000) {
-
-	expire.tv_nsec -= 1000000000;
-	expire.tv_sec++;
-
-    }
+    get_expire_time(&expire, timeout);
 
     pthread_mutex_lock(signal->mutex);
 
@@ -577,29 +520,22 @@ static unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_sub
 
 	if (request->status==_REQUEST_STATUS_FINISH) {
 
-	    free(request);
 	    success=1;
 	    break;
 
-	} else if (request->sftp_r->sequence == signal->sequence_number_error) {
+	} else if (request->sftp_r->reply.sequence == signal->sequence_number_error) {
 
 	    /* error on sequence number (not supported for example) */
 
-	    free(request);
 	    *error=signal->sequence_number_error;
 	    break;
 
 	} else if (result==ETIMEDOUT) {
-	    struct sftp_send_hash_s *send_hash=&sftp_subsystem->send_hash;
-	    struct hash_head_s *table=(struct hash_head_s *) send_hash->hashtable;
-	    unsigned int hash=request->id % send_hash->tablesize;
 
 	    /* no reply: remove from hash */
 
 	    logoutput("wait_sftp_response_simple: timeout");
 	    remove_list_element(&request->h_list);
-
-	    free(request);
 	    *error=ETIMEDOUT;
 	    break;
 
@@ -607,6 +543,7 @@ static unsigned char wait_sftp_response_simple(struct sftp_subsystem_s *sftp_sub
 
     }
 
+    free(request);
     pthread_mutex_unlock(signal->mutex);
     return success;
 

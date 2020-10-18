@@ -124,7 +124,7 @@ static int get_hmac_param(const char *name, unsigned int *maclen)
 
 }
 
-static unsigned int populate_cipher(struct ssh_session_s *session, struct encrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_cipher(struct ssh_connection_s *c, struct encrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (test_cipher_algo("chacha20-poly1305@openssh.com")==0) {
@@ -147,7 +147,7 @@ static unsigned int populate_cipher(struct ssh_session_s *session, struct encryp
 
 }
 
-static unsigned int populate_hmac(struct ssh_session_s *session, struct encrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_hmac(struct ssh_connection_s *connection, struct encrypt_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
     /* no hmac (cipher is hmac and encrypt at the same time) */
     return start;
@@ -219,7 +219,6 @@ static unsigned char get_message_padding_custom(struct ssh_encryptor_s *encrypto
     mod=(len - 4) % encryptor->cipher_blocksize;
     padding = (unsigned char)(encryptor->cipher_blocksize - mod);
     if (padding < 4) padding+=encryptor->cipher_blocksize;
-
     return padding;
 }
 
@@ -445,7 +444,6 @@ static struct encrypt_ops_s special_e_ops = {
     .get_cipher_ivsize		= get_cipher_ivsize,
     .get_hmac_keysize		= get_hmac_keysize,
     .get_encrypt_flag		= get_encrypt_flag,
-    .list			= {NULL, NULL},
 };
 
 void init_encrypt_chacha20_poly1305_openssh_com()

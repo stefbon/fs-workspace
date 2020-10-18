@@ -48,36 +48,21 @@
 #include "ssh-common.h"
 #include "ssh-utils.h"
 
-int store_ssh_session_id(struct ssh_session_s *session, char *id, unsigned int len)
+int store_ssh_session_id(struct ssh_session_s *session, struct ssh_string_s *H)
 {
-
-    session->data.sessionid.ptr=realloc(session->data.sessionid.ptr, len);
-
-    if (session->data.sessionid.ptr) {
-
-	memcpy(session->data.sessionid.ptr, id, len);
-	session->data.sessionid.len=len;
-	return 0;
-
-    }
-
-    session->status.error=ENOMEM;
-    return -1;
-
+    return create_copy_ssh_string(&session->data.sessionid, H);
 }
 
 void init_session_data(struct ssh_session_s *session)
 {
     struct session_data_s *data=&session->data;
 
-    logoutput_info("init_session_data");
-
     memset(data, 0, sizeof(struct session_data_s));
-
+    data->remote_version_major=0;
+    data->remote_version_minor=0;
     init_ssh_string(&data->sessionid);
     init_ssh_string(&data->greeter_server);
     init_ssh_string(&data->greeter_client);
-
 }
 
 void free_session_data(struct ssh_session_s *session)
@@ -87,5 +72,4 @@ void free_session_data(struct ssh_session_s *session)
     free_ssh_string(&data->sessionid);
     free_ssh_string(&data->greeter_server);
     free_ssh_string(&data->greeter_client);
-
 }

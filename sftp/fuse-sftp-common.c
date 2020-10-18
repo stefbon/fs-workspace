@@ -45,16 +45,15 @@
 #include "utils.h"
 
 #include "fuse-fs.h"
-
 #include "workspace-interface.h"
 #include "workspaces.h"
 #include "workspace-context.h"
-
-#include "fuse-fs-common.h"
-
+#include "fuse-interface.h"
 #include "common-protocol.h"
 #include "fuse-sftp-common.h"
 #include "attr-common.h"
+#include "fuse-fs-common.h"
+
 
 extern void correct_time_s2c_ctx(void *ptr, struct timespec *time);
 extern void correct_time_c2s_ctx(void *ptr, struct timespec *time);
@@ -336,7 +335,21 @@ unsigned int get_attr_buffer_size(void *ptr, struct stat *st, unsigned int fuse_
 
 }
 
-void init_sftp_request(struct sftp_request_s *r)
+static void set_sftp_request_status(struct fuse_request_s *f_request)
 {
-    memset(r, 0, sizeof(struct sftp_request_s));
+
+    if (f_request->flags & FUSEDATA_FLAG_INTERRUPTED) {
+	struct sftp_request_s *sftp_r=(struct sftp_request_s *) f_request->ptr;
+
+	if (sftp_r && sftp_r->status==SFTP_REQUEST_STATUS_WAITING) sftp_r->status=SFTP_REQUEST_STATUS_INTERRUPT;
+
+    }
+
+}
+
+void set_sftp_request_fuse(struct sftp_request_s *sftp_r, struct fuse_request_s *f_request)
+{
+    f_request->ptr=(void *) sftp_r;
+    sftp_r->fuse_request=f_request;
+    set_fuse_request_flags_cb(f_request, set_sftp_request_status);
 }

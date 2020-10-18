@@ -17,11 +17,11 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_USERAUTH_PUBKEY_H
-#define FS_WORKSPACE_SSH_USERAUTH_PUBKEY_H
+#ifndef SSH_USERAUTH_PUBKEY_H
+#define SSH_USERAUTH_PUBKEY_H
 
 /* prototypes */
 
-struct pk_identity_s *ssh_auth_pubkey(struct ssh_session_s *session, struct pk_list_s *pkeys, struct ssh_userauth_s *userauth);
+struct pk_identity_s *ssh_auth_pubkey(struct ssh_connection_s *c, struct pk_list_s *pkeys, struct ssh_auth_s *auth);
 
 #endif

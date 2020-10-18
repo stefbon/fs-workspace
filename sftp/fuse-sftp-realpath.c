@@ -71,10 +71,10 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
     struct sftp_request_s sftp_r;
 
     memset(&sftp_r, 0, sizeof(struct sftp_request_s));
-
     sftp_r.id=0;
     sftp_r.call.realpath.path=target;
     sftp_r.call.realpath.len=strlen((const char *)target);
+    sftp_r.status=SFTP_REQUEST_STATUS_WAITING;
 
     if (send_sftp_realpath_ctx(interface->ptr, &sftp_r)==0) {
 	void *request=NULL;
@@ -88,9 +88,10 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 	    get_sftp_request_timeout(&timeout);
 
 	    if (wait_sftp_response_simple_ctx(interface->ptr, request, &timeout, &error)==1) {
+		struct sftp_reply_s *reply=&sftp_r.reply;
 
-		if (sftp_r.type==SSH_FXP_NAME) {
-		    char *pos=sftp_r.response.names.buff;
+		if (reply->type==SSH_FXP_NAME) {
+		    char *pos=reply->response.names.buff;
 		    unsigned int len=0;
 
 		    /*
@@ -107,9 +108,9 @@ char *get_realpath_sftp(struct context_interface_s *interface, unsigned char *ta
 
 		    logoutput("get_realpath_sftp: remote target %s", *path);
 
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
+		} else if (reply->type==SSH_FXP_STATUS) {
 
-		    error=sftp_r.response.status.linux_error;
+		    error=reply->response.status.linux_error;
 		    logoutput("get_realpath_sftp: server reply error %i getting realpath (%s)", error, strerror(error));
 		    *path=NULL;
 

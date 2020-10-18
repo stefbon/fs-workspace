@@ -17,12 +17,12 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_SEND_GREETER_H
-#define FS_WORKSPACE_SSH_SEND_GREETER_H
+#ifndef _SSH_SEND_GREETER_H
+#define _SSH_SEND_GREETER_H
 
 /* prototypes */
 
 unsigned int create_greeter(char *pos);
-int send_greeter(struct ssh_session_s *ssh_session);
+int send_ssh_greeter(struct ssh_connection_s *c);
 
 #endif

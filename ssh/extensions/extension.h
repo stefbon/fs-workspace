@@ -24,6 +24,6 @@
 
 void init_ssh_extensions(struct ssh_session_s *session);
 const char *get_extension_name(unsigned int code);
-void process_msg_ext_info(struct ssh_session_s *session, struct ssh_payload_s *payload);
+void process_msg_ext_info(struct ssh_connection_s *connection, struct ssh_payload_s *payload);
 
 #endif

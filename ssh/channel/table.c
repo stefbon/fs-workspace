@@ -42,14 +42,18 @@
 
 #include "ssh-common-protocol.h"
 #include "ssh-common.h"
+#include "ssh-connections.h"
 #include "ssh-channel.h"
 
 struct ssh_channel_s *lookup_session_channel_for_payload(struct channel_table_s *table, unsigned int nr, struct ssh_payload_s **p_payload)
 {
     unsigned int hashvalue = nr % CHANNELS_TABLE_SIZE;
-    struct ssh_channel_s *channel=table->hash[hashvalue].head;
+    struct list_element_s *list=get_list_head(&table->hash[hashvalue], 0);
+    struct ssh_channel_s *channel=NULL;
 
-    while (channel) {
+    while (list) {
+
+	channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 
 	if (channel->local_channel==nr) {
 
@@ -59,7 +63,8 @@ struct ssh_channel_s *lookup_session_channel_for_payload(struct channel_table_s 
 
 	}
 
-	channel=channel->list.next;
+	list=get_next_element(list);
+	channel=NULL;
 
     }
 
@@ -68,13 +73,13 @@ struct ssh_channel_s *lookup_session_channel_for_payload(struct channel_table_s 
 
 struct ssh_channel_s *lookup_session_channel_for_data(struct channel_table_s *table, unsigned int nr, struct ssh_payload_s **p_payload)
 {
-    unsigned int hashvalue = 0;
+    unsigned int hashvalue = nr % CHANNELS_TABLE_SIZE;
+    struct list_element_s *list=get_list_head(&table->hash[hashvalue], 0);
     struct ssh_channel_s *channel=NULL;
 
-    hashvalue = nr % CHANNELS_TABLE_SIZE;
-    channel=table->hash[hashvalue].head;
+    while (list) {
 
-    while (channel) {
+	channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 
 	if (channel->local_channel==nr) {
 	    struct ssh_payload_s *payload=*p_payload;
@@ -85,7 +90,8 @@ struct ssh_channel_s *lookup_session_channel_for_data(struct channel_table_s *ta
 
 	}
 
-	channel=channel->list.next;
+	list=get_next_element(list);
+	channel=NULL;
 
     }
 
@@ -95,9 +101,12 @@ struct ssh_channel_s *lookup_session_channel_for_data(struct channel_table_s *ta
 struct ssh_channel_s *lookup_session_channel_for_flag(struct channel_table_s *table, unsigned int nr, unsigned int flag)
 {
     unsigned int hashvalue = nr % CHANNELS_TABLE_SIZE;
-    struct ssh_channel_s *channel=table->hash[hashvalue].head;
+    struct list_element_s *list=get_list_head(&table->hash[hashvalue], 0);
+    struct ssh_channel_s *channel=NULL;
 
-    while (channel) {
+    while (list) {
+
+	channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 
 	if (channel->local_channel==nr) {
 
@@ -108,7 +117,8 @@ struct ssh_channel_s *lookup_session_channel_for_flag(struct channel_table_s *ta
 
 	}
 
-	channel=channel->list.next;
+	list=get_next_element(list);
+	channel=NULL;
 
     }
 
@@ -118,12 +128,16 @@ struct ssh_channel_s *lookup_session_channel_for_flag(struct channel_table_s *ta
 struct ssh_channel_s *lookup_session_channel(struct channel_table_s *table, unsigned int nr)
 {
     unsigned int hashvalue = nr % CHANNELS_TABLE_SIZE;
-    struct ssh_channel_s *channel=table->hash[hashvalue].head;
+    struct list_element_s *list=get_list_head(&table->hash[hashvalue], 0);
+    struct ssh_channel_s *channel=NULL;
 
-    while (channel) {
+    while (list) {
 
+	channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 	if (channel->local_channel==nr) break;
-	channel=channel->list.next;
+
+	list=get_next_element(list);
+	channel=NULL;
 
     }
 
@@ -141,8 +155,9 @@ void init_channels_table(struct ssh_session_s *session, unsigned int size)
 
     for (unsigned int i=0; i<size; i++) {
 
-	table->hash[i].head=NULL;
-	table->hash[i].tail=NULL;
+	init_list_header(&table->hash[i], SIMPLE_LIST_TYPE_EMPTY, NULL);
+	// table->hash[i].head=NULL;
+	// table->hash[i].tail=NULL;
     }
 
     init_simple_locking(&table->locking);
@@ -153,31 +168,18 @@ void init_channels_table(struct ssh_session_s *session, unsigned int size)
 void free_channels_table(struct ssh_session_s *session)
 {
     struct channel_table_s *table=&session->channel_table;
-    struct channellist_head_s *channellist_head=NULL;
-    struct ssh_channel_s *channel=NULL;
 
     for (unsigned int i=0; i<CHANNELS_TABLE_SIZE; i++) {
+	struct list_element_s *list=get_list_head(&table->hash[i], SIMPLE_LIST_FLAG_REMOVE);
+	struct ssh_channel_s *channel=NULL;
 
-	channellist_head=&table->hash[i];
-	channel=channellist_head->head;
+	/* remove every element from the individual list headers */
 
-	while (channel) {
+	while (list) {
 
-	    if (channel == channellist_head->tail) {
-
-		channellist_head->head=NULL;
-		channellist_head->tail=NULL;
-
-	    } else {
-		struct ssh_channel_s *next=channel->list.next;
-
-		channellist_head->head=next;
-		next->list.prev=NULL;
-
-	    }
-
+	    channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 	    (* channel->free)(channel);
-	    channel=channellist_head->head;
+	    list=get_list_head(&table->hash[i], SIMPLE_LIST_FLAG_REMOVE);
 
 	}
 
@@ -216,14 +218,14 @@ struct ssh_channel_s *find_channel(struct ssh_session_s *session, unsigned int t
     struct ssh_channel_s *channel=NULL;
 
     for (unsigned int i=0; i<CHANNELS_TABLE_SIZE; i++) {
+	struct list_element_s *list=get_list_head(&table->hash[i], 0);
 
-	channellist_head=&table->hash[i];
-	channel=channellist_head->head;
+	while (list) {
 
-	while (channel) {
-
+	    channel=(struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
 	    if (channel->type==type) break;
-	    channel=channel->list.next;
+	    list=get_next_element(list);
+	    channel=NULL;
 
 	}
 
@@ -237,32 +239,34 @@ struct ssh_channel_s *get_next_channel(struct ssh_session_s *session, struct ssh
 {
     struct channel_table_s *table=&session->channel_table;
     unsigned int hashvalue = 0;
+    struct list_element_s *list=NULL;
 
     if (channel) {
 
-	if (channel->list.next) return channel->list.next;
-	hashvalue = (channel->local_channel % CHANNELS_TABLE_SIZE) + 1;
+	list=get_next_element(&channel->list);
+	if (list) return (struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
+	hashvalue = (channel->local_channel % CHANNELS_TABLE_SIZE) + 1; /* start at next row */
 	if (hashvalue==CHANNELS_TABLE_SIZE) return NULL;
-	channel=NULL;
 
     }
 
     for (unsigned int i=hashvalue; i<CHANNELS_TABLE_SIZE; i++) {
 
-	channel=table->hash[i].head;
-	if (channel) break;
-
+	list=get_list_head(&table->hash[i], 0);
+	if (list) return (struct ssh_channel_s *)(((char *)list) - offsetof(struct ssh_channel_s, list));
     }
 
-    return channel;
+    return NULL;
 
 }
 
 void table_add_channel(struct ssh_channel_s *channel)
 {
     unsigned int hashvalue=0;
-    struct channel_table_s *table=&channel->session->channel_table;
-    struct channellist_head_s *list_head=NULL;
+    struct ssh_session_s *session=channel->session;
+    struct channel_table_s *table=&session->channel_table;
+
+    logoutput("table_add_channel: add channel %i to table", channel->local_channel);
 
     if (channel->flags & CHANNEL_FLAG_TABLE) return;
 
@@ -284,22 +288,7 @@ void table_add_channel(struct ssh_channel_s *channel)
     }
 
     hashvalue = (channel->local_channel % CHANNELS_TABLE_SIZE);
-    list_head=&table->hash[hashvalue];
-
-    if (list_head->head==NULL) {
-
-	list_head->head=channel;
-	list_head->tail=channel;
-
-    } else {
-	struct ssh_channel_s *first=list_head->head;
-
-	channel->list.next=first;
-	first->list.prev=channel;
-	list_head->head=channel;
-
-    }
-
+    add_list_element_first(&table->hash[hashvalue], &channel->list);
     table->count++;
     channel->flags|=CHANNEL_FLAG_TABLE;
 
@@ -309,50 +298,10 @@ void table_remove_channel(struct ssh_channel_s *channel)
 {
     struct ssh_session_s *session=channel->session;
     struct channel_table_s *table=&session->channel_table;
-    unsigned int hashvalue=0;
-    struct channellist_head_s *list_head=NULL;
 
-    if (!(channel->flags & CHANNEL_FLAG_TABLE)) return;
+    if ((channel->flags & CHANNEL_FLAG_TABLE)==0) return;
 
-    hashvalue=channel->local_channel % CHANNELS_TABLE_SIZE;
-    list_head=&table->hash[hashvalue];
-
-    if (list_head->head==channel) {
-
-	if (list_head->tail==channel) {
-
-	    list_head->head=NULL;
-	    list_head->tail=NULL;
-
-	} else {
-	    struct ssh_channel_s *next=channel->list.next;
-
-	    list_head->head=next;
-	    next->list.prev=NULL;
-
-	}
-
-    } else {
-
-	if (list_head->tail==channel) {
-	    struct ssh_channel_s *prev=channel->list.prev;
-
-	    list_head->tail=prev;
-	    prev->list.next=NULL;
-
-	} else {
-	    struct ssh_channel_s *next=channel->list.next;
-	    struct ssh_channel_s *prev=channel->list.prev;
-
-	    prev->list.next=next;
-	    next->list.prev=prev;
-
-	}
-
-    }
-
-    channel->list.next=NULL;
-    channel->list.prev=NULL;
+    remove_list_element(&channel->list);
     table->count--;
     channel->flags-=CHANNEL_FLAG_TABLE;
 
@@ -366,6 +315,8 @@ int add_channel(struct ssh_channel_s *channel, unsigned int flags)
     struct simple_lock_s wlock;
 
     /* protect the handling of adding/removing channels */
+
+    logoutput("add_channel: add channel to table");
 
     channeltable_writelock(table, &wlock);
     table_add_channel(channel);

@@ -17,20 +17,12 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_COMMON_LIST_H
-#define FS_WORKSPACE_SSH_COMMON_LIST_H
+#ifndef _SSH_CONNECTIONS_H
+#define _SSH_CONNECTIONS_H
 
-/* prototypes */
-
-struct ssh_session_s *lookup_ssh_session(uint64_t unique);
-void add_ssh_session_group(struct ssh_session_s *s);
-void remove_ssh_session_group(struct ssh_session_s *s);
-
-void lock_group_ssh_sessions(struct simple_lock_s *l);
-void unlock_group_ssh_sessions(struct simple_lock_s *l);
-
-struct ssh_session_s *get_next_ssh_session(void **index, unsigned int *hashvalue);
-int initialize_group_ssh_sessions(unsigned int *error);
-void free_group_ssh_sessions();
+#include "connections/connect.h"
+#include "connections/init.h"
+#include "connections/setup.h"
+#include "connections/utils.h"
 
 #endif

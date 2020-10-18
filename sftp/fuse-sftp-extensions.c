@@ -46,6 +46,8 @@
 #include "utils.h"
 #include "pathinfo.h"
 
+#include "common-protocol.h"
+#include "common.h"
 #include "fuse-fs.h"
 #include "workspaces.h"
 #include "workspace-context.h"
@@ -56,7 +58,7 @@
 #include "common-protocol.h"
 #include "attr-common.h"
 #include "send-common.h"
-
+#include "extensions.h"
 #include "fuse-sftp-common.h"
 
 #define NAME_MAPEXTENSION_DEFAULT "mapextension@bononline.nl"
@@ -64,13 +66,66 @@
 extern void *create_sftp_request_ctx(void *ptr, struct sftp_request_s *sftp_r, unsigned int *error);
 extern unsigned char wait_sftp_response_ctx(struct context_interface_s *i, void *r, struct timespec *timeout, unsigned int *error);
 extern void get_sftp_request_timeout(struct timespec *timeout);
-extern void *lookup_sftp_extension_ctx(void *ptr, char *name);
-extern int test_extension_supported_ctx(void *ptr, char *mapname);
 
-static unsigned char map_sftp_extension(struct context_interface_s *interface, char *name, unsigned int *error)
+#define SFTP_EXTENSION_NAME_STATVFS			"statvfs@openssh.com"
+#define SFTP_EXTENSION_NAME_FSYNC			"fsync@openssh.com"
+
+static void fuse_sftp_extension_event_cb(struct ssh_string_s *name, struct ssh_string_s *data, void *ptr, unsigned int event)
 {
-    struct sftp_request_s sftp_r;
-    unsigned char mapped=0;
+    switch (event) {
+
+    case SFTP_EXTENSION_EVENT_SUPPORTED:
+
+	logoutput("fuse_sftp_extension_event_cb: %.*s supported by server", name->len, name->ptr);
+
+    case SFTP_EXTENSION_EVENT_DATA:
+
+    case SFTP_EXTENSION_EVENT_MAPPED:
+
+    case SFTP_EXTENSION_EVENT_ERROR:
+
+	break;
+
+    }
+
+}
+
+/*
+    test some extensions are supported and if so, try to map these */
+
+void init_fuse_sftp_extensions(struct context_interface_s *interface)
+{
+    struct ssh_string_s name;
+
+    /* register the statvfs extension */
+
+    init_ssh_string(&name);
+    name.len=strlen(SFTP_EXTENSION_NAME_STATVFS);
+    name.ptr=SFTP_EXTENSION_NAME_STATVFS;
+
+    register_sftp_protocolextension_ctx(interface->ptr, &name, NULL, fuse_sftp_extension_event_cb, NULL);
+
+    /* register the fsync extension */
+
+    init_ssh_string(&name);
+    name.len=strlen(SFTP_EXTENSION_NAME_FSYNC);
+    name.ptr=SFTP_EXTENSION_NAME_FSYNC;
+
+    register_sftp_protocolextension_ctx(interface->ptr, &name, NULL, fuse_sftp_extension_event_cb, NULL);
+
+    /* more ? like */
+
+    /*
+    - posix-rename@openssh.com
+    - fstatvfs@openssh.com (not required by fuse)
+    - hardlink@openssh.com
+    - backup related extensions
+    - opendir@sftp.bononline.nl
+    */
+}
+
+void complete_fuse_sftp_extensions(struct context_interface_s *interface)
+{
     char *mapname=NULL;
     struct context_option_s option;
 
@@ -84,113 +139,5 @@ static unsigned char map_sftp_extension(struct context_interface_s *interface, c
 
     if (mapname==NULL) mapname=NAME_MAPEXTENSION_DEFAULT;
 
-    if (test_extension_supported_ctx(interface->ptr, mapname)==-1) {
-
-	*error=ENOTSUP;
-	return 0;
-
-    }
-
-    init_sftp_request(&sftp_r);
-    *error=EIO;
-
-    sftp_r.id=0;
-
-    sftp_r.call.extension.len=strlen(mapname);
-    sftp_r.call.extension.name=(unsigned char *)mapname;
-    sftp_r.call.extension.size=strlen(name);
-    sftp_r.call.extension.data=(unsigned char *)name;
-    sftp_r.fuse_request=NULL;
-
-    if (send_sftp_extension_ctx(interface->ptr, &sftp_r)==0) {
-	void *request=NULL;
-
-	request=create_sftp_request_ctx(interface->ptr, &sftp_r, error);
-
-	if (request) {
-	    struct timespec timeout;
-
-	    get_sftp_request_timeout(&timeout);
-
-	    if (wait_sftp_response_ctx(interface, request, &timeout, error)==1) {
-
-		if (sftp_r.type==SSH_FXP_EXTENDED_REPLY) {
-
-		    if (sftp_r.response.extension.size>=4) {
-
-			mapped=get_uint32(sftp_r.response.extension.buff);
-			*error=0;
-
-		    }
-
-		} else if (sftp_r.type==SSH_FXP_STATUS) {
-
-		    *error=sftp_r.response.status.linux_error;
-
-		} else {
-
-		    *error=EPROTO;
-
-		}
-
-	    }
-
-	}
-
-    } else {
-
-	*error=sftp_r.error;
-
-    }
-
-    return mapped;
-
-}
-
-/*
-    test some extensions are supported and if so, try to map these */
-
-void init_fuse_sftp_extensions(struct context_interface_s *interface)
-{
-
-    if (lookup_sftp_extension_ctx(interface->ptr, "statvfs@openssh.com")) {
-	unsigned int error=0;
-
-	interface->backend.sftp.flags |= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_STATFS_OPENSSH;
-
-	unsigned char mapped=map_sftp_extension(interface, "statvfs@openssh.com", &error);
-
-	if (mapped>0) {
-
-	    logoutput("init_sftp_extensions: extension statvfs@openssh.com found and mapped to %i", mapped);
-	    interface->backend.sftp.mapped_statfs=mapped;
-
-	} else {
-
-	    logoutput("init_sftp_extensions: extension statvfs@openssh.com found");
-
-	}
-
-    }
-
-    if (lookup_sftp_extension_ctx(interface->ptr, "fsync@openssh.com")) {
-	unsigned int error=0;
-
-	interface->backend.sftp.flags |= CONTEXT_INTERFACE_BACKEND_SFTP_FLAG_FSYNC_OPENSSH;
-
-	unsigned char mapped=map_sftp_extension(interface, "fsync@openssh.com", &error);
-
-	if (mapped>0) {
-
-	    logoutput("init_sftp_extensions: extension fsync@openssh.com found and mapped to %i", mapped);
-	    interface->backend.sftp.mapped_fsync=mapped;
-
-	} else {
-
-	    logoutput("init_sftp_extensions: extension fsync@openssh.com found");
-
-	}
-
-    }
-
+    complete_sftp_protocolextensions_ctx(interface->ptr, mapname);
 }

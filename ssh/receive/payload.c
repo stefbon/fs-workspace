@@ -47,7 +47,7 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-utils.h"
 
@@ -58,19 +58,24 @@
 
 */
 
-struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payload_queue_s *queue, struct timespec *expire, unsigned int *sequence, unsigned int *error)
+struct ssh_payload_s *get_ssh_payload(struct ssh_connection_s *connection, struct payload_queue_s *queue, struct timespec *expire, unsigned int *sequence, unsigned int *error)
 {
     struct ssh_payload_s *payload=NULL;
     struct ssh_signal_s *signal=queue->signal;
+    struct list_element_s *list=NULL;
 
     pthread_mutex_lock(signal->mutex);
 
-    while (queue->list.head==NULL) {
+    while ((list=get_list_head(&queue->header, SIMPLE_LIST_FLAG_REMOVE))==NULL && (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT)==0) {
 
 	int result=pthread_cond_timedwait(signal->cond, signal->mutex, expire);
 
-	if (result==ETIMEDOUT) {
-	    struct fs_connection_s *connection=&session->connection;
+	if ((list=get_list_head(&queue->header, SIMPLE_LIST_FLAG_REMOVE))) {
+
+	    break;
+
+	} else if (result==ETIMEDOUT) {
+	    struct fs_connection_s *conn=&connection->connection;
 
 	    pthread_mutex_unlock(signal->mutex);
 	    *error=ETIMEDOUT;
@@ -78,54 +83,31 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 	    /* is there a better error causing this timeout?
 		the timeout is possibly caused by connection problems */
 
-	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED)
-		*error=(connection->error>0) ? connection->error : ENOTCONN;
-
+	    if (conn->status & FS_CONNECTION_FLAG_DISCONNECT) *error=(conn->error>0) ? conn->error : ENOTCONN;
 	    return NULL;
 
 	} else if (signal->error>0 && sequence && *sequence==signal->sequence_number_error) {
 
 	    pthread_mutex_unlock(signal->mutex);
 	    *error=signal->error;
-
 	    signal->sequence_number_error=0;
 	    signal->error=0;
 
 	    return NULL;
 
-	} else {
-	    struct fs_connection_s *connection=&session->connection;
+	} else if (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) {
 
-	    /* it's possible that a broadcast is send cause of connection problems */
-
-	    if (connection->status & FS_CONNECTION_FLAG_DISCONNECTED) {
-
-		*error=(connection->error>0) ? connection->error : ENOTCONN;
-		pthread_mutex_unlock(signal->mutex);
-		return NULL;
-
-	    }
+	    *error=ENOTCONN;
+	    pthread_mutex_unlock(signal->mutex);
+	    return NULL;
 
 	}
 
     }
 
     *error=0;
-    payload=queue->list.head;
-
-    if (payload->next) {
-
-	queue->list.head=payload->next;
-	payload->next=NULL;
-	(* queue->process_payload_queue)(queue);
-
-    } else {
-
-	queue->list.head=NULL;
-	queue->list.tail=NULL;
-
-    }
-
+    payload=(list) ?(struct ssh_payload_s *)(((char *) list) - offsetof(struct ssh_payload_s, list)) : NULL;
+    pthread_cond_broadcast(signal->cond);
     pthread_mutex_unlock(signal->mutex);
     return payload;
 
@@ -152,47 +134,95 @@ struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payl
 
     */
 
+void queue_ssh_payload_locked(struct payload_queue_s *queue, struct ssh_payload_s *payload)
+{
+    struct ssh_signal_s *signal=queue->signal;
+
+    add_list_element_last(&queue->header, &payload->list);
+    pthread_cond_broadcast(queue->signal->cond);
+
+}
+
 void queue_ssh_payload(struct payload_queue_s *queue, struct ssh_payload_s *payload)
 {
-    struct ssh_signal_s *signal=NULL;
-
-    signal=queue->signal;
+    struct ssh_signal_s *signal=queue->signal;
 
     pthread_mutex_lock(signal->mutex);
-
-    if (queue->list.tail) {
-
-	/* put after last */
-
-	queue->list.tail->next=payload;
-	queue->list.tail=payload;
-
-    } else {
-
-	queue->list.head=payload;
-	queue->list.tail=payload;
-
-	(* queue->process_payload_queue)(queue);
-
-    }
-
+    queue_ssh_payload_locked(queue, payload);
     pthread_mutex_unlock(signal->mutex);
 
 }
 
-void process_payload_queue_default(struct payload_queue_s *queue)
+void init_payload_queue(struct ssh_connection_s *connection, struct payload_queue_s *queue)
 {
-    pthread_cond_broadcast(queue->signal->cond);
+    init_list_header(&queue->header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+    queue->signal=&connection->receive.signal;
+    queue->ptr=NULL;
 }
 
-void init_payload_queue(struct ssh_session_s *session, struct payload_queue_s *queue)
+void clear_payload_queue(struct payload_queue_s *queue, unsigned char dolog)
 {
+    struct list_element_s *list=NULL;
+    struct ssh_signal_s *signal=NULL;
+    struct payload_queue_s tmp;
 
-    queue->session=session;
-    queue->list.head=NULL;
-    queue->list.tail=NULL;
-    queue->signal=&session->receive.signal;
-    queue->process_payload_queue=process_payload_queue_default;
-    queue->ptr=NULL;
+    logoutput("clear_payload_queue");
+
+    if (queue==NULL) return;
+    signal=queue->signal;
+
+    /* copy the list to another place to empty it, so the original can be released asap */
+
+    pthread_mutex_lock(signal->mutex);
+
+    memcpy(&tmp, queue, sizeof(struct payload_queue_s));
+    init_list_header(&queue->header, SIMPLE_LIST_TYPE_EMPTY, NULL);
+
+    pthread_mutex_unlock(signal->mutex);
+
+    getpayload:
+
+    list=get_list_head(&tmp.header, SIMPLE_LIST_FLAG_REMOVE);
+
+    if (list) {
+	struct ssh_payload_s *payload=(struct ssh_payload_s *)(((char *) list) - offsetof(struct ssh_payload_s, list));
+
+	if (dolog) logoutput("clear_payload_queue: found payload type %i size %i", payload->type, payload->len);
+	free_payload(&payload);
+	goto getpayload;
+
+    }
+
+}
+
+struct ssh_payload_s *receive_message_common(struct ssh_connection_s *connection, int (* cb)(struct ssh_connection_s *connection, struct ssh_payload_s *payload), unsigned int *error)
+{
+    struct ssh_payload_s *payload=NULL;
+    struct timespec expire;
+    unsigned int sequence=0;
+
+    get_ssh_connection_expire_init(connection, &expire);
+
+    getkexinit:
+
+    payload=get_ssh_payload(connection, &connection->setup.queue, &expire, &sequence, error);
+
+    if (! payload) {
+
+	logoutput("receive_message_common: error %i waiting for packet (%s)", *error, strerror(*error));
+
+    } else if ((* cb)(connection, payload)==0) {
+
+	logoutput("receive_message_common: received %i message", payload->type);
+
+    } else {
+
+	logoutput("receive_message_common: received unexpected message (type %i)", payload->type);
+	free_payload(&payload);
+	goto getkexinit;
+
+    }
+
+    return payload;
 
 }

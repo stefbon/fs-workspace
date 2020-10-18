@@ -22,12 +22,12 @@
 
 /* prototypes */
 
-int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_block_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
+int send_sftp_symlink_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_block_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_unblock_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_realpath_v06(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
 
-void use_sftp_send_v06(struct sftp_subsystem_s *sftp_subsystem);
+void use_sftp_send_v06(struct sftp_subsystem_s *sftp);
 
 #endif
 

@@ -135,18 +135,17 @@ void receive_sftp_status_v05(struct sftp_subsystem_s *sftp_subsystem, struct sft
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
-    unsigned int pos=0;
-    void *req=NULL;
-
-    req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
+    void *req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
 	char *buffer=sftp_header->buffer;
 	unsigned int len=0;
+	unsigned int pos=0;
+	struct sftp_reply_s *reply=&sftp_r->reply;
 
-	sftp_r->type=sftp_header->type;
-	sftp_r->response.status.code=get_uint32(&buffer[pos]);
-	sftp_r->response.status.linux_error=map_sftp_error(sftp_r->response.status.code);
+	reply->type=sftp_header->type;
+	reply->response.status.code=get_uint32(&buffer[pos]);
+	reply->response.status.linux_error=map_sftp_error(reply->response.status.code);
 
 	pos+=4;
 	len=get_uint32(&buffer[pos]);
@@ -159,11 +158,11 @@ void receive_sftp_status_v05(struct sftp_subsystem_s *sftp_subsystem, struct sft
 	    errormessage[len]='\0';
 	    pos+=len;
 
-	    logoutput("receive_sftp_status_v05: error %i:%s", sftp_r->response.status.code, errormessage);
+	    logoutput("receive_sftp_status_v05: error %i:%s", reply->response.status.code, errormessage);
 
 	} else {
 
-	    logoutput("receive_sftp_status_v05: error %i", sftp_r->response.status.code);
+	    logoutput("receive_sftp_status_v05: error %i", reply->response.status.code);
 
 	}
 
@@ -176,12 +175,12 @@ void receive_sftp_status_v05(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
 	if (pos<sftp_header->len) {
 
-	    sftp_r->response.status.buff=malloc(sftp_header->len - pos);
+	    reply->response.status.buff=malloc(sftp_header->len - pos);
 
-	    if (sftp_r->response.status.buff) {
+	    if (reply->response.status.buff) {
 
-		memcpy(sftp_r->response.status.buff, &buffer[pos], sftp_header->len - pos);
-		sftp_r->response.status.size=sftp_header->len - pos;
+		memcpy(reply->response.status.buff, &buffer[pos], sftp_header->len - pos);
+		reply->response.status.size=sftp_header->len - pos;
 
 	    }
 
@@ -191,7 +190,7 @@ void receive_sftp_status_v05(struct sftp_subsystem_s *sftp_subsystem, struct sft
 
     } else {
 
-	logoutput("receive_sftp_status: error %i storing status (%s)", error, strerror(error));
+	logoutput("receive_sftp_status_v05: error %i storing status (%s)", error, strerror(error));
 
     }
 
@@ -201,29 +200,26 @@ void receive_sftp_data_v05(struct sftp_subsystem_s *sftp_subsystem, struct sftp_
 {
     unsigned int error=0;
     struct sftp_request_s *sftp_r=NULL;
-    unsigned int pos=0;
-    void *req=NULL;
-
-    req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
+    void *req=get_sftp_request(sftp_subsystem, sftp_header->id, &sftp_r, &error);
 
     if (req) {
 	char *buffer=sftp_header->buffer;
+        unsigned int pos=0;
+	struct sftp_reply_s *reply=&sftp_r->reply;
 
-	sftp_r->type=sftp_header->type;
-	sftp_r->response.data.size=get_uint32(&buffer[pos]);
+	reply->type=sftp_header->type;
+	reply->response.data.size=get_uint32(&buffer[pos]);
 	pos+=4;
+	memmove(buffer, &buffer[pos], reply->response.data.size);
+	buffer=realloc(buffer, reply->response.data.size);
 
-	memmove(buffer, &buffer[pos], sftp_r->response.data.size);
-	buffer=realloc(buffer, sftp_r->response.data.size);
-
-	/* let the processing of this into names, attr to the receiving (FUSE) thread */
-	sftp_r->response.data.data=buffer;
-	sftp_r->response.data.eof=-1;
-
-	logoutput_debug("receive_sftp_data_v05: received %i bytes len %i", sftp_r->response.data.size, sftp_header->len);
-
+	/* let the processing of this into names, attr to the receiving thread */
+	reply->response.data.data=(unsigned char *)buffer;
+	reply->response.data.eof=-1;
 	sftp_header->buffer=NULL;
 	signal_sftp_received_id(sftp_subsystem, req);
+
+	logoutput_debug("receive_sftp_data_v05: received %i bytes len %i", reply->response.data.size, sftp_header->len);
 
     } else {
 

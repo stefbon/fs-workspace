@@ -46,7 +46,7 @@
 
 #include "ssh-common.h"
 #include "ssh-common-protocol.h"
-
+#include "ssh-connections.h"
 #include "ssh-receive.h"
 #include "ssh-send.h"
 #include "ssh-hostinfo.h"
@@ -79,19 +79,19 @@ static unsigned int get_required_auth_methods(char *namelist, unsigned int len)
 
     if (strcmp(pos, "publickey")==0) {
 
-	methods|=SSH_USERAUTH_METHOD_PUBLICKEY;
+	methods|=SSH_AUTH_METHOD_PUBLICKEY;
 
     } else if (strcmp(pos, "password")==0) {
 
-	methods|=SSH_USERAUTH_METHOD_PASSWORD;
+	methods|=SSH_AUTH_METHOD_PASSWORD;
 
     } else if (strcmp(pos, "hostbased")==0) {
 
-	methods|=SSH_USERAUTH_METHOD_HOSTBASED;
+	methods|=SSH_AUTH_METHOD_HOSTBASED;
 
     } else {
 
-	methods|=SSH_USERAUTH_METHOD_UNKNOWN;
+	methods|=SSH_AUTH_METHOD_UNKNOWN;
 
     }
 
@@ -116,10 +116,10 @@ static unsigned int get_required_auth_methods(char *namelist, unsigned int len)
     - boolean			partial success
 
     NOTE:
-    if partial success is false then the userauth method offered has failed
+    if partial success is false then the auth method offered has failed
 */
 
-int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s *payload, struct ssh_userauth_s *userauth)
+int handle_auth_failure(struct ssh_payload_s *payload, struct ssh_auth_s *auth)
 {
     unsigned int result=-1;
 
@@ -127,19 +127,17 @@ int handle_userauth_failure(struct ssh_session_s *session, struct ssh_payload_s 
 	unsigned int len=get_uint32(&payload->buffer[1]);
 
 	if (len>0 && payload->len==6+len) {
-	    unsigned char partial_success=(unsigned char) payload->buffer[5+len];
+	    unsigned char partial=(unsigned char) payload->buffer[5+len];
 
-	    userauth->required_methods=get_required_auth_methods(&payload->buffer[5], len);
-	    result=(partial_success>0) ? 0 : -1;
+	    auth->required=get_required_auth_methods(&payload->buffer[5], len);
+	    result=(partial>0) ? 0 : -1;
 
 	}
 
     }
 
-    logoutput("handle_userauth_failure: result %i", result);
-
+    logoutput("handle_auth_failure: result %i", result);
     return result;
-
 }
 
 void init_pwlist(struct pw_list_s *pwlist)
@@ -233,9 +231,9 @@ int read_credentials(char *path, struct pword_s *pword)
 
 }
 
-unsigned int read_private_pwlist(struct ssh_session_s *session, struct pw_list_s **pwlist)
+unsigned int read_private_pwlist(struct ssh_connection_s *connection, struct pw_list_s **pwlist)
 {
-    struct fs_connection_s *connection=&session->connection;
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
     struct pw_list_s *list=*pwlist;
     unsigned int len = strlen(session->identity.pwd.pw_dir) + 2;
     char *hostname=NULL;
@@ -295,8 +293,8 @@ unsigned int read_private_pwlist(struct ssh_session_s *session, struct pw_list_s
 
     credhostname:
 
-    fd=connection->io.socket.xdata.fd;
-    if (fd>0) hostname=get_connection_hostname(connection, fd, 1, &error);
+    fd=connection->connection.io.socket.xdata.fd;
+    if (fd>0) hostname=get_connection_hostname(&connection->connection, fd, 1, &error);
 
     if (hostname) {
 	char *sep=NULL;
@@ -383,8 +381,8 @@ unsigned int read_private_pwlist(struct ssh_session_s *session, struct pw_list_s
 
     credipv4:
 
-    fd=connection->io.socket.xdata.fd;
-    if (fd>0) ipv4=get_connection_ipv4(connection, fd, 1, &error);
+    fd=connection->connection.io.socket.xdata.fd;
+    if (fd>0) ipv4=get_connection_ipv4(&connection->connection, fd, 1, &error);
 
     if (ipv4) {
 
@@ -433,4 +431,10 @@ struct pw_list_s *get_next_pwlist(struct pw_list_s *pwlist, struct pw_list_s *el
 {
     if (element==NULL) return pwlist;
     return element->next;
+}
+
+int handle_auth_reply(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
+{
+    if (payload->type == SSH_MSG_USERAUTH_SUCCESS || payload->type == SSH_MSG_USERAUTH_FAILURE) return 0;
+    return -1;
 }

@@ -53,8 +53,10 @@
 #define SSH_FXP_EXTENDED 			200
 #define SSH_FXP_EXTENDED_REPLY 			201
 
-#define SSH_FXP_EXTENDED_MAPPED			210
-#define SSH_FXP_EXTENDED_MAX			255
+#define SSH_FXP_MAPPING_MIN			210
+#define SSH_FXP_MAPPING_MAX			255
+
+#define SFTP_HANDLE_MAXSIZE			255
 
 #define FUSE_SFTP_INDEX_TYPE			0
 #define FUSE_SFTP_ATTR_TYPE			1 << FUSE_SFTP_INDEX_TYPE
@@ -72,6 +74,10 @@
 #define FUSE_SFTP_ATTR_USER			1 << FUSE_SFTP_INDEX_USER
 #define FUSE_SFTP_INDEX_GROUP			7
 #define FUSE_SFTP_ATTR_GROUP			1 << FUSE_SFTP_INDEX_GROUP
+
+#define SFTP_REQUEST_STATUS_WAITING		1
+#define SFTP_REQUEST_STATUS_RESPONSE		2
+#define SFTP_REQUEST_STATUS_INTERRUPT		3
 
 struct network_user_s {
     uid_t			uid;
@@ -199,6 +205,13 @@ union sftp_response_u {
     struct extension_response_s extension;
 };
 
+struct sftp_reply_s {
+    unsigned char		type;
+    uint32_t			sequence;
+    union sftp_response_u	response;
+    unsigned int		error;
+};
+
 /*
     request to SFTP
 */
@@ -313,7 +326,14 @@ struct sftp_extension_s {
     unsigned char		*data;
 };
 
+struct sftp_custom_s {
+    unsigned char		nr;
+    unsigned int		size;
+    unsigned char		*data;
+};
+
 struct sftp_request_s {
+    unsigned int			status;
     unsigned int			id;
     union {
 	struct sftp_path_s		stat;
@@ -341,12 +361,10 @@ struct sftp_request_s {
 	struct sftp_handle_s		fstatvfs;
 	struct sftp_path_s		realpath;
 	struct sftp_extension_s 	extension;
+	struct sftp_custom_s		custom;
     } call;
-    unsigned char		type;
-    union sftp_response_u 	response;
-    unsigned int		sequence;
+    struct sftp_reply_s		reply;
     struct fuse_request_s	*fuse_request;
-    unsigned int		error;
 };
 
 #endif

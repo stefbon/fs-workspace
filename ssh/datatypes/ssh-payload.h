@@ -20,6 +20,8 @@
 #ifndef FS_WORKSPACE_SSH_DATATYPES_PAYLOAD_H
 #define FS_WORKSPACE_SSH_DATATYPES_PAYLOAD_H
 
+#include "common-utils/simple-list.h"
+
 #define SSH_PAYLOAD_FLAG_ALLOCATED	1
 
 struct ssh_payload_s {
@@ -27,17 +29,11 @@ struct ssh_payload_s {
     unsigned char			type;
     unsigned int			sequence;
     unsigned int			len;
-    struct ssh_payload_s		*next;
-    struct ssh_payload_s		*prev;
+    struct list_element_s		list;
     struct ssh_payload_s		*(* realloc)(struct ssh_payload_s *p, unsigned int size);
     void				(* free)(struct ssh_payload_s **p);
     char				*(* isolate_buffer)(struct ssh_payload_s **p, unsigned int pos, unsigned int size);
     char				buffer[];
-};
-
-struct payload_list_s {
-    struct ssh_payload_s		*head;
-    struct ssh_payload_s		*tail;
 };
 
 /* prototypes */

@@ -17,13 +17,14 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_RECEIVE_PAYLOAD_H
-#define FS_WORKSPACE_SSH_RECEIVE_PAYLOAD_H
+#ifndef _SSH_RECEIVE_PAYLOAD_H
+#define _SSH_RECEIVE_PAYLOAD_H
 
-struct ssh_payload_s *get_ssh_payload(struct ssh_session_s *session, struct payload_queue_s *queue, struct timespec *expire, unsigned int *sequence, unsigned int *error);
+struct ssh_payload_s *get_ssh_payload(struct ssh_connection_s *c, struct payload_queue_s *queue, struct timespec *expire, unsigned int *sequence, unsigned int *error);
+void queue_ssh_payload_locked(struct payload_queue_s *queue, struct ssh_payload_s *payload);
 void queue_ssh_payload(struct payload_queue_s *queue, struct ssh_payload_s *payload);
-
-void process_payload_queue_default(struct payload_queue_s *queue);
-void init_payload_queue(struct ssh_session_s *session, struct payload_queue_s *queue);
+void init_payload_queue(struct ssh_connection_s *c, struct payload_queue_s *queue);
+void clear_payload_queue(struct payload_queue_s *queue, unsigned char dolog);
+struct ssh_payload_s *receive_message_common(struct ssh_connection_s *connection, int (* cb)(struct ssh_connection_s *connection, struct ssh_payload_s *payload), unsigned int *error);
 
 #endif

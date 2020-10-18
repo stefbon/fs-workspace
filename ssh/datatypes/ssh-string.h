@@ -32,7 +32,9 @@ struct ssh_string_s {
 
 void init_ssh_string(struct ssh_string_s *s);
 void free_ssh_string(struct ssh_string_s *s);
-unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len);
+unsigned int create_ssh_string(struct ssh_string_s *s, unsigned int len, char *data);
+int compare_ssh_string(struct ssh_string_s *t, const unsigned char type, void *ptr);
+int create_copy_ssh_string(struct ssh_string_s *t, struct ssh_string_s *s);
 unsigned int get_ssh_string_length(struct ssh_string_s *s, unsigned int flags);
 
 unsigned int read_ssh_string_header(char *buffer, unsigned int size, unsigned int *len);

@@ -44,6 +44,7 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
+#include "ssh-connections.h"
 
 unsigned int create_greeter(char *pos)
 {
@@ -77,15 +78,15 @@ unsigned int create_greeter(char *pos)
 }
 
 
-int send_greeter(struct ssh_session_s *session)
+int send_ssh_greeter(struct ssh_connection_s *connection)
 {
-    struct socket_ops_s *sops=session->connection.io.socket.sops;
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
+    struct socket_ops_s *sops=connection->connection.io.socket.sops;
     unsigned int len=create_greeter(NULL);
     char line[len+2];
     int fd=-1;
 
     len=create_greeter(&line[0]);
-
     line[len]=0;
 
     logoutput("send_greeter: sending %s", line);
@@ -93,18 +94,16 @@ int send_greeter(struct ssh_session_s *session)
     line[len]=(unsigned char) 13;
     line[len+1]=(unsigned char) 10;
 
-    if ((* sops->send)(&session->connection.io.socket, line, len+2, 0)==-1) {
+    if ((* sops->send)(&connection->connection.io.socket, line, len+2, 0)==-1) {
 
-	session->status.error=errno;
 	logoutput("send_greeter: error %i:%s", errno, strerror(errno));
 	return -1;
 
     }
 
-    if (create_ssh_string(&session->data.greeter_client, len)==len) {
+    if (create_ssh_string(&session->data.greeter_client, len, line)==len) {
 
-	memcpy(session->data.greeter_client.ptr, line, len);
-	session->data.greeter_client.len=len;
+	change_ssh_connection_setup(connection, "transport", SSH_TRANSPORT_TYPE_GREETER, SSH_GREETER_FLAG_C2S, 0, NULL, NULL);
 
     } else {
 

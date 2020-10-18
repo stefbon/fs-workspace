@@ -42,6 +42,7 @@
 
 #include "ssh-common.h"
 #include "ssh-utils.h"
+#include "ssh-connections.h"
 
 #include "options.h"
 
@@ -58,10 +59,8 @@ static struct ssh_extension_s available_extensions[] = {
 void init_ssh_extensions(struct ssh_session_s *session)
 {
     struct ssh_extensions_s *extensions=&session->extensions;
-
     extensions->supported=0;
     extensions->received=0;
-
 }
 
 const char *get_extension_name(unsigned int code)
@@ -254,8 +253,9 @@ void process_elevation(struct ssh_session_s *session, struct ssh_string_s *data)
 
 }
 
-void process_msg_ext_info(struct ssh_session_s *session, struct ssh_payload_s *payload)
+void process_msg_ext_info(struct ssh_connection_s *connection, struct ssh_payload_s *payload)
 {
+    struct ssh_session_s *session=get_ssh_connection_session(connection);
     struct ssh_extensions_s *extensions=&session->extensions;
     unsigned int count=0;
     struct msg_buffer_s mb = INIT_SSH_MSG_BUFFER;

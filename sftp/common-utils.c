@@ -61,10 +61,10 @@ int get_session_status_ctx(struct context_interface_s *interface)
     struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
 
     if (sftp_subsystem) {
-	struct ssh_session_s *session=sftp_subsystem->channel.session;
-	struct ssh_status_s *status=&session->status;
+	struct ssh_channel_s *channel=&sftp_subsystem->channel;
+	struct ssh_connection_s *connection=channel->connection;
 
-	return (status->sessionphase.phase==SESSION_PHASE_DISCONNECT || (status->sessionphase.status & SESSION_STATUS_DISCONNECTING)) ? -1 : 0;
+	return (connection->setup.flags & SSH_SETUP_FLAG_DISCONNECT) ? -1 : 0;
 
     }
 
@@ -130,7 +130,8 @@ int check_realpath_sftp(struct context_interface_s *interface, char *path, char 
     if (get_realpath_sftp(interface, (unsigned char *)path, (unsigned char **)remote_target)) {
 	struct sftp_subsystem_s *sftp_subsystem=(struct sftp_subsystem_s *) interface->ptr;
 	char *result=*remote_target;
-	struct ssh_session_s *session=sftp_subsystem->channel.session;
+	struct ssh_channel_s *channel=&sftp_subsystem->channel;
+	struct ssh_session_s *session=channel->session;
 	struct ssh_hostinfo_s *hostinfo=&session->hostinfo;
 
 	logoutput("check_realpath_sftp: path %s remote target %s", path, result);
@@ -196,4 +197,64 @@ unsigned int get_sftp_remote_home(void *ptr, struct ssh_string_s *home)
     }
 
     return sftp->remote_home.len;
+}
+
+void init_sftp_request(struct sftp_request_s *r)
+{
+    memset(r, 0, sizeof(struct sftp_request_s));
+}
+
+void clear_sftp_reply(struct sftp_reply_s *r)
+{
+
+    switch (r->type) {
+
+	case SSH_FXP_HANDLE:
+
+	    if (r->response.handle.name) {
+
+		free(r->response.handle.name);
+		r->response.handle.name=NULL;
+
+	    }
+
+	    break;
+
+	case SSH_FXP_DATA:
+
+	    if (r->response.data.data) {
+
+		free(r->response.data.data);
+		r->response.data.data=NULL;
+
+	    }
+
+	    break;
+
+	case SSH_FXP_NAME:
+
+	    if (r->response.names.buff) {
+
+		free(r->response.names.buff);
+		r->response.names.buff=NULL;
+
+	    }
+
+	    break;
+
+	case SSH_FXP_ATTRS:
+
+	    if (r->response.attr.buff) {
+
+		free(r->response.attr.buff);
+		r->response.attr.buff=NULL;
+
+	    }
+
+	    break;
+
+    }
+
+    memset(&r->response, '\0', sizeof(union sftp_response_u));
+
 }

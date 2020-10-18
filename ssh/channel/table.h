@@ -17,8 +17,8 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_CHANNEL_TABLE_H
-#define FS_WORKSPACE_SSH_CHANNEL_TABLE_H
+#ifndef _SSH_CHANNEL_TABLE_H
+#define _SSH_CHANNEL_TABLE_H
 
 /* prototypes */
 

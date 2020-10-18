@@ -22,35 +22,36 @@
 
 /* prototypes */
 
-int send_sftp_init_v03(struct sftp_subsystem_s *sftp_subsystem, unsigned int *seq);
-int send_sftp_open_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_create_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_opendir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_read_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_write_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_readdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_close_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_remove_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_rename_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_mkdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_rmdir_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_stat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_lstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_fstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_setstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_fsetstat_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_readlink_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_symlink_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_block_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_unblock_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_realpath_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_extension_v03(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
+int send_sftp_init_v03(struct sftp_subsystem_s *sftp, unsigned int *seq);
+int send_sftp_open_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_create_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_opendir_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_read_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_write_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_readdir_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_close_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_remove_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_rename_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_mkdir_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_rmdir_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_stat_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_lstat_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_fstat_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_setstat_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_fsetstat_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_readlink_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_symlink_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_block_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_unblock_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_realpath_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_extension_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_custom_v03(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
 
-int send_sftp_statvfs(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_fstatvfs(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
-int send_sftp_fsync(struct sftp_subsystem_s *sftp_subsystem, struct sftp_request_s *sftp_r);
+int send_sftp_statvfs(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_fstatvfs(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
+int send_sftp_fsync(struct sftp_subsystem_s *sftp, struct sftp_request_s *sftp_r);
 
-void use_sftp_send_v03(struct sftp_subsystem_s *sftp_subsystem);
+void use_sftp_send_v03(struct sftp_subsystem_s *sftp);
 
 #endif
 

@@ -17,10 +17,10 @@
 
 */
 
-#ifndef FS_WORKSPACE_SSH_KEYEXCHANGE_CREATEKEYS_H
-#define FS_WORKSPACE_SSH_KEYEXCHANGE_CREATEKEYS_H
+#ifndef _SSH_KEYEXCHANGE_CREATEKEYS_H
+#define _SSH_KEYEXCHANGE_CREATEKEYS_H
 
-int create_H(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_key_s *pkey, struct ssh_string_s *H);
-int create_keyx_hashes(struct ssh_session_s *session, struct ssh_keyx_s *keyx, struct ssh_string_s *H, unsigned int *error);
+int create_H(struct ssh_connection_s *c, struct ssh_keyex_s *k, struct ssh_key_s *pkey, struct ssh_hash_s *H);
+int create_keyx_hashes(struct ssh_connection_s *c, struct ssh_keyex_s *k, struct ssh_hash_s *H, unsigned int *error);
 
 #endif

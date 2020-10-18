@@ -44,7 +44,7 @@
 #include "ssh-utils.h"
 #include "ssh-receive.h"
 
-static unsigned int populate_decompress(struct ssh_session_s *session, struct decompress_ops_s *ops, struct algo_list_s *alist, unsigned int start)
+static unsigned int populate_decompress(struct ssh_connection_s *connection, struct decompress_ops_s *ops, struct algo_list_s *alist, unsigned int start)
 {
 
     if (alist) {
@@ -84,8 +84,7 @@ static int decompress_packet(struct ssh_decompressor_s *d, struct ssh_packet_s *
 	memcpy(payload->buffer, &packet->buffer[5], len);
 	payload->type=(unsigned char) payload->buffer[0];
 	payload->sequence=packet->sequence;
-	payload->next=NULL;
-	payload->prev=NULL;
+	init_list_element(&payload->list, NULL);
 	set_alloc_payload_dynamic(payload);
 	return 0;
 
@@ -121,8 +120,8 @@ void init_decompress_none()
     add_decompress_ops(&none_d_ops);
 }
 
-void set_decompress_none(struct ssh_session_s *session)
+void set_decompress_none(struct ssh_connection_s *connection)
 {
-    struct ssh_decompress_s *decompress=&session->receive.decompress;
+    struct ssh_decompress_s *decompress=&connection->receive.decompress;
     decompress->ops=&none_d_ops;
 }
