@@ -1,26 +1,37 @@
 INTRODUCTION
 ============
 
-This fuse service provides automatic access to network services like sftp.
-For sftp hosts providing the ssh/sftp service are detected (using avahi) and
+This fuse service provides automatic access to network services like sftp over ssh.
+Sftp hosts providing the ssh/sftp service are detected (using avahi) and
 fs-workspace tries to establish a connection using the keys available for the user.
 (found in ~/.ssh).
 
 The mountpoint for network services looks like:
 
-/run/fs-workspace/user/$USER/network
+/run/network/$USER
 
-and when ssh/sftp services are found, path's like
+this gives a FUSE fs like:
 
-/run/fs-workspace/user/$USER/network/SFTP_Network/example.org/server/home
+/run/network/$USER/network/example.org/server/home
 
 are created to offer access to the user's home directory on server when
 the server server.example.org is detected on the network as a host providing ssh/sftp.
 
-SSH supports publickey and hostbased userauth, rsa and dss key formats,
+Own ssh and sftp implementations are written espacially for this. The reason for this is that
+existing ssh libraries do not offer the required integration with a context like this. Pending sftp requests
+are waiting for the following signals:
+
+- of course the regular response
+- the response is invalid (=protocol error)
+- the original FUSE request is interrupted, so the related sftp request has to be cancelled and the response from server ignored (=interrupt)
+- the remote server waits too long to respond, a timeout occurs (= timeout)
+- the remote server closes the sftp subsystem, the related ssh channel and/or ssh session (= no connection)
+- the sftp filesystem is "unmounted" by the local system (= cancel)
+
+The internal SSH server supports publickey and hostbased userauth, rsa and dss key formats,
 key exchange methods diffie-hellman-group1-sha1 and diffie-hellman-group14-sha1,
 ciphers chacha20-poly1305@openssh.com, aes128-cbc and aes128-ctr, aes256-cbc and aes256-ctr,
-hmac hmac-sha1, hmac-sha256 and hmac-md5.
+hmac hmac-sha1, hmac-sha256 and hmac-md5. It looks at the regular locations like $HOME/.ssh and /etc/ssh for pubic and private keys.
 
 SFTP supports versions 3-6.
 
@@ -38,14 +49,8 @@ FEATURES
 ========
 
 - Automatic detection of services on the local network
-
-- Flexible handling of different signals/situations.
-    After sending data to the ssh/sftp server the thread will wait for a certain period to get a response.
-    This response is read and converted to a fuse format and will result in completion of the fuse request.
-    It's possible that the thread has to wait too long. A timeout is used to handle this situation.
-    Also it's possible that the remote process (with ssh/sftp it's the channel/subprocess) closes.
-    Also it's possible that the original fuse request is cancelled. Also this signal is taken care of.
-
+- Flexible handling of different signals/situations like remote closing channel, interrupt requests and unmounting.
+- SSH and SFTP subsystems uses own implementation to have the best integration 
 
 BUILD
 =====
@@ -75,11 +80,18 @@ This will build the fs-workspace executable.
 
 As root:
 
-mkdir -p /etc/fs-workspace/base
-cp base/network.workspace /etc/fs-workspace/base
+Copy the options file from source/workspace
+Adjust the options file to you needs. Some important options:
+- the policy to allow user to make use of mounting of remote services ("user.network_mount_group_policy").
+  Two choices are:
+    - partof: user is partof a group. This maybe the primary group like "users", but also a secondary like "fuse-netmount" for example.
+    - min: the gid of users primary group is minimal some value
+- the group to allow mounting ("user.network_mount_group").
+- the mountpoint. Default /run/network/$USER ("user.mount_template").
 
-Adjust this file to you needs. The group users I want services to start for do belong to the group "users".
-Rename that to your situation.
+Other options:
+- the name chosen for the remote home folder: home or the remote username ("sftp.network.home_use_remotename").
+- the domainname is created in the browseable network map yes or no ("sftp.network.show_domainname").
 
 Copy the desktopfiles in config to /etc/fs-workspace:
 
@@ -92,31 +104,75 @@ Start the executable
 ./fs-workspace
 
 
-
 Other filesystems
 =================
 
-Other filesystems than sftp are possible, for example SMB, using libsmb2 (SMB2/SMB3). This library has a nice api
+Other filesystems than sftp are possible, for example NFS and SMB, using libnfs and libsmb2 (SMB2/SMB3) of R. Sahlberg. This library has a nice api
 and are also path based.
+See:
+- https://github.com/sahlberg/libsmb2
+- https://github.com/sahlberg/libnfs
 
 
 TODO
 ====
 
 - support for ed25519 (in public/private keys and key exchange curve 25519)
-at this moment rsa and dss are supported, and none elyptic curve based keys.
-
+at this moment rsa and dss are supported, and none elyptic curve based key exchange methods.
 - support for backup. Add a "share" per server special for backups. The sftp protocol gives room to add extra calls, for example to
 make a backup. Using librsync would be a good idea here.
-
 - support for a UDP channel (like MOSH) for fast data transfer (using libudt)
-
 - support for forwarding of ports like CUPS socket to secure access the remote printer server
+- support of a chat terminal per server, allowing users per domain to chat public or private. Also providing an overview of users in
+/run/network/$USER/example.org/chat
+- support for more key providers than OPENSSH (=local files, like ~/.ssh/id_rsa), like a key deamon and a usb device like NitroKey.
+- not only client but also a dedicated fileserver providing services like video and/or textchat (public and private), fsnotify over the network. Make use of the
+SSH_MSG_GLOBAL_REQUEST to have a custom request like "enumservices@sons.org" and "getservice@sons.org".
+- integrate with shared users databases like openldap
+- integrate with a central Certificate Authority (CA) to make things work and doable with a lot of users
 
-- support of a chat terminal per server, allowing users per domain to chat
 
-- support for more key providers than OPENSSH (=local files, like ~/.ssh/id_rsa), like a secretkey, or a key deamon
+USEFULL INFO
+============
 
-- add advanced features like leases (requires support of server also)
+SSH:
 
+https://tools.ietf.org/html/rfc4250
+https://tools.ietf.org/html/rfc4251
+https://tools.ietf.org/html/rfc4252
+https://tools.ietf.org/html/rfc4253
+https://tools.ietf.org/html/rfc4254
 
+Extension Negotiation
+https://tools.ietf.org/html/rfc8308
+
+Elliptic Curve Algorithm
+https://tools.ietf.org/html/rfc5656
+
+SHA-2 Data Integrity Verification
+https://tools.ietf.org/html/rfc6668
+
+Use of RSA Keys with SHA-256 and SHA-512
+https://tools.ietf.org/html/rfc8332
+
+Key exchange method curve25519-sha256@libssh.org by libssh.
+https://git.libssh.org/projects/libssh.git/tree/doc/curve25519-sha256@libssh.org.txt
+
+Cipher and hmac chacha20poly1305@openssh.com
+https://cvsweb.openbsd.org/src/usr.bin/ssh/PROTOCOL.chacha20poly1305?annotate=HEAD
+
+Extensions by OPENSSH
+https://cvsweb.openbsd.org/src/usr.bin/ssh/PROTOCOL?annotate=HEAD
+
+SFTP:
+
+https://tools.ietf.org/html/draft-ietf-secsh-filexfer-13
+
+LIBGCRYPT:
+
+https://www.gnupg.org/documentation/manuals/gcrypt/index.html
+
+Introduction to Cryptography by Christof Paar:
+(very very usefull! an absolute must)
+
+https://www.youtube.com/channel/UC1usFRN4LCMcfIV7UjHNuQg/featured
