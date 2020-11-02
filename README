@@ -176,3 +176,11 @@ Introduction to Cryptography by Christof Paar:
 (very very usefull! an absolute must)
 
 https://www.youtube.com/channel/UC1usFRN4LCMcfIV7UjHNuQg/featured
+
+Last but not leasT, ververy usefull information about different sftp implementations:
+
+https://www.greenend.org.uk/rjk/sftp/sftpimpls.html
+https://www.greenend.org.uk/rjk/sftp/sftpversions.html
+
+Especially the latest is usefull. It gives an oversight of the properties and changes in the different sftp protocol versions,
+and a table of the documentation versus protocol. Very very usefull!
