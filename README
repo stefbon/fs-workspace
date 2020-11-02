@@ -184,3 +184,8 @@ https://www.greenend.org.uk/rjk/sftp/sftpversions.html
 
 Especially the latest is usefull. It gives an oversight of the properties and changes in the different sftp protocol versions,
 and a table of the documentation versus protocol. Very very usefull!
+
+AVAHI:
+
+For network service discovery:
+https://www.avahi.org/doxygen/html/index.html
