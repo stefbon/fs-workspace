@@ -48,7 +48,8 @@ Note libfuse is not required, fuse support in the kernel of course.
 FEATURES
 ========
 
-- Automatic detection of services on the local network
+- Automatic detection of services on the local network.
+- Atomatic mounting of filesystem providing access to sftp/ssh servers on the network.
 - Flexible handling of different signals/events like remote closing channel, interrupt requests and unmounting.
 - SSH and SFTP subsystems uses own implementation to have the best integration
 - written inc, with readability in mind, All the complicated details doing verify, sign, de- and encryption go in specific files.
