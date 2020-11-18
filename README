@@ -12,7 +12,7 @@ The mountpoint for network services looks like:
 
 this gives a FUSE fs like:
 
-/run/network/$USER/network/example.org/server/home
+/run/network/$USER/fs/example.org/server/home
 
 are created to offer access to the user's home directory on server when
 the server server.example.org is detected on the network as a host providing ssh/sftp.
@@ -49,8 +49,13 @@ FEATURES
 ========
 
 - Automatic detection of services on the local network
-- Flexible handling of different signals/situations like remote closing channel, interrupt requests and unmounting.
-- SSH and SFTP subsystems uses own implementation to have the best integration 
+- Flexible handling of different signals/events like remote closing channel, interrupt requests and unmounting.
+- SSH and SFTP subsystems uses own implementation to have the best integration
+- written inc, with readability in mind, All the complicated details doing verify, sign, de- and encryption go in specific files.
+You won't find any of this in the mainline of the program.
+- userauth and publickey authentication is supported
+- sftp protocol versions 3 to 6 are supported
+- 
 
 BUILD
 =====
