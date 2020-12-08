@@ -153,7 +153,8 @@ Extension Negotiation
 https://tools.ietf.org/html/rfc8308
 
 Elliptic Curve Algorithm
-https://tools.ietf.org/html/rfc5656
+https://tools.ietf.org/html/rfc5656 (generic)
+https://tools.ietf.org/html/rfc8709 (ed25519 and ed448)
 
 SHA-2 Data Integrity Verification
 https://tools.ietf.org/html/rfc6668
